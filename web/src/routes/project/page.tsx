@@ -1,21 +1,15 @@
 import { useQuery } from "@tanstack/react-query"
-import { getRouteApi, Link } from "@tanstack/react-router"
-import { Fragment, useState, type ReactNode } from "react"
-import CaretRightIcon from "~icons/ph/caret-right"
-import DatabaseIcon from "~icons/ph/database"
-import GitBranchIcon from "~icons/ph/git-branch"
-import UploadSimpleIcon from "~icons/ph/upload-simple"
+import { getRouteApi } from "@tanstack/react-router"
+import { useState } from "react"
 import ListBulletsIcon from "~icons/ph/list-bullets"
 import LightbulbIcon from "~icons/ph/lightbulb"
-import PackageIcon from "~icons/ph/package"
 import TreeStructureIcon from "~icons/ph/tree-structure"
 
 import type { Schemas } from "@/api/client"
 import { projectGapsQuery, projectIncidentsQuery, projectQuery } from "@/api/queries"
 import { Segmented } from "@/components/bits"
-import { CopyText } from "@/components/copy-text"
 import { useDatabases } from "@/components/databases"
-import { AddMenu, useAddChoices } from "@/components/add/menu"
+import { AddMenu } from "@/components/add/menu"
 import { Freshness } from "@/components/freshness"
 import { ProjectDeleting } from "@/components/project-deleting"
 import { GapList } from "@/components/gaps"
@@ -23,41 +17,24 @@ import { IncidentRow, isTakenDown, takenDown } from "@/components/incident"
 import { ProblemGroupRow } from "@/routes/project/problem-group"
 import { refusedAmong, RefusedKinds } from "@/components/refused"
 import { StatusPill } from "@/components/status"
-import { ActionTile } from "@zeabur/design-system/components/action-tile"
-import { Button, buttonVariants } from "@zeabur/design-system/components/button"
+import { Button } from "@zeabur/design-system/components/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@zeabur/design-system/components/card"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@zeabur/design-system/components/collapsible"
 import { Drawer } from "@zeabur/design-system/components/drawer"
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@zeabur/design-system/components/empty"
-import { Illustration } from "@zeabur/design-system/components/illustration"
 import { PageColumn } from "@zeabur/design-system/components/page-column"
 import { PageHeader } from "@zeabur/design-system/components/page-header"
 import { useT } from "@/i18n"
-import { openAdd } from "@/lib/adding"
 import { useHistoryIndex, useLocationText } from "@/lib/history"
 import { PHONE, useMedia, WIDE } from "@/lib/media"
 import { useProjectSummary } from "@/lib/project-name"
 import { projectView } from "@/lib/stores"
-import { cn } from "@/lib/utils"
 import { groupProblems } from "@/model/attention"
-import { engineName } from "@/model/databases"
 import { mapReadable } from "@/model/layout"
 import { suggestionsOf } from "@/model/overview"
 import { projectTitle } from "@/model/project"
 import { needsAttention, statusOf, summarise, type Project, type Service } from "@/model/service"
 import { mapLayout, ProjectMap } from "@/routes/project/architecture"
 import { ProjectData, refusedPlaces, useProjectEvents } from "@/routes/project/data"
+import { NextStep } from "@/routes/project/next-step"
 import { ServicesTable } from "@/routes/project/services-table"
 import {
   Activity,
@@ -443,154 +420,5 @@ function ListView({
         </div>
       </div>
     </PageColumn>
-  )
-}
-
-function NextStep({ project }: { project: string }) {
-  const t = useT()
-  const choices = useAddChoices(project)
-  const installed = choices?.databases.filter((d) => d.installed) ?? []
-  const command = `kubectl create deployment hello --image=nginx --port=80 -n ${project}`
-  return (
-    <PageColumn gap="md" className="mb-12">
-      <Empty variant="outline">
-        <EmptyHeader>
-          <EmptyMedia>
-            <Illustration kind="empty" seed="services" />
-          </EmptyMedia>
-          <EmptyTitle>{t("project.next.title")}</EmptyTitle>
-          <EmptyDescription>
-            {choices?.none ? t("add.viewer", project) : t("add.emptyBody")}
-          </EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent className="w-full max-w-2xl">
-          <div className="flex w-full flex-col items-center gap-4">
-            {choices && !choices.none ? (
-              <div className="flex w-full flex-wrap justify-center gap-3">
-                {choices.image ? (
-                  <AddTile
-                    icon={<PackageIcon aria-hidden="true" />}
-                    label={t("add.image")}
-                    body={t("add.card.image")}
-                    onClick={() => openAdd(project, "image")}
-                  />
-                ) : null}
-                {choices.git.open ? (
-                  <>
-                    <AddTile
-                      icon={<GitBranchIcon aria-hidden="true" />}
-                      label={t("add.git")}
-                      body={t("add.card.git")}
-                      onClick={() => openAdd(project, "git")}
-                    />
-                    <AddTile
-                      icon={<UploadSimpleIcon aria-hidden="true" />}
-                      label={t("add.upload")}
-                      body={t("add.card.upload")}
-                      onClick={() => openAdd(project, "upload")}
-                    />
-                  </>
-                ) : null}
-                {installed.map(({ engine }) => (
-                  <AddTile
-                    key={engine}
-                    icon={<DatabaseIcon aria-hidden="true" />}
-                    label={engineName(engine)}
-                    body={t(`add.card.${engine}`)}
-                    onClick={() => openAdd(project, engine)}
-                  />
-                ))}
-              </div>
-            ) : null}
-            {choices && !choices.none && installed.length === 0 && choices.databases.length > 0 ? (
-              <p className="type-meta text-muted-foreground">
-                {t("db.noOperator")}
-                {t("common.gap")}
-                <Link to="/cluster/components" className="text-foreground hover:underline">
-                  {t("backups.seeComponents")}
-                </Link>
-              </p>
-            ) : null}
-            <div className="flex w-full flex-col items-center gap-3">
-              {choices?.yaml ? (
-                <Link
-                  to="/projects/$project/create"
-                  params={{ project }}
-                  className="type-meta text-muted-foreground hover:text-foreground hover:underline"
-                >
-                  {t("add.orYaml")}
-                </Link>
-              ) : null}
-              <Collapsible className="flex w-full flex-col items-center">
-                <CollapsibleTrigger variant="disclosure">
-                  <CaretRightIcon aria-hidden="true" />
-                  {t("add.kubectl")}
-                </CollapsibleTrigger>
-                <CollapsibleContent className="w-full">
-                  <div className="flex w-full flex-col gap-1.5 pt-3 text-left">
-                    <span className="type-meta text-muted-foreground">
-                      {t("project.next.body")}
-                    </span>
-                    <span className="type-meta text-muted-foreground">
-                      {t("project.next.command")}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-muted/40 py-1.5 pr-1.5 pl-3">
-                      <code className="min-w-48 flex-1 type-mono break-words" translate="no">
-                        {command.split(" ").map((word, i) => (
-                          <Fragment key={i}>
-                            {i > 0 ? " " : null}
-                            <span className="whitespace-nowrap">{word}</span>
-                          </Fragment>
-                        ))}
-                      </code>
-                      <div className="ml-auto flex items-center">
-                        <CopyText value={() => command} label={t("common.copy")} />
-                      </div>
-                    </div>
-                    <span className="type-meta text-muted-foreground">
-                      {t("project.next.after")}
-                    </span>
-                    <Link
-                      to="/projects/$project/objects"
-                      params={{ project }}
-                      className={cn(
-                        buttonVariants({ variant: "outline", size: "sm" }),
-                        "mt-2 self-start",
-                      )}
-                    >
-                      {t("project.seeObjects")}
-                    </Link>
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
-          </div>
-        </EmptyContent>
-      </Empty>
-      <Databases project={project} />
-      <ObjectStorageSection project={project} />
-    </PageColumn>
-  )
-}
-
-function AddTile({
-  icon,
-  label,
-  body,
-  onClick,
-}: {
-  icon: ReactNode
-  label: string
-  body: string
-  onClick: () => void
-}) {
-  return (
-    <ActionTile onClick={onClick} className="sm:w-52">
-      {icon}
-      <span className="flex flex-col gap-1">
-        <span>{label}</span>
-        <span className="type-meta font-normal text-muted-foreground">{body}</span>
-      </span>
-    </ActionTile>
   )
 }

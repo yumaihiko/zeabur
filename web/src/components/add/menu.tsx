@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { cloneElement, useState } from "react"
+import { cloneElement, Fragment, useState } from "react"
 import CaretDownIcon from "~icons/ph/caret-down"
 import PlusIcon from "~icons/ph/plus"
 
@@ -15,8 +15,8 @@ import {
 } from "@/api/queries"
 import { GatedMenuItem, GateTip, useGates } from "@/components/gate"
 import { LazyInstallerSheet } from "@/components/lazy-installer-sheet"
-import { useT } from "@/i18n"
-import { openAdd } from "@/lib/adding"
+import { useT, type Translate } from "@/i18n"
+import { openAdd, type AddWhat } from "@/lib/adding"
 import { engineName, engineOperator, engines, type Engine } from "@/model/databases"
 import { gitNeeds } from "@/model/git-service"
 import { needed, OBJECT_STORAGE, type Needed } from "@/model/installer"
@@ -135,10 +135,71 @@ export function useAddChoices(project: string | undefined): AddChoices | undefin
 }
 
 /** The install steps a closed item opens. */
-interface Steps {
+export interface Steps {
   components: Needed[]
   reason?: string
   note?: string
+}
+
+/** One thing "New" offers, shared by the menu and the empty project's tiles. */
+export interface AddEntry {
+  what: AddWhat
+  group: "service" | "database" | "storage"
+  label: string
+  /** The role's verdict; a closed entry shows why. */
+  gate: Gate
+  /** Set when the cluster lacks something: what, said under the label. */
+  why?: string
+  /** The install steps that open it, when Zeabur knows them. */
+  steps?: Steps
+}
+
+export const entryTestid = (what: AddWhat) =>
+  `add-${what === "objectStorage" ? "object-storage" : what}`
+
+function gitEntry(git: AddChoices["git"], what: "git" | "upload", t: Translate): AddEntry {
+  const entry: AddEntry = { what, group: "service", label: t(`add.${what}`), gate: git.gate }
+  if (git.open || !git.gate.open) return entry
+  const note = git.registrySetting ? t("add.gitMissing.registrySetting") : undefined
+  if (git.install.length === 0) return { ...entry, why: note ?? "" }
+  const names = t(
+    "common.list",
+    git.install.map((n) => n.name),
+  )
+  return {
+    ...entry,
+    why: t("add.installFirst", names),
+    steps: { components: git.install, reason: t("add.gitNeedsWhy"), note },
+  }
+}
+
+function operatorEntry(
+  what: AddWhat,
+  group: AddEntry["group"],
+  label: string,
+  { installed, operator }: { installed: boolean; operator: Needed },
+  t: Translate,
+): AddEntry {
+  const entry: AddEntry = { what, group, label, gate: { open: true } }
+  if (installed) return entry
+  return { ...entry, why: t("add.installFirst", operator.name), steps: { components: [operator] } }
+}
+
+/** Everything "New" offers, in the menu's order. */
+export function addEntries(choices: AddChoices, t: Translate): AddEntry[] {
+  const image = choices.gates.image
+  const store = choices.objectStorage
+  return [
+    { what: "image", group: "service", label: t("add.image"), gate: image },
+    gitEntry(choices.git, "git", t),
+    gitEntry(choices.git, "upload", t),
+    { what: "compose", group: "service", label: t("add.compose"), gate: image },
+    { what: "template", group: "service", label: t("add.template"), gate: image },
+    ...choices.databases.map((d) =>
+      operatorEntry(d.engine, "database", engineName(d.engine), d, t),
+    ),
+    ...(store ? [operatorEntry("objectStorage", "storage", t("s3.title"), store, t)] : []),
+  ]
 }
 
 /** "New": the one entry to add a service, a database or YAML to the project. */
@@ -166,65 +227,26 @@ export function AddMenu({ project, compact = false }: { project: string; compact
   // A Viewer sees what Developers use to add things, closed, with the role that opens it.
   if (choices.none)
     return <GateTip gate={choices.gates.image}>{cloneElement(trigger, {}, face)}</GateTip>
-  const databases = choices.databases
-  const store = choices.objectStorage
+  const entries = addEntries(choices, t)
   return (
     <>
       <Menu>
         <MenuTrigger render={trigger}>{face}</MenuTrigger>
         <MenuContent align={compact ? "start" : "end"} className="w-60">
-          <GatedMenuItem
-            gate={choices.gates.image}
-            testid="add-image"
-            onClick={() => openAdd(project, "image")}
-          >
-            {t("add.image")}
-          </GatedMenuItem>
-          <GitItem project={project} git={choices.git} what="git" onSteps={setSteps} />
-          <GitItem project={project} git={choices.git} what="upload" onSteps={setSteps} />
-          <GatedMenuItem
-            gate={choices.gates.image}
-            testid="add-compose"
-            onClick={() => openAdd(project, "compose")}
-          >
-            {t("add.compose")}
-          </GatedMenuItem>
-          <GatedMenuItem
-            gate={choices.gates.image}
-            testid="add-template"
-            onClick={() => openAdd(project, "template")}
-          >
-            {t("add.template")}
-          </GatedMenuItem>
+          {entries.map((entry, i) => (
+            <Fragment key={entry.what}>
+              {i > 0 && entries[i - 1]?.group !== entry.group ? <MenuSeparator /> : null}
+              <EntryItem
+                entry={entry}
+                onOpen={() => openAdd(project, entry.what)}
+                onSteps={setSteps}
+              />
+            </Fragment>
+          ))}
           {!choices.gates.database.open ? (
             <>
               <MenuSeparator />
               <GatedMenuItem gate={choices.gates.database}>{t("add.database")}</GatedMenuItem>
-            </>
-          ) : null}
-          {databases.length > 0 ? <MenuSeparator /> : null}
-          {databases.map(({ engine, installed, operator }) => (
-            <OperatorItem
-              key={engine}
-              label={engineName(engine)}
-              testid={`add-${engine}`}
-              installed={installed}
-              operator={operator}
-              onOpen={() => openAdd(project, engine)}
-              onSteps={setSteps}
-            />
-          ))}
-          {store ? (
-            <>
-              <MenuSeparator />
-              <OperatorItem
-                label={t("s3.title")}
-                testid="add-object-storage"
-                installed={store.installed}
-                operator={store.operator}
-                onOpen={() => openAdd(project, "objectStorage")}
-                onSteps={setSteps}
-              />
             </>
           ) : null}
           {choices.yaml ? (
@@ -243,93 +265,33 @@ export function AddMenu({ project, compact = false }: { project: string; compact
   )
 }
 
-/** A database engine or object storage, or what to install before it. */
-function OperatorItem({
-  label,
-  testid,
-  installed,
-  operator,
+/** An entry: open, closed by the role, or what the cluster lacks with its install steps. */
+function EntryItem({
+  entry,
   onOpen,
   onSteps,
 }: {
-  label: string
-  testid: string
-  installed: boolean
-  operator: Needed
+  entry: AddEntry
   onOpen: () => void
   onSteps: (steps: Steps) => void
 }) {
-  const t = useT()
-  if (installed)
+  const { steps } = entry
+  if (entry.why === undefined)
     return (
-      <MenuItem data-testid={testid} onClick={onOpen}>
-        {label}
-      </MenuItem>
-    )
-  return (
-    <NeedsItem
-      label={label}
-      why={t("add.installFirst", operator.name)}
-      onClick={() => onSteps({ components: [operator] })}
-    />
-  )
-}
-
-/** An item the cluster cannot serve yet: its label, what it lacks, and the install steps. */
-function NeedsItem({
-  label,
-  why,
-  testid,
-  onClick,
-}: {
-  label: string
-  why: string
-  testid?: string
-  onClick?: () => void
-}) {
-  return (
-    <MenuItem data-testid={testid} disabled={!onClick} onClick={onClick}>
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="type-meta text-muted-foreground">{why}</span>
-      </span>
-    </MenuItem>
-  )
-}
-
-/** "Deploy from Git" or "Upload a folder", which need the same of the cluster; what it lacks
- * closes them, with the steps that install all of it. */
-function GitItem({
-  project,
-  git,
-  what,
-  onSteps,
-}: {
-  project: string
-  git: AddChoices["git"]
-  what: "git" | "upload"
-  onSteps: (steps: Steps) => void
-}) {
-  const t = useT()
-  if (git.open || !git.gate.open)
-    return (
-      <GatedMenuItem gate={git.gate} testid={`add-${what}`} onClick={() => openAdd(project, what)}>
-        {t(`add.${what}`)}
+      <GatedMenuItem gate={entry.gate} testid={entryTestid(entry.what)} onClick={onOpen}>
+        {entry.label}
       </GatedMenuItem>
     )
-  const note = git.registrySetting ? t("add.gitMissing.registrySetting") : undefined
-  if (git.install.length === 0)
-    return <NeedsItem label={t(`add.${what}`)} why={note ?? ""} testid={`add-${what}`} />
-  const names = t(
-    "common.list",
-    git.install.map((n) => n.name),
-  )
   return (
-    <NeedsItem
-      label={t(`add.${what}`)}
-      why={t("add.installFirst", names)}
-      testid={`add-${what}`}
-      onClick={() => onSteps({ components: git.install, reason: t("add.gitNeedsWhy"), note })}
-    />
+    <MenuItem
+      data-testid={entryTestid(entry.what)}
+      disabled={!steps}
+      onClick={steps ? () => onSteps(steps) : undefined}
+    >
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-muted-foreground">{entry.label}</span>
+        <span className="type-meta text-muted-foreground">{entry.why}</span>
+      </span>
+    </MenuItem>
   )
 }
