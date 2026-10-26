@@ -1,0 +1,206 @@
+---
+title: Remove Zeabur and keep services running
+description: Remove the Zeabur management interface while keeping applications, data, and Kubernetes components still in use.
+---
+
+If you remove only the Zeabur chart or run `zeabur-installer uninstall zeabur`, existing services stay in Kubernetes and keep running under native controllers and operators. Keep dependencies such as ingress, certificates, storage, and backups, then manage services with kubectl, Helm, or your existing GitOps tools.
+
+If you opened the interface locally with `zeaburctl ui`, press `Ctrl-C` to close it. It doesn't install anything in the cluster. Changes you've applied stay in the cluster.
+
+## Before you remove Zeabur
+
+You need a kubeconfig with permission to manage the objects installed by Zeabur. For an installer installation, you also need root access to the original server. Make sure you can still access the cluster without the management interface after removing it.
+
+1. Connect to the target cluster with kubectl and check the context and current permissions. On an installer host, you can use `/etc/rancher/rke2/rke2.yaml`, which root manages. Don't share these admin credentials with regular members.
+2. Record how Zeabur was installed, its release name, and its namespace. The Helm examples below use release `zeabur` and namespace `zeabur`. Replace them with the actual names for your installation.
+3. Close any open container terminals, kubectl terminals, and node terminals, and apply or discard any reviewed changes. Removing Zeabur disconnects these sessions and invalidates changes you haven't applied.
+4. If members still need to act under their Zeabur Identity accounts, keep Identity and arrange [replacement RBAC and admission policies](#member-permissions-and-admission-policies) first. Removal deletes the member roles provided by the chart and the member bindings created by Zeabur.
+5. Back up important data with your existing backup tools. Check that the secrets, destinations, and controllers needed to restore it are still available. This process doesn't delete application volumes.
+
+On your computer, check the connection and record the current service state:
+
+```sh
+kubectl config current-context
+kubectl get nodes
+kubectl get namespaces -l zeabur.com/project
+kubectl get deployments,statefulsets,daemonsets,cronjobs,services,ingresses,pvc \
+  --namespace shop
+```
+
+Replace `shop` with the project you want to keep. Record the public URLs of important services and open each one before and after removal. Use existing clients to check database and object storage connections, too.
+
+If you used the installer and haven't installed kubectl separately on the host, use the full path below to run the kubectl commands in the following sections on that host:
+
+```sh
+sudo /var/lib/rancher/rke2/bin/kubectl \
+  --kubeconfig /etc/rancher/rke2/rke2.yaml get nodes
+```
+
+## What stays and keeps running
+
+| Item | After removing Zeabur |
+|---|---|
+| Application namespaces, Deployments, StatefulSets, Kubernetes Services, and CronJobs | Stay in place. Kubernetes continues to manage replicas and scheduling |
+| Ingress, HTTPRoute, certificates, and DNS settings | Stay in place. Routing and certificate renewal still need the existing ingress or Gateway, cert-manager, and DNS components |
+| Disks, PVs, and storage systems | Stay in place. They still need the storage driver, provisioner, or Longhorn |
+| Native CRs and secrets for databases and object storage | Stay in place. They still need their operators |
+| Builds, Git credentials, and auto-deploy settings | Stay in place. Future builds and automatic deployments still need Zeabur Builder, Keel if used, and the registry |
+| Backup schedules, backup credentials, and stored backups | Stay in place. They still need the database operators, K8up or Velero, and the backup destinations |
+| Reloader, monitoring, alerting, and notification settings | Stay in place and continue to run under their existing controllers |
+| Project `zeabur.com/project` labels and display information | Stay in place and don't affect workload execution |
+| Member RoleBindings and ClusterRoleBindings | The installer deletes them during removal. `helm uninstall` leaves them in place; delete them yourself |
+| `zeabur-s3-destinations` | The chart marks this namespace to keep. Registered destinations and keys stay in it |
+| Zeabur Identity | Stays in place when you remove only Zeabur. Its users and other OAuth clients remain in the original namespace |
+
+Backup keys have already been copied to the namespaces where the backups run. Backups don't read the S3 destination list at runtime. Deleting the list doesn't revoke those keys or delete remote backups.
+
+Maintenance pages and custom error pages have their own workloads, Kubernetes Services, and configuration in the project. Removing Zeabur doesn't automatically route domains in maintenance mode back to the application. To restore traffic, follow [Maintenance mode](../configure/maintenance.mdx) first.
+
+<Callout type="warn">
+To keep services running, don't run `rke2-uninstall.sh`, delete project namespaces, disks, or operator CRDs, or uninstall ingress, cert-manager, storage operators, or database operators along with Zeabur. These actions stop services or remove components needed for data access and ongoing maintenance.
+</Callout>
+
+## Remove the management interface
+
+Choose the path that matches the original installation method. If Flux or Argo CD still syncs Zeabur, remove the Zeabur installation from its configuration source first, then uninstall it with the original tool so the controller doesn't recreate it.
+
+### Installer installation
+
+Run this on the server where you first created the cluster:
+
+```sh
+sudo zeabur-installer \
+  --config /etc/zeabur-installer/config.yaml \
+  uninstall zeabur
+```
+
+The command deletes `HelmChart zeabur` in `kube-system`, the `zeabur` namespace, and the member RoleBindings and ClusterRoleBindings created by Zeabur. RKE2, Zeabur Identity, Catalog components, and project namespaces stay in place.
+
+The OAuth client secret, change token key, `zeabur-settings`, and other objects in the `zeabur` namespace are also deleted. Move any extra workloads out of this namespace first. If you need to keep the cluster display name or metrics store selection, record those settings first.
+
+Keep the installer configuration and download directory to continue managing nodes. Don't run `uninstall --purge` at this point. Running `apply` again with the original `zeabur: true` configuration reinstalls Zeabur.
+
+### Helm installation
+
+First, check the release and the objects it manages:
+
+```sh
+helm list --all-namespaces
+helm status zeabur --namespace zeabur
+kubectl get deployments,services,ingresses,configmaps,secrets --namespace zeabur
+```
+
+Here, `get secrets` lists only names and summaries. Don't add `-o yaml`. After confirming that you've selected the Zeabur release, uninstall it:
+
+```sh
+helm uninstall zeabur --namespace zeabur --wait
+```
+
+This removes the chart-managed Deployment, Kubernetes Service, Ingress or HTTPRoute, ServiceAccount, generated change key, and optional Proxy. It also removes member roles and namespace admission policies. Member bindings that Zeabur created at runtime aren't part of the chart and stay in place. See [Member permissions and admission policies](#member-permissions-and-admission-policies) for deletion instructions.
+
+OAuth client secrets you created in advance, externally supplied change keys, and CA config files aren't part of the chart and stay in place. Uninstalling the chart also leaves the `zeabur-settings` config file created through the interface. Check whether these objects are still needed, then delete them individually. You don't need to delete the entire namespace to remove the interface.
+
+## Check that services are still running
+
+Check the same project again:
+
+```sh
+kubectl get deployments,statefulsets,daemonsets,cronjobs,services,ingresses,pvc \
+  --namespace shop
+kubectl get pods --namespace shop
+kubectl get storageclasses
+```
+
+Applications and volumes should still be in place, and public URLs and database connections should work as they did before removal. The Zeabur URL no longer serves the interface. Use kubectl, Helm, or your existing GitOps tools to change settings from now on.
+
+Check that database and backup operators are still running, then check backup results after the next scheduled run. Uninstalling the Zeabur chart also uninstalls its Proxy. VictoriaLogs stays in place, but the Zeabur entry point for historical logs is gone.
+
+## Member permissions and admission policies
+
+Uninstalling the chart removes `zeabur-member`, the aggregated ClusterRoles for projects, their rule sets, and the `zeabur-project-namespace` ValidatingAdmissionPolicy and its binding. `zeabur-installer uninstall zeabur` also deletes the member bindings created by Zeabur.
+
+The `zeabur-system-hosts` policy and binding added by the installer stay in place, so the Zeabur Identity domain remains protected. Once the `zeabur` namespace is deleted, its binding no longer finds an Ingress and doesn't block any routes. If you no longer need it, follow [Zeabur and Zeabur Identity domains](../reference/security.mdx#domains-for-zeabur-and-zeabur-identity) to delete it or change it to `Warn`.
+
+If members still need cluster access, replace the existing permissions with your own RBAC configuration first. Check what each role can actually read and write. If replacement roles keep `patch namespaces`, keep equivalent field restrictions as well. After the chart's policy is removed, RBAC alone can't restrict patches to the display name, description, and icon. Existing Pod Security and NetworkPolicy labels stay in place.
+
+When you remove Zeabur with `helm uninstall`, member bindings stay in place. Once you've confirmed that the old permissions are no longer needed, delete them together:
+
+```sh
+kubectl delete rolebindings,clusterrolebindings --all-namespaces \
+  -l app.kubernetes.io/managed-by=zeabur,zeabur.com/member
+```
+
+If you keep Identity, other clients or kubeconfigs may still sign in as `zeabur:<username>`. Before deleting these bindings, check that those clients no longer depend on them.
+
+## Clean up temporary tools and registered destinations
+
+### Terminal objects
+
+After closing terminals, list any remaining tools replicas and node terminal replicas. All tools replicas are in the `zeabur-terminals` namespace, which is deleted along with them when the chart is removed:
+
+```sh
+kubectl get pods --namespace zeabur-terminals -l zeabur.com/tools
+kubectl get pods --all-namespaces -l zeabur.com/node-shell=true
+```
+
+Once you've confirmed that no terminals are in use, delete the remaining replicas using their actual names and namespaces from the list:
+
+```sh
+kubectl delete pod <pod-name> --namespace <namespace>
+```
+
+Tools replicas stop on their own when they reach their maximum runtime, but after Zeabur is removed, nothing deletes their objects. Debug containers stay until the original replica is replaced. Restarting an application just to remove a debug container interrupts that replica. You can wait until the next deployment instead.
+
+Deleting a node terminal replica doesn't undo changes made to the host through that terminal.
+
+### S3 destinations
+
+`zeabur-s3-destinations` keeps registered destinations and keys. Leave it in place if you want to keep managing backups. Once you're sure you no longer need the list or the original credentials, inspect the objects, then delete this dedicated namespace:
+
+```sh
+kubectl get configmaps,secrets --namespace zeabur-s3-destinations
+kubectl delete namespace zeabur-s3-destinations
+```
+
+This deletes only the registration list and its secrets. It doesn't delete remote buckets, backups, or secrets already copied to other namespaces. To revoke a key, disable it in the storage service separately, after updating any backups that still use it.
+
+## Remove Zeabur Identity as well
+
+If other clients, user kubeconfigs, or automation still use Zeabur Identity, keep it for now. Move those sign-in sources to a replacement authentication system and confirm that you can manage the cluster without Identity. Then run this on one server:
+
+```sh
+sudo zeabur-installer uninstall identity
+```
+
+<Callout type="warn">
+This command removes both Zeabur and the entire `zeabur-identity` namespace, deleting its users, passkey data, and clients. It also makes the server running the command stop trusting Identity tokens. Check that the replacement admin sign-in works first. Identity's CRDs stay in place.
+</Callout>
+
+In a multi-server cluster, run `sudo zeabur-installer apply` on every other server so each one stops trusting Identity tokens. The command lists those server names when it finishes. It also clears the `kube-system/zeabur-identity-authn` config file, so servers added later won't trust Identity.
+
+If you installed Identity yourself, remove it through the original installation source. Uninstalling the Zeabur chart doesn't remove Identity's OAuth client or the Kubernetes API issuer configuration.
+
+## When you no longer need the cluster
+
+If you want to keep services running, stop after the earlier steps. Run the following commands on the host only when you're sure you no longer need the entire RKE2 cluster, have backed up important data, and have stored the credentials needed for restoration separately:
+
+```sh
+sudo /usr/local/bin/rke2-uninstall.sh
+sudo zeabur-installer uninstall
+sudo zeabur-installer uninstall --purge
+```
+
+The RKE2 script removes Kubernetes and its data. All workloads that depend on it stop. The next `uninstall` command lists leftover installer files. `--purge` clears the download cache, local CA copy, configuration, and module and multipath config files that the installer wrote for Longhorn. Longhorn host packages stay installed.
+
+`--purge` doesn't delete local-path data in `/var/lib/zeabur/storage` or replica data in `/var/lib/longhorn`. Reattaching the original data directories to services also requires the corresponding PVs, disks, and storage system information. Confirm that you have backups you can restore before deciding what to do with these directories.
+
+To remove only a node that joined the cluster, choose **Remove node** from the node's action menu. See [Add and maintain nodes](../cluster/nodes.mdx#remove-a-node). Don't remove a node while services still need its local-path data.
+
+## If removal doesn't finish
+
+- Zeabur reappears: Check whether Flux, Argo CD, an RKE2 HelmChart, or automation still has an installation source. Remove that source first, then uninstall Zeabur with the original management tool.
+- A namespace is stuck in `Terminating`: Check the namespace status and the finalizers on remaining objects. Restore the corresponding controller or finish its cleanup first. Don't directly remove storage or database finalizers.
+- A service URL stops working after removal: Compare the Ingress or HTTPRoute, ingress controller, Gateway, certificates, and backend replicas. Check that you haven't deleted shared dependencies.
+- Members can't make changes, but services work: The chart's member roles and bindings have been removed. Grant permissions again through replacement RBAC.
+
+To reinstall the management interface, use the [single-machine installer process](../get-started/quickstart.mdx) or the [existing cluster process](../get-started/install.mdx). Don't delete and recreate existing projects.
