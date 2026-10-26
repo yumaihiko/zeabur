@@ -425,6 +425,18 @@
   clip: '[data-slot="dialog-content"]'
   env:
     ZEABUR_DEMO_KEEL: '1'
+- id: git-github
+  path: /projects/shop
+  wait: '[data-testid="add"]'
+  steps:
+    - click: '[data-testid="add"]'
+    - click: '[data-testid="add-git"]'
+    - click: '[data-slot="dialog-content"] [role="combobox"]'
+    - click: '[role="option"]'
+  clip: '[data-slot="dialog-content"]'
+  env:
+    ZEABUR_DEMO_KEEL: '1'
+    ZEABUR_DEMO_GITHUB: installed
 # Compose (docs/zh-TW/deploy/compose.mdx).
 - id: compose-services
   path: /projects/edge
@@ -703,12 +715,12 @@
   - click: main [data-slot="collapsible-trigger"]
   clip: main
 - id: cluster-attention
-  path: /cluster
+  path: /cluster/github-app
   wait: '#cluster-attention-title'
   clip: section:has(#cluster-attention-title)
 # GitHub App, made by the demo's fake GitHub (docs/zh-TW/cluster/github-app.mdx); `installed` also installs it.
 - id: github-app-create
-  path: /cluster
+  path: /cluster/github-app
   wait: '#github-app'
   steps:
   - click: '#github-app button'
@@ -716,13 +728,13 @@
   env:
     ZEABUR_DEMO_GITHUB: '1'
 - id: github-app-installed
-  path: /cluster
+  path: /cluster/github-app
   wait: '#github-app'
   clip: '#github-app'
   env:
     ZEABUR_DEMO_GITHUB: installed
 - id: github-app-grant
-  path: /cluster
+  path: /cluster/github-app
   wait: '#github-app'
   steps:
   - click: '#github-app li button'

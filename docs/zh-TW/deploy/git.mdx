@@ -18,9 +18,21 @@ description: 連接 Git 儲存庫、完成第一次建置，並選擇新映像�
 <Steps>
 <Step>
 
-### 填寫儲存庫和建置方式
+### 選擇儲存庫和建置方式
 
-開啟 **新增** → **從 Git 部署**，在 **儲存庫** 填入 HTTPS 或 SSH 網址，例如 `https://github.com/acme/web`。
+開啟 **新增** → **從 Git 部署**。程式碼放在 GitHub 的話，先連結 GitHub，之後直接從清單挑儲存庫，私有的也不用另外設定金鑰：
+
+- 專案已經連結 GitHub 時，**來源** 預設是 **GitHub**。在 **儲存庫** 搜尋並選擇儲存庫即可。
+- 還沒連結時，**儲存庫** 上方會出現一行 **連結 GitHub**，按下去依情況帶你走下一步：
+  - 叢集還沒有 GitHub App：帶你到 **叢集** → **GitHub** 建立 App，做法見[用 GitHub App 部署私有儲存庫](../cluster/github-app.mdx)。建立好後按 **回到從 Git 部署**。
+  - App 還沒安裝到放儲存庫的帳號：在 GitHub 選帳號和儲存庫安裝，回到這個分頁後畫面會自動更新。
+  - App 已經安裝，但還沒開放給這個專案：檢查變更後按 **套用**，就把這個帳號開放給目前的專案。帳號不只一個時，先從選單挑帳號。
+
+  套用後，表單換成 GitHub 儲存庫清單。這些步驟要能修改 `builder-system` 的 Secret 和 ConfigMap，一般只有叢集管理員可以；其他成員會看到「請叢集管理員把 GitHub 開放給這個專案」。
+
+不用 GitHub 時，來源選 **Git 網址**，在 **儲存庫** 填入 HTTPS 或 SSH 網址，例如 `https://gitlab.com/acme/web`。填的是已開放給專案的 GitHub 儲存庫網址時，一樣透過 GitHub App 讀取。
+
+![從 GitHub 部署，來源是 GitHub，儲存庫用搜尋選擇，存取方式寫著透過叢集的 GitHub App 讀取](https://oss.zeabur.com/shots/zeabur/zh-TW/light/git-github.avif)
 
 **分支** 留空會追蹤儲存庫的預設分支。要固定追蹤 `main`，就在這裡填 `main`。
 
@@ -31,7 +43,7 @@ description: 連接 Git 儲存庫、完成第一次建置，並選擇新映像�
 
 在 **更多設定** 的 **根目錄** 指定要建置的資料夾，例如 `apps/web`。選擇 Dockerfile 時，**Dockerfile** 欄位的路徑從這個根目錄算起，留空使用 `Dockerfile`。
 
-![從 Git 部署表單，填好儲存庫網址，建置方式為 Railpack，下方是名稱、連接埠與儲存庫存取](https://oss.zeabur.com/shots/zeabur/zh-TW/light/git-form.avif)
+![從 Git 部署表單，上方是連結 GitHub，填好儲存庫網址，建置方式為 Railpack，下方是名稱、連接埠與儲存庫存取](https://oss.zeabur.com/shots/zeabur/zh-TW/light/git-form.avif)
 
 </Step>
 <Step>
@@ -52,9 +64,11 @@ description: 連接 Git 儲存庫、完成第一次建置，並選擇新映像�
 </Step>
 <Step>
 
-### 允許讀取私有儲存庫
+### 不用 GitHub 時，允許讀取私有儲存庫
 
-在 **儲存庫存取** 選擇符合儲存庫的方式：
+從 GitHub 清單挑的儲存庫，**儲存庫存取** 會寫「透過叢集的 GitHub App 讀取，不用另外設定。」，這一步可以跳過。
+
+用 **Git 網址** 時，在 **儲存庫存取** 選擇符合儲存庫的方式：
 
 | 選項 | 操作 |
 | --- | --- |
