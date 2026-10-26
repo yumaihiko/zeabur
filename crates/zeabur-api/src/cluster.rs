@@ -219,16 +219,20 @@ pub(crate) async fn capabilities(
     }
     let mut capabilities = zeabur_catalog::detect(&state.catalogue, &facts);
     capabilities.sort_by(|a, b| a.name.cmp(&b.name));
-    let record =
-        crate::settings::store::read_config_map(cluster.as_ref(), "kube-system", INSTALLER_RECORD)
-            .await;
+    // Read as the person; whoever may not read it, or any failed read, leaves it unknown.
+    let installer = cluster
+        .find_object(
+            &zeabur_kube::ResourceRef::new("", "v1", "configmaps", "ConfigMap"),
+            Some("kube-system"),
+            INSTALLER_RECORD,
+        )
+        .await
+        .ok()
+        .map(|found| found.is_some());
     Ok(Json(CapabilityList {
         catalogue_commit: zeabur_catalog::CATALOGUE_COMMIT.to_owned(),
         items: capabilities,
-        installer: record
-            .unreadable
-            .is_none()
-            .then_some(record.object.is_some()),
+        installer,
     }))
 }
 

@@ -1045,6 +1045,15 @@ mod tests {
         assert_eq!(capabilities["installer"], true);
 
         cluster.update(|s| {
+            s.forbidden_in_namespaces.insert("configmaps".to_owned());
+        });
+        let capabilities = get(&cluster, "/api/v1/cluster/capabilities").await;
+        assert_eq!(capabilities["installer"], Value::Null);
+        cluster.update(|s| {
+            s.forbidden_in_namespaces.remove("configmaps");
+        });
+
+        cluster.update(|s| {
             s.facts.unreadable.push(zeabur_kube::Unreadable {
                 resource: "customresourcedefinitions.apiextensions.k8s.io".to_owned(),
                 status: KubernetesStatus::new(403, "Forbidden", "forbidden"),

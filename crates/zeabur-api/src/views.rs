@@ -346,7 +346,7 @@ pub struct CapabilityList {
     /// Each capability, sorted by name: existing (with evidence) or not (with what to install).
     pub items: Vec<zeabur_catalog::Capability>,
     /// Whether zeabur-installer set up the cluster, by its record, the ConfigMap
-    /// `kube-system/zeabur-installer`. `None` when that read was refused.
+    /// `kube-system/zeabur-installer`, read as the person. `None` when it cannot be read.
     pub installer: Option<bool>,
 }
 

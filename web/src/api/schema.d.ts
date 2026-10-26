@@ -2808,7 +2808,7 @@ export interface components {
       catalogueCommit: string
       /**
        * @description Whether zeabur-installer set up the cluster, by its record, the ConfigMap
-       *     `kube-system/zeabur-installer`. `None` when that read was refused.
+       *     `kube-system/zeabur-installer`, read as the person. `None` when it cannot be read.
        */
       installer?: boolean | null
       /** @description Each capability, sorted by name: existing (with evidence) or not (with what to install). */
