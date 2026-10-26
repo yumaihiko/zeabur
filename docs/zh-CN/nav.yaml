@@ -16,7 +16,7 @@
     compose: 导入 Docker Compose 服务
     templates: 从应用模板部署
     databases: 创建、备份与还原数据库
-    object-storage: 创建 S3 对象存储和存储桶
+    object-storage: 创建 S3 对象存储与存储桶
     cron-jobs: 按定时运行服务命令
 - group: configure
   label: 调整服务设置
@@ -43,8 +43,8 @@
     notifications: 将集群告警发送到通知渠道
     backups: 备份集群并从备份还原
     nodes: 添加与维护节点
-    components: 检查并安装集群组件
-    external-secrets: 从外部密钥库同步机密变量
+    components: 查看和安装集群组件
+    external-secrets: 从外部机密库同步机密变量
     s3-destinations: 注册共享的 S3 备份目的地
     diagnosis: 看懂状态、警告与诊断
 - group: reference

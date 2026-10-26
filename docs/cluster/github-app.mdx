@@ -3,12 +3,12 @@ title: Deploy private repositories with a GitHub App
 description: Create a GitHub App for the cluster and grant it to projects, so members can pick a GitHub repository and deploy without setting up a deploy key.
 ---
 
-After you set up the cluster's GitHub App, project members pick a GitHub repository when they add a service. Private repositories don't need a separate deploy key or token. Create the App in **Cluster** → **Overview**, install it on the GitHub account or organization that holds the repositories, then grant it to projects.
+After you set up the cluster's GitHub App, project members can pick a GitHub repository when they add a service. Private repositories don't need a separate deploy key or token. Create the App in **Cluster** → **GitHub**, install it on the GitHub account or organization that holds the repositories, then grant it to projects. You can also select **Connect GitHub** from **Deploy from Git** in a project and follow the on-screen steps.
 
 ## Before you start
 
-- The cluster has Zeabur Builder installed, which means the `builder-system` Namespace exists. If it doesn't, Zeabur says Zeabur Builder isn't installed.
-- You can write Secrets and ConfigMaps in `builder-system`. Usually only a cluster administrator can.
+- The cluster has Zeabur Builder installed, which means the `builder-system` namespace exists. If it doesn't, Zeabur says Zeabur Builder isn't installed.
+- You can write secrets and config files in `builder-system`. Usually only a cluster administrator can.
 - You can create an App on GitHub. To create it under an organization, you must be an owner of that organization.
 
 ## Create and install the App
@@ -18,7 +18,7 @@ After you set up the cluster's GitHub App, project members pick a GitHub reposit
 
 ### Enter the App name
 
-In the **GitHub App** section of **Cluster** → **Overview**, select **Create GitHub App** and fill in:
+Go to **Cluster** → **GitHub**, select **Create GitHub App**, and fill in:
 
 | Field | What to enter |
 | --- | --- |
@@ -35,7 +35,7 @@ In the **GitHub App** section of **Cluster** → **Overview**, select **Create G
 
 Select **Continue on GitHub** and confirm creation on GitHub. The App is private. It can only read repository contents and write commit statuses. If you set a webhook URL, it also receives push events.
 
-GitHub sends you back to **Finishing the GitHub App** in Zeabur. Review the secret to save (the private key isn't shown), then select **Save the GitHub App**. Finish this step within one hour of selecting **Create GitHub App**.
+GitHub sends you back to **Complete GitHub App setup** in Zeabur. Review the secret to save (the private key isn't shown), then select **Save the GitHub App**. Finish this step within one hour of selecting **Create GitHub App**.
 
 If the cluster already has an App, the new one replaces it. Services built with the old App pick up new commits again only after you grant the new App to their projects.
 
@@ -46,7 +46,7 @@ If the cluster already has an App, the new one replaces it. Services built with 
 
 Select **Install on GitHub**. On GitHub, choose the account or organization, then choose **All repositories** or specific repositories. Back in Zeabur, **Installed on** lists it.
 
-![The GitHub App section on the cluster Overview, with installed accounts acme and bob, each showing the projects it's granted to](https://oss.zeabur.com/shots/zeabur/en/light/github-app-installed.avif)
+![The cluster's GitHub tab, with installed accounts acme and bob, each showing the projects it's granted to](https://oss.zeabur.com/shots/zeabur/en/light/github-app-installed.avif)
 
 </Step>
 <Step>
@@ -54,6 +54,8 @@ Select **Install on GitHub**. On GitHub, choose the account or organization, the
 ### Grant it to projects
 
 On the account row, select **Choose projects** and check the projects to grant. Members of those projects can deploy repositories under this account that the App can read. Select **Review changes**, then **Apply**.
+
+Selecting **Connect GitHub** from **Deploy from Git** in a project follows the same steps to grant the account to that project.
 
 Projects you uncheck can no longer build from this account's repositories.
 
@@ -66,7 +68,7 @@ Projects you uncheck can no longer build from this account's repositories.
 
 In a granted project, add a service, choose **GitHub** as the source, and find the repository with **Search repositories**. Access shows "Read through the cluster's GitHub App, with no extra setup." The other steps are the same as [Build and deploy a service from Git](../deploy/git.mdx).
 
-The list is the repositories the App could read when you granted it to the project, and the page shows the update time. When a repository is added on GitHub, the list updates only after you apply again from **Choose projects**.
+The list contains the repositories the App could read when you granted it to the project, and the page shows the update time. When a repository is added on GitHub, the list updates only after you apply again from **Choose projects**.
 
 ## Do the same with kubectl
 
@@ -91,7 +93,7 @@ stringData:
   webhook-secret: example-webhook-secret
 ```
 
-Which projects can use which installation is stored in the ConfigMap `github-app-installations` in the same Namespace. The key is the installation ID (the number at the end of the GitHub installation page URL). The value is project names, separated by commas. `*` means every project:
+The ConfigMap `github-app-installations` in the same namespace specifies which projects can use each installation. The key is the installation ID (the number at the end of the GitHub installation page URL). The value is project names, separated by commas. `*` means every project:
 
 ```yaml
 apiVersion: v1
@@ -103,7 +105,7 @@ data:
   "87654321": shop, blog
 ```
 
-Zeabur also writes a ConfigMap `zeabur-github-app` (label `zeabur.com/github-app: "true"`) in each granted project. It records the repositories that were readable then, so members without permission to read `builder-system` can still pick a repository. Zeabur Builder doesn't read it. You can omit it when you set this up with kubectl. The list on screen is then empty, and you enter the repository URL yourself.
+Zeabur also writes a config file `zeabur-github-app` (label `zeabur.com/github-app: "true"`) in each granted project. It records the repositories that were readable then, so members without permission to read `builder-system` can still pick a repository. Zeabur Builder doesn't read it. You can omit it when you set this up with kubectl. The list on screen is then empty, and you enter the repository URL yourself.
 
 A service's Build sets the installation with `spec.source.githubApp.installationId`:
 
@@ -133,7 +135,7 @@ spec:
 ## Check the result
 
 - The **GitHub App** section shows the App name and **Open on GitHub**. **Installed on** lists the accounts and the projects they're granted to.
-- `kubectl -n builder-system get secret github-app` and `kubectl -n builder-system get configmap github-app-installations -o yaml` both find the objects, and the ConfigMap contains your installation ID.
+- `kubectl -n builder-system get secret github-app` and `kubectl -n builder-system get configmap github-app-installations -o yaml` both find the objects, and the config file contains your installation ID.
 - For a service deployed from a private repository, the first build on the **Builds** tab succeeds. `kubectl -n shop get build web` shows its status too.
 
 ## Troubleshooting
@@ -141,9 +143,9 @@ spec:
 | Situation | What to do |
 | --- | --- |
 | The page says Zeabur Builder isn't installed | Install Zeabur Builder first. See [Check and install cluster components](./components.mdx). |
-| You can't select **Create GitHub App** | You don't have permission to write a Secret in `builder-system`. Ask a cluster administrator. |
-| On return to Zeabur, it says GitHub didn't return a verification code | Select **Back to the cluster** and start over. |
-| **Installed on** can't be read | Zeabur can't reach GitHub, or the App's private key is wrong. Generate a new private key on GitHub and update `private-key` in the Secret. |
+| You can't select **Create GitHub App** | You don't have permission to write a secret in `builder-system`. Ask a cluster administrator. |
+| On return to Zeabur, it says GitHub didn't return a verification code | Create the App again from the same page. |
+| **Installed on** can't be read | Zeabur can't reach GitHub, or the App's private key is wrong. Generate a new private key on GitHub and update `private-key` in the secret. |
 | The repository doesn't appear in the project | The App installation doesn't include this repository, or the list is stale. Change the installation's repositories on GitHub, then apply again from **Choose projects**. |
 | A build starts a minute after the push | No webhook is set, so Zeabur Builder checks once a minute. |
 

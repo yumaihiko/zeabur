@@ -1,0 +1,127 @@
+---
+title: View and install cluster components
+description: Check which components are installed, their status, and what's missing, then use zeabur-installer on the server to install or remove them.
+---
+
+Open **Cluster** → **Components**. **Installed** lists detected components, and **Catalog** lists components in Zeabur Catalog. zeabur-installer installs and removes components on the server. Zeabur only shows their status and the commands to run.
+
+![Installed components and the catalog on the cluster components page](https://oss.zeabur.com/shots/zeabur/en/light/cluster-components.avif)
+
+## Before you begin
+
+- To detect installed components, the components page needs permission to read CRDs and IngressClasses across the cluster, as well as workloads in every namespace.
+- To install or remove components, you need root access to the server where zeabur-installer originally ran.
+- If you didn't install the cluster with zeabur-installer, see [Install with your own tools](#install-with-your-own-tools).
+
+## Check what's in the cluster
+
+**Installed** lists detected components, their versions, and their installation source (K3s, HelmChart, or Helm). It also marks each version as the Zeabur Catalog **Tested version** or **Newer than tested**. Components that aren't running are marked **Failing**.
+
+In **Catalog**, filter by **Installed** or **Recommended**, or use **Search components** to find components by name or purpose.
+
+If a feature such as backups or notifications already works, but its component card still shows **Install**, the components page hasn't detected it. It was likely installed under a different name or with another method. Find the existing deployment before installing another copy.
+
+## Install components
+
+<Steps>
+<Step>
+
+### View the commands to run
+
+Click **Install** on a component card to open a dialog with the commands to run on the server. If a template or build configuration needs a missing component, clicking **Install…** opens the same dialog.
+
+</Step>
+<Step>
+
+### Install on the server
+
+Connect to the server over SSH and choose a method:
+
+<Tabs items={["Installer page", "Config file"]}>
+<Tab value="Installer page">
+
+```sh
+sudo zeabur-installer gui
+```
+
+Open an SSH tunnel from your computer, then open the link the server prints:
+
+```sh
+ssh -L 8085:127.0.0.1:8085 root@server.example.com
+```
+
+Under **Components**, select the components to install. Go to **Review**, review the changes, and click **Install**.
+
+</Tab>
+<Tab value="Config file">
+
+Add the component ID to `enable` in `/etc/zeabur-installer/config.yaml`:
+
+```yaml
+enable:
+  - volume-backup/velero
+```
+
+If the component requires values, set `inputs` and `secretFiles` as described in [Installer configuration](../reference/installer-configuration.mdx#component-selection). Review `plan` before running `apply`:
+
+```sh
+sudo zeabur-installer plan
+sudo zeabur-installer apply
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+### Check the installation
+
+Return to **Cluster** → **Components**. The component and its version should appear under **Installed**. Then check the feature that uses it. For example, check **Cluster** → **Backups** for Velero or **Cluster** → **Notifications** for VictoriaMetrics.
+
+</Step>
+</Steps>
+
+## Remove components
+
+Click **Remove** on an installed component's card to open a dialog with the commands. Clear its checkbox on the installer page, or remove it from `enable` in the config file. For components installed by default, add them to `disable` instead. Then run `apply`.
+
+`plan` and the installer's **Review** page list the components to remove, what will remain, and any CRDs that will also be deleted. In either of the following cases, `apply` stops without making changes:
+
+- Something still uses the component. For example, custom resources still exist (including objects of CRDs that will also be deleted), Longhorn volumes remain, or replicas still pull images from zot. The installer lists these resources. Delete or move them first.
+- Removing the component will also delete the data it stores, as with Longhorn. Back up the data first, then add the component ID to `allowDataLoss` in the config file or select the consent checkbox under **Review**.
+
+After removal, the component's namespace and volumes remain. Some Charts also delete CRDs and all their objects; other CRDs remain. Once you're sure you no longer need these resources, see [Installer commands](../reference/installer.mdx#remove-components) for manual deletion instructions.
+
+zeabur-installer only removes components it installed. If you installed a component with Helm, Flux, or Argo CD, remove it with the same tool.
+
+## Install with your own tools
+
+If you didn't install the cluster with zeabur-installer, or you want to manage components with GitOps, use `zeaburctl components export` to print a component's manifest:
+
+```sh
+zeaburctl components export volume-backup/velero > velero.yaml
+zeaburctl components export volume-backup/velero --format helm
+```
+
+By default, the command prints a K3s/RKE2 `HelmChart`, which the cluster's built-in helm-controller installs. For other clusters, use `--format` to choose `helm`, `flux`, or `argocd`. Required component values appear as `<name>` placeholders. Replace them with actual values, then apply the manifest with `kubectl apply -f` or commit it to a GitOps repository. For command details, see [zeaburctl](../reference/zeaburctl.mdx#components-export).
+
+Manage later changes and removal through the same files or tools you used to install the component.
+
+### Replace built-in K3s/RKE2 components
+
+If the exported manifest starts with instructions to disable a built-in version, follow the steps for your cluster's distribution on every server before applying it:
+
+- K3s: Add the listed components to `disable` in `/etc/rancher/k3s/config.yaml`, then restart `k3s`.
+- RKE2: For metrics-server, add `rke2-metrics-server` to `disable` in `/etc/rancher/rke2/config.yaml`. For Traefik, set `ingress-controller: none` in the same file. Then restart `rke2-server`.
+
+<Callout type="warn">
+Disabling the built-in Traefik deletes its CRDs and all IngressRoute and Middleware objects. Ingress traffic will be interrupted until the replacement component starts. Disabling the built-in metrics-server makes the metrics API unavailable until the new version starts. Schedule the switch for a time when an interruption is acceptable.
+</Callout>
+
+## Common failures
+
+- The components page reports insufficient permissions: Give the cluster administrator the list of missing permissions shown on the page.
+- `apply` reports that a component is still in use: Resolve the listed objects, then run `apply` again.
+- `apply` asks you to set `allowDataLoss`: Back up the component's data first. Only set it once you're sure you want to delete the data.
+- The component still doesn't appear under **Installed** after installation: Check the logs for the `helm-install-<name>` Job in `kube-system` and whether the component's workloads have started.
