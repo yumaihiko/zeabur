@@ -42,7 +42,7 @@ enum Command {
     /// cluster. With other credentials, zeaburctl does the same steps on this computer, and the
     /// credentials stay here.
     Up(up::UpArgs),
-    /// Print a Zeabur Catalog component's manifests, for a cluster that zeabur-installer did not
+    /// Print Zeabur Catalog components' manifests, for a cluster that zeabur-installer did not
     /// install.
     Components(components::ComponentsArgs),
 }

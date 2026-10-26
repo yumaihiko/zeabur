@@ -96,6 +96,9 @@ use crate::views::{
 /// The most pods or events a cluster-wide read takes.
 pub(crate) const WIDE_LIMIT: usize = 5_000;
 
+/// The ConfigMap in `kube-system` where zeabur-installer records what it installed.
+const INSTALLER_RECORD: &str = "zeabur-installer";
+
 /// The distribution a kube-apiserver version names (`v1.36.5+k3s1`), as the API names it.
 fn distribution(version: &str) -> Option<String> {
     if version.contains("+k3s") {
@@ -216,9 +219,16 @@ pub(crate) async fn capabilities(
     }
     let mut capabilities = zeabur_catalog::detect(&state.catalogue, &facts);
     capabilities.sort_by(|a, b| a.name.cmp(&b.name));
+    let record =
+        crate::settings::store::read_config_map(cluster.as_ref(), "kube-system", INSTALLER_RECORD)
+            .await;
     Ok(Json(CapabilityList {
         catalogue_commit: zeabur_catalog::CATALOGUE_COMMIT.to_owned(),
         items: capabilities,
+        installer: record
+            .unreadable
+            .is_none()
+            .then_some(record.object.is_some()),
     }))
 }
 

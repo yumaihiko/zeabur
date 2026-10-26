@@ -1,4 +1,4 @@
-//! `zeaburctl components export`: a Zeabur Catalog component's manifests or Helm commands, for a
+//! `zeaburctl components export`: Zeabur Catalog components' manifests or Helm commands, for a
 //! cluster that zeabur-installer did not install. The text comes from the catalogue in this
 //! binary ([`zeabur_catalog::install`]); no cluster is read.
 
@@ -18,8 +18,8 @@ pub(crate) struct ComponentsArgs {
 
 #[derive(Debug, Subcommand)]
 enum ComponentsCommand {
-    /// Print what installs a component, with the catalogue's pinned versions and values. Apply it
-    /// with kubectl, or commit it to the repository a GitOps tool watches.
+    /// Print what installs one or more components, with the catalogue's pinned versions and
+    /// values. Apply it with kubectl, or commit it to the repository a GitOps tool watches.
     ///
     /// Values the component asks for show as `<name>` placeholders; replace them first.
     Export(ExportArgs),
@@ -27,8 +27,10 @@ enum ComponentsCommand {
 
 #[derive(Debug, clap::Args)]
 struct ExportArgs {
-    /// The component, `<capability>/<id>`, such as `certificates/cert-manager`.
-    component: String,
+    /// The components, `<capability>/<id>`, such as `certificates/cert-manager`, printed one after
+    /// another.
+    #[arg(required = true)]
+    components: Vec<String>,
     /// `helmchart`: K3s/RKE2 `HelmChart` objects, which helm-controller installs. `helm`: shell
     /// commands with `helm upgrade --install`. `flux`: Flux sources and `HelmRelease` objects.
     /// `argocd`: Argo CD `Application` objects.
@@ -75,11 +77,27 @@ pub(crate) fn run(args: &ComponentsArgs) -> ExitCode {
 
 fn text(args: &ExportArgs) -> Result<String, InstallError> {
     let format = args.format.install();
-    Ok(guide(&args.component, &args.profile)?
-        .formats
-        .into_iter()
-        .find(|f| f.format == format)
-        .map_or_default(|f| f.text))
+    let separator = if args.format == Format::Helm {
+        "\n"
+    } else {
+        "---\n"
+    };
+    let mut out = String::new();
+    for component in &args.components {
+        let text = guide(component, &args.profile)?
+            .formats
+            .into_iter()
+            .find(|f| f.format == format)
+            .map_or_default(|f| f.text);
+        if !out.is_empty() && !out.ends_with(separator) {
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(separator);
+        }
+        out.push_str(&text);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -106,6 +124,22 @@ mod tests {
         assert!(charts.contains("kind: HelmChart"), "{charts}");
         let commands = text(&export(&["certificates/cert-manager", "--format", "helm"])).unwrap();
         assert!(commands.contains("helm upgrade --install"), "{commands}");
+    }
+
+    #[test]
+    fn export_prints_each_component_named() {
+        let both = text(&export(&[
+            "certificates/cert-manager",
+            "image-updates/keel",
+        ]))
+        .unwrap();
+        let one = |c: &str| text(&export(&[c])).unwrap();
+        assert!(both.contains(&one("certificates/cert-manager")), "{both}");
+        assert!(both.contains(&one("image-updates/keel")), "{both}");
+        assert!(
+            text(&export(&["certificates/cert-manager", "certificates/nope"])).is_err(),
+            "an unknown one fails the whole export"
+        );
     }
 
     #[test]

@@ -1025,6 +1025,24 @@ mod tests {
         sorted.sort();
         assert_eq!(names(&capabilities), sorted);
         assert!(capabilities["catalogueCommit"].is_string());
+        assert_eq!(capabilities["installer"], false);
+
+        cluster.update(|s| {
+            s.objects
+                .entry("kube-system".to_owned())
+                .or_insert_with(|| NamespaceObjects {
+                    namespace: "kube-system".to_owned(),
+                    ..NamespaceObjects::default()
+                })
+                .config_maps
+                .push(
+                    serde_json::from_value(json!({"metadata": {
+                        "name": "zeabur-installer", "namespace": "kube-system"}}))
+                    .unwrap(),
+                );
+        });
+        let capabilities = get(&cluster, "/api/v1/cluster/capabilities").await;
+        assert_eq!(capabilities["installer"], true);
 
         cluster.update(|s| {
             s.facts.unreadable.push(zeabur_kube::Unreadable {

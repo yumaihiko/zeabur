@@ -41,10 +41,10 @@
 //! reading the storage classes (local-path, the default, and Longhorn) and the volumes behind
 //! claims.
 //!
-//! `ZEABUR_DEMO_KEEL=1` installs Keel, so a project offers Deploy from Git and Upload a folder.
-//! A registry on 127.0.0.1 takes the uploaded folders, and a stand-in for Zeabur Builder's
-//! controller answers upload token requests and builds the digest named in a `Build` (a few
-//! seconds, then it is built).
+//! `ZEABUR_DEMO_KEEL=1` installs Keel and zot, so a project offers Deploy from Git and Upload a
+//! folder; without it both name the two as missing. A registry on 127.0.0.1 takes the uploaded
+//! folders, and a stand-in for Zeabur Builder's controller answers upload token requests and builds
+//! the digest named in a `Build` (a few seconds, then it is built).
 //!
 //! `ZEABUR_DEMO_GITHUB=1` starts a fake GitHub on 127.0.0.1, so Cluster → GitHub App goes through
 //! the manifest flow without leaving the demo. `ZEABUR_DEMO_GITHUB=installed` also makes the App
@@ -59,7 +59,8 @@
 //! `ZEABUR_DEMO_NO_DOMAINS=1` leaves both unset.
 //!
 //! `ZEABUR_DEMO_RKE2=1` makes the cluster an RKE2 one installed by Zeabur Installer: the nodes
-//! have addresses and a location, and the control plane runs as static pods.
+//! have addresses and a location, the control plane runs as static pods, and the installer's
+//! record `kube-system/zeabur-installer` exists, so install steps name the installer.
 //!
 //! The `web` pods have no shell, so their terminal offers a debug container, which starts a moment
 //! after it is added, as do tools pods and node shells. With `ZEABUR_DEMO_RKE2=1`, `vps-2` also has
@@ -1763,6 +1764,13 @@ fn state() -> State {
             BTreeMap::from([
                 ("app".to_owned(), "keel".to_owned()),
                 ("helm.sh/chart".to_owned(), "keel-1.0.5".to_owned()),
+            ]),
+        ));
+        facts.workload_labels.push((
+            "StatefulSet".to_owned(),
+            BTreeMap::from([
+                ("app.kubernetes.io/name".to_owned(), "zot".to_owned()),
+                ("helm.sh/chart".to_owned(), "zot-0.1.128".to_owned()),
             ]),
         ));
     }
@@ -3707,6 +3715,10 @@ fn rke2(s: &mut State) {
             namespace: "kube-system".to_owned(),
             ..NamespaceObjects::default()
         });
+    system.config_maps.push(from(json!({
+        "metadata": {"name": "zeabur-installer", "namespace": "kube-system"},
+        "data": {"version": "v0.1.0"}
+    })));
     // RKE2 runs the control plane as static pods; kube-apiserver shows each as a mirror pod.
     for component in ["etcd", "kube-apiserver"] {
         system.pods.push(from(json!({
