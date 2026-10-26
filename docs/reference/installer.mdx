@@ -1,320 +1,179 @@
 ---
-title: How the installer works
-description: How plan and apply compute and carry out an installation, step by step.
+title: Installer commands
+description: Reference for zeabur-installer planning, installation, health checks, node management, and removal commands.
 ---
 
-`plan` and `apply` compute the same plan from three inputs: the configuration, a Zeabur Catalog
-release (`index.json`), and three facts about the host (architecture, host name, memory). The
-planning code (`zeabur-installer-plan`) does no I/O, so every decision is unit-tested and the
-same inputs always give the same plan, byte for byte. `apply` then carries the plan out step by
-step. Each step looks at what is already there first, so running `apply` again resumes an
-interrupted install or repairs drift.
+Run `plan` first to see what the configuration will create, then run `apply` as root. If installation stops, fix the cause and run `apply` again with the same configuration. Each step checks what's already there and changes only what's missing or different.
 
-## The steps of `apply`
+To install with the web interface, see [Install Zeabur on a server](../get-started/quickstart.mdx). To use a configuration file and commands, see [Install with a configuration file and commands](../get-started/advanced-install.mdx). For YAML fields, see [Installer configuration](./installer-configuration.mdx). If you already have a Kubernetes cluster, follow [Install Zeabur in an existing cluster](../get-started/install.mdx).
 
-1. **Preflight.** The installer checks that it runs as root under systemd and that no other
-   Kubernetes distribution is installed. It checks that the ports are free (unless RKE2 from an
-   earlier run is the one using them): 80 and 443, 6443 and 9345 on a server, and the kubelet's
-   10250. ServiceLB takes 80 and 443 on every node, workers too, and forwards them on the nodes
-   where Traefik runs (its Service keeps the client's address with `externalTrafficPolicy:
-   Local`); Traefik can move to any node. It checks that there is enough disk space and whether
-   the disk is encrypted, asks `timedatectl` whether the clock is synchronised, and warns when the
-   kernel keeps memory for a crash kernel (kdump). A failed
-   check stops the run before anything changes.
-2. **Node preparation.** Only when the plan includes Longhorn. Longhorn attaches volumes over
-   iSCSI from the node itself, so the installer installs the iSCSI initiator and NFS client
-   packages that are missing, writes `/etc/modules-load.d/zeabur-longhorn.conf` and loads
-   `iscsi_tcp`, and enables and starts `iscsid`. If `multipathd` runs, it adds
-   `/etc/multipath/conf.d/zeabur-longhorn.conf`, which keeps it off Longhorn's disks (tgt's
-   `IET`/`VIRTUAL-DISK` devices) and restarts it. Each part is checked first, so a second run
-   changes nothing; preflight lists what is missing as warnings.
-3. **Host files.** The installer writes RKE2's `config.yaml` and its audit policy. It writes the
-   kernel parameters the CIS profile requires (and loads them) and creates the `etcd` user. With
-   Zeabur Identity, it adds a drop-in that points kube-apiserver at an authentication
-   configuration file, and that file starts out trusting no issuer. It sets the node's addresses
-   in `config.yaml.d/20-node-ip.yaml`: the first IPv4 address on the default route's interface,
-   and an IPv6 address on the default IPv6 route's interface that is neither temporary nor
-   deprecated (a static one first, then a stable SLAAC one). Without it RKE2 may take a temporary
-   IPv6 address, which changes within a day. Every file is written atomically and only when its
-   content or mode differs.
-4. **RKE2.** If the pinned version is not already installed, the installer downloads it, checks
-   the digests, unpacks it into `/usr/local` and starts `rke2-server`. If RKE2 is already
-   running and its configuration changed, it restarts it. It then waits for `/readyz` and for
-   the node to report Ready with a heartbeat newer than the start, so a Ready condition from
-   before a restart does not count.
+## Common options
 
-   Archives in `sources.imageArchives` are copied to `agent/images/` as
-   `zeabur-installer-<name>`, only when their content differs. RKE2 imports an archive when its
-   size or modification time changes, and it records the time in whole seconds, so the
-   installer drops the fraction from each archive's time and an unchanged one is not imported
-   again on each start.
-   Archives the installer copied that are no longer listed are removed, so an old archive never
-   overrides a newer image.
-5. **Namespaces.** The installer creates every namespace the components use. A namespace is
-   exempt from the `restricted` Pod Security level only when its component needs more, and the
-   plan says why. `longhorn-system` is one: Longhorn's manager, CSI plugin and instance managers
-   mount `/dev` and the kubelet's directory from the host and run `iscsiadm` and `mount` in the
-   host's namespaces. Every namespace except the ingress namespace gets a baseline `NetworkPolicy`:
-   traffic may come in from the same namespace, from the installer's other namespaces and from
-   the nodes, and from nowhere else. The installer's namespaces carry the label
-   `zeabur.com/platform: "true"`, which the policies select, and the installer applies
-   namespaces under their own field manager, so a component's own namespace labels (Zeabur
-   Identity's `app.kubernetes.io/managed-by`, for one) are merged rather than replaced.
-   RKE2's CIS profile adds `kube-system/default-network-policy`, which lets in only pods of
-   `kube-system` and so drops outside traffic to ServiceLB's pods there. A node without a
-   Traefik pod sends ingress through its ServiceLB pod, so its requests never reached Traefik.
-   The installer adds `kube-system/zeabur-installer-servicelb`, which lets traffic from
-   anywhere into the pods labelled `svccontroller.rke2.cattle.io/svcname`, ServiceLB's pods,
-   and no others.
-6. **Storage.** RKE2, unlike k3s, ships no storage class. Unless the cluster already has a
-   default one, the installer adds rancher's local-path-provisioner as the default class. Each
-   volume is a directory under `/var/lib/zeabur/storage` on this server's disk, with no copy
-   elsewhere: back it up (Velero or K8up can). The directory is outside RKE2's, so
-   `rke2-uninstall.sh` leaves the data; deleting a volume's claim deletes its directory.
+```sh
+zeabur-installer --version
+zeabur-installer --help
+zeabur-installer --config /etc/zeabur-installer/config.yaml plan
+```
 
-   When the plan makes Longhorn's class the default (`profile: multi-node`), local-path is added
-   as a plain class instead, and on a cluster where it was the default it stops being one; the
-   plan warns about that first. A default class the installer did not make then stops the run,
-   since two defaults would leave new claims to chance. `doctor` reports when the default class
-   differs from the plan's.
-7. **Components.** Components are installed in the catalog's order, Longhorn first so that the
-   volumes of the components after it land on its class. For each one, the installer creates
-   its Secrets and applies its releases. A chart release becomes a `HelmChart` object for RKE2's
-   helm-controller, with `failurePolicy: abort`. The installer first downloads the chart and
-   checks it against the catalog's `chartDigest`, then puts it in the object's `chartContent`,
-   so helm-controller installs that archive and fetches nothing. Manifest URLs are checked
-   against `urlDigests` the same way. A mismatch stops `apply`. The installer waits for helm-controller's
-   install job, then for the catalog's readiness checks. Catalog checks that create test objects
-   are left to the catalog's own CI.
-8. **Zeabur Identity.** In `local` mode, the installer first makes the CA. It writes the
-   admission policy `zeabur-system-hosts` (see [Security defaults](#security-defaults)). It then
-   applies Zeabur Identity's CRDs, manifests and Ingress and waits for its rollout. It replaces the
-   authentication configuration with the one `zeabur-identityctl kube-config` writes, and waits
-   until kube-apiserver's reload metric shows the new file was loaded. kube-apiserver reaches
-   Zeabur Identity through its Service, so this step does not depend on DNS or the public
-   certificate. cert-manager issues the certificate on that Service from a private root CA
-   that lasts 10 years, and renews it on its own; the authentication configuration names only
-   the root CA, so it does not change when the certificate renews.
-9. **Zeabur.** The installer registers Zeabur's OAuth client, with Zeabur's URL as its home so
-   Zeabur Identity lists it among the apps, and keeps its secret in a Secret.
-   It creates the plan-signing key and, in `local` mode, the CA bundle. It then installs the chart
-   as a `HelmChart` and waits until Zeabur is available.
-10. **First admin.** On the first install, the installer prints a one-time link for the first
-   admin's passkey, valid for 24 hours.
-11. **Record.** The installer writes what it installed to the ConfigMap
-    `kube-system/zeabur-installer`, which `doctor` reads.
+Every subcommand accepts `--config` (`-c`), which defaults to `/etc/zeabur-installer/config.yaml`.
 
-## Adding nodes
+## `plan`
 
-`node add` runs on a server and prints a join configuration for the new VM:
+```sh
+sudo zeabur-installer --config /etc/zeabur-installer/config.yaml plan
+sudo zeabur-installer --config /etc/zeabur-installer/config.yaml plan --json
+```
 
-- **Server address**: `https://<InternalIP>:9345`, the RKE2 supervisor on this server, unless
-  `--address` names another.
-- **Token** for a worker: a Kubernetes bootstrap token, a Secret `bootstrap-token-<id>` in
-  `kube-system` that kube-controller-manager deletes when it expires (one hour by default,
-  `--ttl` up to 24 hours). The token string is `K10<ca-hash>::<id>.<secret>`; the hash is the
-  SHA-256 of the cluster CA, so the new VM refuses a server with another CA. Zeabur creates the
-  same Secret through the API. RKE2 accepts bootstrap tokens on the agent routes only, so a
-  server gets the cluster's server token instead, which does not expire.
-- For a server, **`serverConfig`**: the components the cluster disables and whether
-  kube-apiserver trusts Zeabur Identity. Every server must agree on these.
+`plan` reads the configuration, Catalog, and host information, then lists RKE2, components, namespaces, host files, storage classes, memory estimates, and warnings. It then runs the same host checks as `apply` without changing the host. If a check fails, it reports that `apply` will stop. Add `--json` to output JSON without running the host checks.
 
-On the new VM, `plan` times five TCP connections to port 9345 and warns when the median is over
-10 ms, or calls it critical over 50 ms: between availability zones of one region a round trip
-takes about 0.5 to 2 ms, and every etcd write waits for a majority of servers. It tries the TCP
-ports it needs. UDP 8472 cannot be checked this way, and the plan says so.
+Without a configuration file, `plan` generates `sslip.io` test names from the host's address and uses `local` certificate mode and the `standard` preset so you can preview the result. `apply` always requires a configuration file.
 
-`apply` writes the token to `/etc/rancher/rke2/zeabur-join-token` (mode 0600), the same CIS
-profile, kernel parameters and kubelet settings as the first server, and a drop-in
-`config.yaml.d/10-join.yaml` with the server and the token file. It installs RKE2,
-starts `rke2-agent` or `rke2-server`, and waits until the node is Ready, reading its own Node
-with the kubelet's credentials. A server also copies Zeabur Identity's authentication
-configuration from the ConfigMap `kube-system/zeabur-identity-authn`, which `apply` on the first
-server publishes.
-The installer sets no `topology.kubernetes.io/region` or `zone` labels; an admin who wants them
-sets them on the nodes with `kubectl label node`.
+`apply` recalculates the installation from the configuration when it runs. If you change the YAML after running `plan`, `apply` installs the new configuration.
 
-When the cluster runs Longhorn, `node add` adds `longhorn: true` to the join configuration, and
-`apply` on the new VM prepares it as on the first server before installing RKE2. A node that
-joined before Longhorn was added has none of it; `doctor` on a server reports the nodes
-Longhorn finds not ready, from its `nodes.longhorn.io` conditions. Add `longhorn: true` to that
-node's configuration and run `apply` there.
+## `apply`
 
-The baseline NetworkPolicies let in traffic from the first address of every node's pod range.
-Canal's VXLAN interface holds that address, and a node's traffic to pods on other nodes leaves
-from it: kube-apiserver calling a webhook, containerd pulling from zot. A node's traffic to its
-own pods, kubelet probes among them, passes without a rule. A new worker is not in the policies
-until `node sync` rewrites them: after a worker joins, run `zeabur-installer node sync` on a
-server. `node add` prints this step, and `doctor` on a server warns until it runs. A joining
-server runs the same sync itself once it is Ready.
+```sh
+sudo zeabur-installer --config /etc/zeabur-installer/config.yaml apply
+sudo zeabur-installer doctor
+```
 
-On a joined node, `doctor` checks the RKE2 unit, that the node is Ready, the distance to the
-server and the disk encryption, and on a server whether the authentication configuration matches
-the cluster's. It also warns when the node's InternalIP is a temporary or deprecated IPv6
-address, or one the host no longer has. `uninstall` there prints how to drain and remove the
-node, run `rke2-uninstall.sh`, then `node sync` on a server to take its addresses out of the
-policies.
+Requires Linux, systemd, and root access. The installer first checks the host, ports, disk, and clock synchronization. A failed check stops the run before anything is written. An unsynchronized clock only produces a warning. The installer also warns when the kernel reserves memory for crash dumps (kdump) and provides a command to turn it off. A server needs `80`, `443`, `6443`, `9345`, and `10250`; a worker needs only `80`, `443`, and `10250`. ServiceLB uses `80` and `443` on every node.
 
-## A personal install
+To create a cluster, the installer runs these steps in order:
 
-With `use: personal`, `apply`:
+1. Prepares host packages for the selected components, such as the iSCSI and NFS clients Longhorn needs.
+2. Writes the RKE2 configuration, kernel parameters required by CIS, and audit policy. The audit log keeps only request metadata and records every request for a secret. See [Secret encryption and access logs](./security.mdx#secret-encryption-and-access-logs).
+3. Downloads RKE2 to `/var/lib/rancher/zeabur-installer/downloads`, verifies it against the SHA-256 pinned by the installer, starts `rke2-server`, and waits for the API and node to be ready.
+4. Creates the components' namespaces, baseline NetworkPolicies, and storage classes. RKE2's default CIS policy in `kube-system` blocks outside traffic to ServiceLB. On a node without Traefik, incoming requests can't reach Traefik. The installer adds `kube-system/zeabur-installer-servicelb` to allow outside traffic into ServiceLB replicas only.
+5. Installs components in Catalog order and waits for them to be ready. It downloads each chart and manifest file first and stops if its SHA-256 doesn't match the Catalog.
+6. With `zeabur: true`, adds the `zeabur-system-hosts` admission policy first to prevent projects from using Zeabur's and Zeabur Identity's domains. See [Zeabur's and Zeabur Identity's domains](./security.mdx#domains-for-zeabur-and-zeabur-identity). It then installs Zeabur Identity, configures the API server to trust it, registers the OAuth client, and installs Zeabur. cert-manager automatically renews the certificate the API server uses to connect to Zeabur Identity. See [Zeabur Identity's internal certificate](./security.mdx#zeabur-identitys-internal-certificate).
+7. On the first install, prints a one-time setup link for the first admin, valid for 24 hours, and writes the installation record to the `kube-system/zeabur-installer` config file.
 
-1. Checks the host as for a server, with KubeSolo's ports: 80, 443, 6443, 10250 and 10443. It
-   stops when Docker is on the host (its binary, socket or service) or the iptables FORWARD
-   policy is DROP: Pods could not reach the internet and certificates would fail.
-2. Downloads the pinned kubectl and KubeSolo's offline archive, checked by SHA-256, and writes
-   `/etc/kubesolo/config.yaml` and the `kubesolo` systemd unit.
-3. Starts KubeSolo and waits for the node, CoreDNS and the local-path provisioner.
-4. Applies the release manifest of the standalone
-   [helm-controller](https://github.com/k3s-io/helm-controller), checked by SHA-256, with the
-   controller's image pinned by digest. It runs as upstream ships it: its ServiceAccount is
-   cluster admin. The manifest's klipper-helm v0.9.10 does not label a release with the chart's
-   configuration hash, so helm-controller would upgrade every chart again and again; the install
-   Jobs run `rancher/klipper-helm:v0.13.3-build20261021`, the image k3s pairs with this
-   helm-controller. That image stays a tag, because helm-controller keeps only 64 characters of
-   each string of a Job it applied and would replace a Job named by digest forever; once the Jobs
-   ran, `apply` and `doctor` compare the digest they ran with the pinned one.
-   KubeSolo's webhook replaces a new Job's whole `nodeSelector`, which also makes helm-controller
-   replace its Jobs forever, so the `kubesolo` unit runs `/usr/local/libexec/zeabur-kubesolo-webhook`
-   after each start: it removes `jobs` from the rules of `webhook.kubesolo.io` with kubectl, and
-   watches for a minute in case KubeSolo writes them again. Pods and volumes still get the node
-   from the same webhook.
-5. Creates the components' namespaces and installs each component as a `HelmChart` in
-   `kube-system`, as for a team install. No network policies: KubeSolo does not enforce them.
-   With `enable: [builds]` that includes zot and Zeabur Builder (on a host with 1800 MiB or
-   more): containerd gets a `hosts.toml` and zot's CA under
-   `/var/lib/kubesolo/containerd/registry/zot.zot.svc:5000/`, and `kube-public/zeabur-info` names
-   the registry for `zeaburctl up`.
-6. Records the install in the ConfigMap `kube-system/zeabur-installer` and writes a kubeconfig with
-   the admin client certificate to `/etc/zeabur-installer/kubeconfig.yaml`, mode 0600.
+When installation finishes, the installer prints the Zeabur and Zeabur Identity URLs. Open the setup link and add a passkey to sign in to Zeabur and view the cluster. In `local` mode, first configure the browser to trust the CA the installer generated.
 
-Nothing of the installer runs afterwards, and none of this needs it: KubeSolo is a systemd
-service, and the components are `HelmChart` objects that kubectl reads and changes. `uninstall`
-removes nothing; it prints the commands that remove KubeSolo and, after a reboot (containers and
-their mounts outlive the service), its data.
+`apply` restores installer-managed files to the content it generates. Put custom RKE2 settings in `/etc/rancher/rke2/config.yaml.d/90-local.yaml` instead of changing the installer's `config.yaml`.
 
-## Remove a component
+## `gui`
 
-Only the installer installs and removes components; Zeabur shows them and the commands. To
-remove one, untick it under Components in `gui`, or take it out of `enable` (for a component the
-preset brings, add it to `disable`), and run `apply`. A personal install works the same way.
+Run on the server:
 
-`plan` lists the removal under "Removed", with what stays and the CRDs that go. `apply` removes
-components once the cluster runs, before it sets up namespaces, storage and the components that
-stay. A component is removed before the components it needs. For each one, `apply` deletes the `HelmChart` objects in
-`kube-system` that carry the label `app.kubernetes.io/managed-by: zeabur-installer` and the
-annotation `installer.zeabur.com/component: <capability>/<id>`, and waits until
-helm-controller's `helm-delete-<chart>` job has uninstalled the chart. The installer removes
-only what it installed: a component installed by Helm, Flux or Argo CD has no such annotation
-and stays. A component the catalog no longer lists stays too; `plan` warns and gives the
-`kubectl delete` command.
+```sh
+sudo zeabur-installer gui
+```
 
-The uninstall deletes the CRDs that the chart puts in its templates, and every object of them in
-the cluster. Helm marks these CRDs with the annotations `meta.helm.sh/release-name` and
-`meta.helm.sh/release-namespace`. Before it removes anything, the installer reads these
-annotations from the cluster, so `plan`, the GUI and `apply` name the CRDs that go. A CRD from the
-chart's `crds/` folder has no such annotations and stays. So does a CRD with the annotation
-`helm.sh/resource-policy: keep`.
+Create an SSH tunnel from your computer:
 
-`apply` changes nothing while a component is still in use, and names what uses it:
+```sh
+ssh -L 8085:127.0.0.1:8085 root@server.example.com
+```
 
-| Component | In use while |
+Open the full link printed by the server. The GUI listens on `127.0.0.1:8085` by default. Use `--listen <address:port>` to change the address. The GUI writes the same configuration file and runs the same `apply` when you start installation. For screenshots of each step, see [Install Zeabur on a server](../get-started/quickstart.mdx).
+
+<Callout type="warn">
+The GUI modifies this host as root. Keep it listening on loopback and access it through an SSH tunnel. If you bind it to an external address, it sends the sign-in token and installation configuration over unencrypted HTTP.
+</Callout>
+
+After installation, press `Ctrl-C` to close the GUI. RKE2 and the installed services keep running.
+
+## `doctor`
+
+```sh
+sudo zeabur-installer doctor
+```
+
+On the server that created the cluster, `doctor` checks the RKE2 unit, API, components in the installation record, default storage class, Zeabur and Zeabur Identity Deployments, Zeabur Identity's internal certificate, node addresses, baseline network policies, secret encryption in etcd, and encryption of `/var/lib/rancher`. It checks against the last `apply` record. If you change the YAML, run `apply` again for those changes to count.
+
+On a node that joined an existing cluster, it checks the local RKE2 unit, whether the node is ready, connectivity and latency to the server, and disk encryption. On a server, it also compares Zeabur Identity's authentication configuration.
+
+| Exit code | Meaning |
 |---|---|
-| One with custom resources | objects of the CRDs that the catalog lists for it, or of the CRDs that the uninstall deletes, exist outside the namespaces of the components removed with it. For a CRD that the uninstall deletes, cluster-scoped objects count too |
-| Longhorn | a PersistentVolume of the driver `driver.longhorn.io` exists |
-| zot | a Pod outside zot's namespace runs an image from `zot.zot.svc:5000` |
+| `0` | Checks passed |
+| `1` | Warnings found |
+| `2` | Faults found |
+| `3` | Checks couldn't run, for example, because the command wasn't run as root |
 
-Delete or move those first. Trivy Operator's reports are its own output, so they do not count.
+Invalid command-line arguments also return `2`. To check from your computer through the Kubernetes API, use [`zeaburctl doctor`](./zeaburctl.mdx#doctor). Its exit codes have the same meanings.
 
-When the uninstall deletes the data a component keeps, `apply` also wants it named in
-`allowDataLoss` (the GUI asks with a checkbox in the review step). For Longhorn, `apply` then
-sets its `deleting-confirmation-flag`, without which Longhorn refuses to uninstall, and every
-volume's replicas go with it.
+## `node add` and `node sync`
 
-What stays, and how to delete it by hand once nothing needs it:
+Run on an existing server:
 
-- The component's namespace, with its Secrets and the volumes (PersistentVolumeClaims) of its
-  workloads: `kubectl delete namespace <namespace>`. Back the volumes up first.
-- The CRDs that the uninstall does not delete (those not named under "deletes these CRDs"):
-  `kubectl get crd -o name | grep <group>`, then `kubectl delete` those. That deletes every
-  object of them in the cluster.
-- Manifests the installer applied for it (Gateway API CRDs, cert-manager issuers): `plan` names
-  them; delete them with `kubectl delete -f` on the same URL or by name.
-- Other leftovers the catalog lists, such as Longhorn's `longhorn-static` storage class:
-  `kubectl delete storageclass longhorn-static`.
+```sh
+sudo zeabur-installer node add
+sudo zeabur-installer node add --role worker --ttl 30m
+sudo zeabur-installer node add --role server --address 10.0.0.5
+```
 
-No finalizer of Zeabur's is involved, so all of this works with Zeabur removed.
-
-## What stays after uninstalling
-
-`rke2-uninstall.sh` removes RKE2 and its data, but not the installer's own files: the download
-cache and local CA in `/var/lib/rancher/zeabur-installer`, the configuration
-`/etc/zeabur-installer/config.yaml`, and on a joined node the token file
-`/etc/rancher/rke2/zeabur-join-token` if RKE2 left it. Once RKE2 is gone, `uninstall` lists what
-is left, and `uninstall --purge` removes it, along with the module and multipath drop-ins written
-for Longhorn. The packages installed for Longhorn stay. Volumes under `/var/lib/zeabur/storage`
-and Longhorn's replicas under `/var/lib/longhorn` stay either way: delete them by hand once they
-are backed up.
-
-## Security defaults
-
-- **RKE2's `cis` profile**: Secrets are encrypted at rest, Pod Security defaults to `restricted`
-  for unlabelled namespaces, NetworkPolicies cover the system namespaces, and the kubelet
-  protects kernel defaults. Project namespaces Zeabur creates override that default with
-  `baseline` labels; `kube-system` and Zeabur's own namespaces are unchanged.
-- **Audit log**: request metadata only, so Secret values stay out of it. Every request on
-  Secrets is kept, from anyone. Of the rest, only writes by people and workloads are kept: reads,
-  Events, Leases, access reviews, health checks and requests from nodes and the control plane are
-  dropped. The log is `/var/lib/rancher/rke2/server/logs/audit.log` on each server; RKE2 keeps
-  10 files of 100 MB for at most 30 days. RKE2's own default policy logs nothing.
-- **Secrets encryption**: `doctor` on the first server fails when Secrets in etcd are not encrypted.
-  Rotate the key with `rke2 secrets-encrypt rotate-keys`
-  ([RKE2 docs](https://docs.rke2.io/security/secrets_encryption)).
-- **`kubeconfig` mode 0600** and a PID limit per pod.
-- **No long-lived admin credential handed out.** People reach the cluster through Zeabur
-  Identity. Their everyday tokens can read the cluster; changing it takes a fresh passkey tap.
-  `/etc/rancher/rke2/rke2.yaml` stays on the server as root's credential of last resort.
-- **Zeabur Identity's internal certificate** renews on its own. Check it with
-  `kubectl -n zeabur-identity get certificate`; both certificates must show `READY True`, and
-  `doctor` checks the same. The root CA's private key is in the Secret
-  `zeabur-identity-internal-ca` in the `zeabur-identity` namespace. Anyone who can read Secrets
-  there can sign a certificate for Zeabur Identity's Service; with a way to intercept traffic to
-  that Service, they could make kube-apiserver accept tokens they sign. Zeabur Identity's own
-  ServiceAccount cannot read that Secret. To replace the root CA, delete the Secrets
-  `zeabur-identity-internal-ca` and then `zeabur-identity-internal-tls`, waiting after each with
-  `kubectl -n zeabur-identity wait certificate/<name> --for=condition=Ready`, and run
-  `sudo zeabur-installer apply` on every server. Sign-in through Zeabur Identity stops working
-  from the second delete until `apply` finishes.
-- **Zeabur's and Zeabur Identity's domains** stay theirs. With `zeabur: true`, the
-  ValidatingAdmissionPolicy `zeabur-system-hosts` refuses an Ingress or HTTPRoute in another
-  namespace that names a domain an Ingress in `zeabur` or `zeabur-identity` serves, in a rule or
-  in `spec.tls`, or a wildcard that covers one. Outside the installer's namespaces (labelled
-  `zeabur.com/platform`), every Ingress rule needs a `host` and every HTTPRoute a
-  hostname: Traefik serves a rule without one on every domain, and a longer path or
-  `router.priority` puts it ahead of Zeabur's. The domains are read from those Ingresses, so a
-  new domain needs no change. Only a change to `spec` is checked, and routes made before stay.
-  Admins are held to it too. `apply` leaves an existing binding as it is: set
-  `validationActions` to `[Warn]` on `zeabur-system-hosts-zeabur` or
-  `zeabur-system-hosts-zeabur-identity` to only warn. A deleted binding comes back on the next
-  `apply`. The policy stays when Zeabur is removed.
-- **Pinned RKE2 digests.** See the [security policy](https://github.com/zeabur-oss/zeabur/blob/main/SECURITY.md#what-the-installer-trusts).
-
-## What is verified
-
-| Part | Status |
+| Option | Default and purpose |
 |---|---|
-| Planning: selection, dependencies, values, inputs, secrets, namespaces, RKE2 files | Unit-tested |
-| Host helpers: atomic files, secret file modes, digests, checksum lists, chart packing | Unit-tested |
-| RKE2 digests | Checked against the release's lists by `scripts/bump-rke2.sh` |
-| Catalog chart and URL digests: repository index lookup, registry token, mismatch | Unit-tested; downloads from real registries **not verified yet** |
-| `apply` on a fresh server | Verified with the `minimal` preset on Ubuntu 26.04 arm64, RKE2 v1.36.5 |
-| RKE2 `cis` with the catalog's components (Pod Security exemptions, NetworkPolicy baseline) | **Not verified yet** |
-| Authentication file with `anonymous.enabled: false` on RKE2 | **Not verified yet**: RKE2 runs k3s's server, which drops `--anonymous-auth=false` when the file is set, so the file follows k3s's form |
-| `local` mode name resolution from pods (sslip.io names, hairpin through ServiceLB) | **Not verified yet** |
-| Storage classes and Longhorn node preparation: planning, the default class, package names per distribution | Unit-tested |
-| Longhorn on RKE2 `cis` with the baseline NetworkPolicies; node preparation on Debian, RHEL and SUSE hosts; the multipath drop-in | **Not verified yet** |
-| Join planning: configuration, warnings, latency thresholds, `node add` output | Unit-tested |
-| A worker or server joining a real cluster, `node sync` with Canal | Verified on two Ubuntu 26.04 arm64 VMs, RKE2 v1.36.5 |
-| The baseline NetworkPolicies' node sources on two nodes: cert-manager's and CloudNativePG's webhooks on the worker, probes, ingress | Verified on two Ubuntu 26.04 arm64 VMs, RKE2 v1.36.5 |
-| Port 80 through a worker's ServiceLB pod to Traefik on the server, with `zeabur-installer-servicelb` | Verified on two Ubuntu 26.04 arm64 VMs, RKE2 v1.36.5 |
-| The CA hash from `kube-root-ca.crt` equals the server token's | Checked by `node add` each time; equal on the same VMs |
+| `--role` | Defaults to `worker`; also accepts `server` |
+| `--address` | Defaults to this node's `InternalIP`; the new host uses this address to reach the supervisor |
+| `--ttl` | Worker token lifetime. Defaults to `1h`; accepts values such as `30m` and `1h`, up to `24h` |
+
+`node add` prints the join YAML and commands for the new VM. The new VM must use the same hosting provider and region as this server. It can be in a different availability zone. Workers use an expiring bootstrap token. Servers use the cluster's server token, which doesn't expire; `--ttl` has no effect on it. Treat the output like a password and set its permissions to `0600` when saving it on the new host.
+
+After the new host applies the join configuration, run this on an existing server:
+
+```sh
+sudo zeabur-installer node sync
+```
+
+`node sync` updates the installer's baseline network policies to allow traffic from every current node: the first address in each node's replica network range. A joining server runs the sync itself. After a worker joins, you must run `node sync` once on a server. Until then, the network policies block traffic from the new node. `node add` also prints a reminder for this step. For network and storage requirements, see [Add nodes](../cluster/nodes.mdx).
+
+## Remove components
+
+Only the installer installs and removes components. To remove one, uncheck it under **Components** in `gui`, or remove it from `enable` in the configuration file. For a component installed by default, add it to `disable` instead. Then run `apply`. A personal install works the same way.
+
+`plan` lists the components to remove under "Removed", along with what stays and which CRDs it will delete. Once the cluster is running, `apply` removes components before creating namespaces, storage classes, and other components. It removes a component after any components that depend on it. For each component, `apply` deletes the `HelmChart` objects in `kube-system` that carry the label `app.kubernetes.io/managed-by: zeabur-installer` and the annotation `installer.zeabur.com/component: <capability>/<id>`, then waits for helm-controller's `helm-delete-<chart>` Job to finish uninstalling the chart.
+
+The installer removes only what it installed. A component installed by Helm, Flux, or Argo CD has no such annotation and stays. A component the Catalog no longer lists stays too; `plan` warns and gives the `kubectl delete` command.
+
+Uninstalling deletes the CRDs that the chart puts in its templates, along with every object of those CRDs in the cluster. Helm marks these CRDs with the annotations `meta.helm.sh/release-name` and `meta.helm.sh/release-namespace`. Before removing anything, the installer reads these annotations from the cluster so `plan`, `gui`, and `apply` can list the CRDs it will delete. CRDs in the chart's `crds/` folder have no such annotations and stay. CRDs with the annotation `helm.sh/resource-policy: keep` also stay.
+
+`apply` changes nothing while a component is still in use and lists what uses it:
+
+| Component | In use when |
+|---|---|
+| A component with custom resources | Objects of the CRDs the Catalog lists for it, or of CRDs the uninstall will delete, exist outside the namespaces of components being removed together. For CRDs the uninstall will delete, cluster-scoped objects count too |
+| Longhorn | A PersistentVolume with the driver `driver.longhorn.io` still exists |
+| zot | A replica outside zot's namespace uses an image from `zot.zot.svc:5000` |
+
+Delete or move those first. Trivy Operator's reports are its own output, so they don't count.
+
+When uninstalling will delete a component's stored data, you must also add its component ID to `allowDataLoss` (`gui` asks with a checkbox under **Confirm**). For Longhorn, `apply` then sets its `deleting-confirmation-flag` to `true`; otherwise, Longhorn refuses to uninstall. This also deletes every volume's replicas.
+
+Once you're sure nothing needs the remaining resources, you can delete them manually:
+
+- The component's namespace, including its secrets and workload disks (PersistentVolumeClaims): `kubectl delete namespace <namespace>`. Back up the disks first.
+- CRDs the uninstall didn't delete (those not listed under "Deletes these CRDs"): find them with `kubectl get crd -o name | grep <group>`, then use `kubectl delete`. This deletes every object of those CRDs in the cluster.
+- Manifests the installer applied for the component, such as Gateway API CRDs or cert-manager issuers: `plan` lists their names. Delete them with `kubectl delete`.
+- Other leftovers the Catalog lists, such as Longhorn's `longhorn-static` storage class: `kubectl delete storageclass longhorn-static`.
+
+These steps don't depend on Zeabur's finalizer and still work after Zeabur is removed.
+
+## `uninstall`
+
+```sh
+sudo zeabur-installer uninstall zeabur
+```
+
+Removes only Zeabur. RKE2, Zeabur Identity, Catalog components, and applications stay. `uninstall zeabur` also deletes the RoleBindings and ClusterRoleBindings Zeabur created for members.
+
+`uninstall identity` also removes Zeabur Identity and clears the API server's trust configuration for it. Before running it, set up another sign-in method as described in [Remove Zeabur](../leave/uninstall.mdx). If the cluster has multiple servers, run `sudo zeabur-installer apply` once on each other server so it stops trusting Zeabur Identity's tokens. The command lists these servers.
+
+On a joined node, `uninstall` only prints the commands to run in order: drain, delete the Node, run the RKE2 uninstall script, and sync the network policies. See [Add and maintain nodes](../cluster/nodes.mdx#remove-a-node) for these steps.
+
+After RKE2 is removed, `uninstall --purge` deletes the installer's download cache, local CA copy, and configuration. Volumes stay. You can't combine `--purge` with `zeabur` or `identity`. To keep the cluster, don't run the RKE2 uninstall script or `--purge`.
+
+### A personal install
+
+With `use: personal` in the configuration, `uninstall` deletes nothing and only prints the commands to remove KubeSolo. See [Personal use: Install on a small machine](../get-started/personal.mdx#uninstall). `node add` and `node sync` aren't available because KubeSolo has only one node.
+
+## If installation stops
+
+- Host check failed: free the ports or fix the disk as directed in the output, then run `plan` and `apply` again.
+- RKE2 didn't start: check `sudo journalctl -u rke2-server`. For a worker, check `rke2-agent`.
+- A component is stuck installing through Helm: `doctor` points to the `helm-install-<name>` Job in `kube-system`. Check its logs.
+- A new node is ready but can't reach some system services: run `node sync` on a server first, then check `doctor`'s network policy results.
+
+To undo an installation, follow the [removal steps](../leave/uninstall.mdx) to remove only Zeabur or clean up the entire test machine. Deleting an application's namespace doesn't remove Zeabur; it only deletes the application.

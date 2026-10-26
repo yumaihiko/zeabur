@@ -1,0 +1,180 @@
+---
+title: zeaburctl
+description: Open Zeabur with the current kubeconfig, upload a folder, check a cluster, or export component installation manifests and commands.
+---
+
+If you have a kubeconfig that can connect to the cluster, run `zeaburctl ui` to open Zeabur locally. Reads, **Review changes**, and confirmed changes all use that context's permissions. You don't need to install a Zeabur server in the cluster first.
+
+Download the binary for your operating system and processor from [Releases and verification](./releases.mdx).
+
+## Commands
+
+```sh
+zeaburctl --version
+zeaburctl ui
+zeaburctl ui --context production --no-browser
+zeaburctl doctor --context production --output json
+zeaburctl up ./site --project shop --service site
+zeaburctl components export certificates/cert-manager
+```
+
+`ui`, `doctor`, and `up` each accept `--context`. If omitted, they use the current context in kubeconfig. The commands don't modify kubeconfig.
+
+| Command | Result | What it changes |
+|---|---|---|
+| `ui` | Opens Zeabur in a local browser | Installs no components in the cluster. Changes applied in the interface go directly to the cluster |
+| `doctor` | Checks the cluster version, components, and Zeabur Identity settings | Reads only; doesn't change settings |
+| `up` | Uploads a folder to a service created from a folder and starts a build | Updates the service's Build and pushes the folder to the registry |
+| `components export` | Prints manifests or Helm commands to install Catalog components | Doesn't connect to the cluster or change anything |
+
+## `ui`
+
+| Option | Default and purpose |
+|---|---|
+| `--context <name>` | The current context in kubeconfig |
+| `--no-browser` | Doesn't open a browser automatically; still prints the link |
+| `--metrics-service <namespace/name:port>` | Specifies a Kubernetes Service that supports the Prometheus HTTP API. You can also use the `ZEABUR_METRICS_SERVICE` environment variable |
+
+For example, to read usage history from an existing Prometheus installation:
+
+```sh
+zeaburctl ui --context production \
+  --metrics-service monitoring/prometheus:9090
+```
+
+By default, Zeabur reads from the VictoriaMetrics installation in Zeabur Catalog: `observability/vmsingle-vm-victoria-metrics-k8s-stack:8428`. Zeabur reads through the Kubernetes API's Service proxy, so you also need `get services/proxy` permission for this Service. Live CPU and memory usage comes from metrics-server.
+
+`zeaburctl ui` listens only on `127.0.0.1`, on a port assigned by the operating system. The link printed in the terminal includes a one-time token. Opening it for the first time exchanges the token for a browser session. The same link won't work again.
+
+Press `Ctrl-C` to close the local interface. Applied changes stay in the cluster; unapplied drafts aren't written to it. When you run `zeaburctl ui` again, open the newly printed link.
+
+## `doctor`
+
+```sh
+zeaburctl doctor
+zeaburctl doctor --context production --output json
+```
+
+| Option | Values |
+|---|---|
+| `--context <name>` | Specifies a kubeconfig context |
+| `--output <format>` | `text` (default) or `json` |
+
+The JSON output has a top-level `checks` array. Each item has `name`, `status`, `findings`, and `fix` fields. `status` is `ok`, `warning`, `critical`, `skipped`, or `error`. If the command can't read something, it lists the missing permissions.
+
+| Exit code | Meaning |
+|---|---|
+| `0` | No issues need attention; some checks may be `skipped` |
+| `1` | There are warnings |
+| `2` | There are critical issues, or the command arguments are incorrect |
+| `3` | The command can't connect to the cluster, or checks can't run |
+
+When results differ, critical issues take precedence over warnings, which take precedence over checks that couldn't run. `skipped` doesn't affect the exit code. Monitoring tools need to read `checks` separately to find out which checks were skipped.
+
+Whether kube-apiserver trusts the Zeabur Identity issuer is defined in the control plane's `AuthenticationConfiguration` file. RBAC can't read this file, so this check is marked as skipped. To check it on the host, use [`zeabur-installer doctor`](./installer.mdx).
+
+## `up`
+
+```sh
+zeaburctl up [folder] [--project <project>] [--service <service>]
+```
+
+Uploads a folder to the cluster and starts a build. If you omit the folder, the command uses the current folder. If the service doesn't exist, the command creates it. The project must already exist; the command doesn't create projects.
+
+The command reads the Zeabur URL and Zeabur Identity address from the `zeabur-info` config file in the cluster's `kube-public` namespace. No separate configuration is needed. Anyone signed in to the cluster can read this config file; unauthenticated users can't. To use a different URL, add `--server` or set the `ZEABUR_SERVER` environment variable.
+
+The command uses the same API and change plans as the web interface. You don't need to know the registry address.
+
+### Server mode and local mode
+
+When the command starts, it prints a line showing which mode it's using.
+
+| Mode | When it's used | How it sends the folder |
+|---|---|---|
+| Server mode | kubeconfig uses a Zeabur Identity token to sign in, and the cluster has `zeabur-info` | Sends the folder to Zeabur in the cluster, which pushes it to the registry |
+| Local mode | All other cases, such as an admin kubeconfig from the installer, a cloud provider token, a ServiceAccount token, or a cluster without a Zeabur server | Runs the same steps on your computer, like `zeaburctl ui`, then pushes to the registry from that computer |
+
+Local mode connects directly to the Kubernetes API with the credentials in kubeconfig. It doesn't send those credentials anywhere else. With the admin kubeconfig from the installer, you can run `up` without any additional configuration.
+
+Local mode also requires:
+
+- Zeabur Builder installed in the cluster. If it's missing, the command stops before uploading. A [personal installation](../get-started/personal.mdx) doesn't include Zeabur Builder by default; you need to select it during installation. If it isn't installed, deploy an image instead.
+- Access to the registry. If the registry is inside the cluster, such as `zot.zot.svc:5000`, the command automatically forwards a port through the Kubernetes API, like `kubectl port-forward`. You need `get services`, `list endpointslices`, and `create pods/portforward` permissions in the registry's namespace, plus read access to the CA config file for the registry's certificate. Administrators have these permissions; a project's Developer role doesn't.
+- `zeabur-info` in the cluster. The command reads the registry location from it. Without a Zeabur server in the cluster, the command can't create new services and doesn't automatically forward ports.
+
+### Sign-in and permissions
+
+The command signs in with the current context in kubeconfig. Use `--context` to specify another context. Both modes use your permissions for uploads and changes. They can't do anything you don't have permission to do.
+
+The command sends only tokens issued by Zeabur Identity to Zeabur in the cluster. It doesn't send cloud provider tokens (such as GKE or EKS tokens), ServiceAccount tokens, static tokens, or client certificates to Zeabur; it uses local mode instead. Zeabur also accepts only tokens issued by Zeabur Identity and treats other tokens as unauthenticated.
+
+In server mode, the Zeabur URL must use `https://`. You can use `http://` only when testing on your own computer (`localhost`, `127.0.0.1`, or `::1`).
+
+### Choose a project and service
+
+When running in a terminal, the command prompts you to choose a project from a list if you omit `--project`. If you omit `--service`, it asks for a service name, defaulting to the folder name.
+
+If the service doesn't exist, the command asks for confirmation before creating it. Add `--yes` to skip this confirmation.
+
+In scripts or CI, the command doesn't prompt. You must specify the project and service with `--project` and `--service`. If the service doesn't exist, the command creates it without requiring `--yes`.
+
+A new service has the same contents as one created with **Upload folder** in the web interface, including a Build and Deployment. If you pass `--port`, the command also creates a Kubernetes Service and sets the `PORT` environment variable. Without a port, the service doesn't accept connections. The default build method is `railpack`; use `--method dockerfile` to use a Dockerfile instead.
+
+If the service already exists, the command keeps its build settings. If the service builds from Git, the command rejects the upload without changing anything.
+
+### Packaging and uploading
+
+Packaging follows the same rules as [web uploads](../deploy/upload.mdx). It skips files excluded by `.gitignore` and `.dockerignore`, as well as `.git`. The limits are 256 MiB compressed and 1 GiB extracted.
+
+The command sends a `tar.gz` archive, preserving executable permissions and symbolic links that point within the uploaded folder.
+
+The upload has three steps, in order:
+
+1. Request an upload token from the Build. This is a change plan that the command applies directly.
+2. Push the archive to the registry. In server mode, Zeabur pushes it; in local mode, your computer does.
+3. Write the digest to the Build to start the build. This is also a change plan that the command applies directly.
+
+These are the same change plans the web interface uses. Running the command confirms that you want to apply them; the command doesn't ask again. When creating a new service, the service creation plan already includes the upload token request.
+
+### Options
+
+| Option | Default and purpose |
+|---|---|
+| `--server <address>` | The URL for server mode. Defaults to the URL in `zeabur-info`. Specify a different URL, such as `https://zeabur.example.com`, or use the `ZEABUR_SERVER` environment variable |
+| `--project <project>` | The existing project for the service. If omitted in a terminal, prompts you to choose from a list. Required in scripts and CI |
+| `--service <service>` | The service name. If omitted in a terminal, prompts for a name, defaulting to the folder name. Required in scripts and CI |
+| `--context <name>` | Defaults to the current context in kubeconfig |
+| `--method railpack\|dockerfile` | The build method for a new service. Defaults to `railpack` |
+| `--port <port>` | The port where a new service accepts connections. Configures both the Kubernetes Service and the `PORT` environment variable. If omitted, the service doesn't accept connections |
+| `--yes` | Skips confirmation before creating a new service in a terminal |
+
+## `components export`
+
+```sh
+zeaburctl components export <capability>/<id> [--format helmchart|helm|flux|argocd] [--profile single-node|multi-node]
+```
+
+Prints installation manifests or commands for Catalog components on clusters that weren't installed with zeabur-installer. The output comes from zeaburctl's built-in Catalog, with pinned versions and configuration values. The command doesn't connect to the cluster, so it doesn't need `--context`.
+
+| Option | Default and purpose |
+|---|---|
+| `--format` | `helmchart`: a K3s/RKE2 `HelmChart`, installed by helm-controller. `helm`: a `helm upgrade --install` command. `flux`: a Flux source and `HelmRelease`. `argocd`: an Argo CD `Application` |
+| `--profile` | `single-node`. Use `multi-node` for the Catalog's multi-node configuration values |
+
+Values you need to supply appear as `<name>` placeholders. Replace them with actual values first. If a component needs host access, the output first sets its namespace to `privileged`. If K3s or RKE2 includes the same component, the start of the output explains how to disable the built-in version first.
+
+```sh
+zeaburctl components export volume-backup/velero > velero.yaml
+kubectl apply -f velero.yaml
+```
+
+You can also commit the file to a GitOps repository for Flux or Argo CD to apply. Make later changes and removals in this file.
+
+## Connection and permission issues
+
+- Context not found or unable to connect to the Kubernetes API: Check the kubeconfig context, API address, and network connection, then retry with the same `--context`.
+- The browser shows `This link was already used or is not valid.`: Run `zeaburctl ui` again and open the full, newly printed link.
+- Some lists won't load: Request permissions for the verbs, resources, and namespaces listed on screen. To switch contexts, stop the command and run it again with a new `--context`.
+- No usage history: Check the metrics store address, Service port, and `services/proxy` permissions. Usage history starts when the metrics store begins collecting data; earlier periods are empty.
+
+For permission scope and terminal security boundaries, see [Permissions](./permissions.mdx) and [Security](./security.mdx).

@@ -1,0 +1,181 @@
+---
+title: zeaburctl
+description: 使用当前 kubeconfig 打开 Zeabur、上传文件夹、检查集群，或导出组件的安装内容。
+source: "994525787ae9"
+---
+
+如果已有能连接集群的 kubeconfig，运行 `zeaburctl ui` 就会在本机打开 Zeabur。读取、**检查变更**和确认后的应用操作都使用该 context 的权限，无需先在集群中安装 Zeabur 服务器。
+
+先按照[发行文件与验证](./releases.mdx)下载适合操作系统和处理器的可执行文件。
+
+## 命令
+
+```sh
+zeaburctl --version
+zeaburctl ui
+zeaburctl ui --context production --no-browser
+zeaburctl doctor --context production --output json
+zeaburctl up ./site --project shop --service site
+zeaburctl components export certificates/cert-manager
+```
+
+`ui`、`doctor`、`up` 都接受 `--context`。省略时使用 kubeconfig 的当前 context，命令不会修改 kubeconfig。
+
+| 命令 | 结果 | 会修改什么 |
+|---|---|---|
+| `ui` | 在本机浏览器中打开 Zeabur | 不在集群中安装组件，在界面中应用的变更直接写入集群 |
+| `doctor` | 检查集群版本、组件和 Zeabur Identity 配置 | 仅读取，不修改配置 |
+| `up` | 将文件夹上传到通过文件夹创建的服务，并开始构建 | 修改该服务的 Build，将文件夹推送到 registry |
+| `components export` | 输出安装 Catalog 组件的 manifest 或 Helm 命令 | 不连接集群，不做任何修改 |
+
+## `ui`
+
+| 选项 | 默认值与用途 |
+|---|---|
+| `--context <name>` | kubeconfig 的当前 context |
+| `--no-browser` | 不自动打开浏览器，仍会输出链接 |
+| `--metrics-service <namespace/name:port>` | 指定支持 Prometheus HTTP API 的 Kubernetes Service，也可使用 `ZEABUR_METRICS_SERVICE` 环境变量 |
+
+例如，改为从已有的 Prometheus 读取历史用量：
+
+```sh
+zeaburctl ui --context production \
+  --metrics-service monitoring/prometheus:9090
+```
+
+未指定时，读取 Zeabur Catalog 的 VictoriaMetrics：`observability/vmsingle-vm-victoria-metrics-k8s-stack:8428`。Zeabur 通过 Kubernetes API 的 Service proxy 读取数据，因此你还需要这个 Service 的 `get services/proxy` 权限。实时 CPU 和内存用量来自 metrics-server。
+
+`zeaburctl ui` 仅监听 `127.0.0.1`，端口由操作系统分配。终端输出的链接带有一次性令牌，首次打开后会换成浏览器会话，之后同一链接就无法再次使用。
+
+按 `Ctrl-C` 关闭本机界面。已应用的变更保留在集群中，尚未应用的草稿不会写入。再次运行 `zeaburctl ui` 时，使用新输出的链接打开。
+
+## `doctor`
+
+```sh
+zeaburctl doctor
+zeaburctl doctor --context production --output json
+```
+
+| 选项 | 值 |
+|---|---|
+| `--context <name>` | 指定 kubeconfig context |
+| `--output <format>` | `text`（默认）或 `json` |
+
+JSON 最外层是 `checks` 数组，每一项都有 `name`、`status`、`findings` 和 `fix`。`status` 为 `ok`、`warning`、`critical`、`skipped` 或 `error`。无法读取某项数据时，会列出缺少的权限。
+
+| 退出码 | 含义 |
+|---|---|
+| `0` | 没有需要处理的问题，可能有 `skipped` |
+| `1` | 有警告 |
+| `2` | 有严重问题，或命令参数错误 |
+| `3` | 无法连接集群，或无法运行检查 |
+
+同时出现多种结果时，按严重问题、警告、无法运行的顺序决定退出码。`skipped` 不影响退出码，监控程序需要另外读取 `checks`，才能知道哪些项目未检查。
+
+kube-apiserver 是否信任 Zeabur Identity 的 issuer，记录在控制平面的 `AuthenticationConfiguration` 文件中，RBAC 无法读取，因此这一项会标记为未检查。要在主机上检查，使用 [`zeabur-installer doctor`](./installer.mdx)。
+
+## `up`
+
+```sh
+zeaburctl up [文件夹] [--project <项目>] [--service <服务>]
+```
+
+将文件夹上传到集群，开始构建。省略文件夹时使用当前文件夹。如果服务尚不存在，命令会创建服务。项目必须已存在，命令不会创建项目。
+
+命令从集群 `kube-public` Namespace 中的 `zeabur-info` 配置文件读取 Zeabur 的网址和 Zeabur Identity 的地址，无需另行配置。已登录集群的用户都能读取这个配置文件，未登录的用户无法读取。要改用其他网址，添加 `--server`，或设置环境变量 `ZEABUR_SERVER`。
+
+命令和网页使用同一组 API 和相同的变更方案，你无需知道 registry 的地址。
+
+### 服务器模式与本机模式
+
+命令启动时会输出一行，说明本次使用哪种模式。
+
+| 模式 | 何时使用 | 如何发送文件夹 |
+|---|---|---|
+| 服务器模式 | kubeconfig 使用 Zeabur Identity 的令牌登录，且集群中有 `zeabur-info` | 交给集群中的 Zeabur，由 Zeabur 推送到 registry |
+| 本机模式 | 其他情况，例如使用安装程序提供的管理员 kubeconfig、云服务令牌、ServiceAccount 令牌，或集群中没有 Zeabur 服务器 | 与 `zeaburctl ui` 一样，在你的计算机上运行相同的步骤，再从这台计算机推送到 registry |
+
+本机模式使用 kubeconfig 中的证书直接连接 Kubernetes API，不会将证书发送到其他地方。使用安装程序提供的管理员 kubeconfig，就能直接运行 `up`，无需另行配置。
+
+本机模式还需要满足以下条件：
+
+- 集群已安装 Zeabur Builder。如果尚未安装，命令会在上传前停止。[个人使用的安装](../get-started/personal.mdx)默认不安装 Zeabur Builder，需要勾选后才会安装；未安装时请改用镜像部署。
+- 能连接 registry。如果 registry 位于集群中（例如 `zot.zot.svc:5000`），命令会通过 Kubernetes API 自动转发端口，类似 `kubectl port-forward`。你需要在 registry 所在的 Namespace 中拥有 `get services`、`list endpointslices` 和 `create pods/portforward` 权限，还需要能读取 registry 证书的 CA 配置文件。管理员拥有这些权限，项目的开发者没有。
+- 集群中有 `zeabur-info`。命令从这里获取 registry 的地址。如果集群中没有 Zeabur 服务器，命令无法创建新服务，也不会自动转发端口。
+
+### 登录与权限
+
+命令使用 kubeconfig 的当前 context 登录，也可以通过 `--context` 指定其他 context。两种模式都使用你的权限处理上传和变更，无法执行超出你权限的操作。
+
+命令只会将 Zeabur Identity 签发的令牌发送给集群中的 Zeabur。云服务令牌（例如 GKE、EKS）、ServiceAccount 令牌、固定令牌和客户端证书都不会发送，命令会改用本机模式。Zeabur 也只接受 Zeabur Identity 签发的令牌，使用其他令牌会视为未登录。
+
+服务器模式下，Zeabur 的网址必须使用 `https://`。只有在自己的计算机上测试时（`localhost`、`127.0.0.1`、`::1`），才能使用 `http://`。
+
+### 选择项目与服务
+
+在终端中运行时，如果未提供 `--project`，命令会让你从列表中选择项目。如果未提供 `--service`，命令会询问服务名称，默认使用文件夹名称。
+
+如果服务不存在，命令会在创建前询问一次。添加 `--yes` 可以跳过这次确认。
+
+在脚本或 CI 中运行时，命令不会询问。你必须通过 `--project` 和 `--service` 指定项目与服务。如果服务不存在，命令会直接创建，无需添加 `--yes`。
+
+新服务的内容与网页“上传文件夹”创建的服务相同，包含 Build 和 Deployment。如果提供了 `--port`，还会创建 Service，并设置 `PORT` 环境变量。如果未提供端口，服务就不接受连接。默认构建方式为 `railpack`，也可以通过 `--method dockerfile` 改用 Dockerfile。
+
+如果服务已存在，命令会沿用原有的构建配置。如果服务从 Git 构建，命令会拒绝上传，不做任何修改。
+
+### 打包与上传
+
+打包规则与[网页上传](../deploy/upload.mdx)相同，会跳过 `.gitignore`、`.dockerignore` 排除的文件和 `.git`。大小上限为打包后 256 MiB、解压后 1 GiB。
+
+命令发送 `tar.gz` 压缩包，保留文件的可执行权限，也保留指向上传文件夹内部的符号链接。
+
+上传依次分为三步：
+
+1. 向 Build 请求上传令牌。这是一份变更方案，会直接应用。
+2. 将压缩包推送到 registry。服务器模式由 Zeabur 推送，本机模式由这台计算机推送。
+3. 将 digest 写入 Build，开始构建。这也是一份变更方案，会直接应用。
+
+这些变更方案与网页使用的相同。运行命令即表示你确认应用，命令不会再次询问。如果需要创建新服务，创建服务的变更方案中已包含上传令牌请求。
+
+### 选项
+
+| 选项 | 默认值与用途 |
+|---|---|
+| `--server <地址>` | 服务器模式使用的网址，默认读取 `zeabur-info` 中的网址。要使用其他网址，可在此指定，例如 `https://zeabur.example.com`，也可以使用环境变量 `ZEABUR_SERVER` |
+| `--project <项目>` | 服务所在的已有项目。省略时在终端中从列表选择，脚本与 CI 中必填 |
+| `--service <服务>` | 服务名称。省略时在终端中询问，默认使用文件夹名称，脚本与 CI 中必填 |
+| `--context <名称>` | 默认使用 kubeconfig 的当前 context |
+| `--method railpack\|dockerfile` | 新服务的构建方式，默认为 `railpack` |
+| `--port <端口>` | 新服务接收连接的端口，同时配置 Service 和 `PORT` 环境变量。省略时不接受连接 |
+| `--yes` | 在终端中创建新服务前，跳过创建确认 |
+
+## `components export`
+
+```sh
+zeaburctl components export <capability>/<id> [--format helmchart|helm|flux|argocd] [--profile single-node|multi-node]
+```
+
+输出安装 Catalog 组件所需的内容，供未使用 zeabur-installer 安装的集群使用。内容来自 zeaburctl 内置的 Catalog，版本和配置值均已固定。命令不连接集群，因此无需 `--context`。
+
+| 选项 | 默认值与用途 |
+|---|---|
+| `--format` | `helmchart`：K3s/RKE2 的 `HelmChart`，由 helm-controller 安装。`helm`：`helm upgrade --install` 命令。`flux`：Flux 的源和 `HelmRelease`。`argocd`：Argo CD 的 `Application` |
+| `--profile` | `single-node`。`multi-node` 改用 Catalog 提供的多节点配置值 |
+
+组件需要填写的值会保留为 `<名称>`，先替换成实际值。如果组件需要访问主机，导出的内容会先将其 Namespace 设为 `privileged`。如果 K3s 或 RKE2 内置了同类组件，内容开头会说明如何先禁用内置版本。
+
+```sh
+zeaburctl components export volume-backup/velero > velero.yaml
+kubectl apply -f velero.yaml
+```
+
+也可以将文件提交到 GitOps 仓库，让 Flux 或 Argo CD 应用。后续调整和移除都通过这个文件完成。
+
+## 连接与权限问题
+
+- 找不到 context 或无法连接 Kubernetes API：检查 kubeconfig 的 context、API 地址与网络连接，再使用同一个 `--context` 重试。
+- 浏览器显示 `This link was already used or is not valid.`：重新运行 `zeaburctl ui`，打开新输出的完整链接。
+- 无法读取部分列表：按照界面列出的 verb、resource 和 Namespace 申请权限。要切换 context，结束命令后使用新的 `--context` 重新运行。
+- 没有历史用量：确认 metrics store 地址、Service 端口和 `services/proxy` 权限。历史用量从 metrics store 开始收集时算起，此前的时段没有数据。
+
+权限范围和终端的安全边界见[权限](./permissions.mdx)和[安全性](./security.mdx)。

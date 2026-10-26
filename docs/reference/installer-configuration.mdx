@@ -1,73 +1,72 @@
 ---
 title: Installer configuration
-description: Every field of the installer's YAML configuration file.
+description: YAML fields, defaults, and secret file formats for creating a cluster and adding nodes.
 ---
 
-`zeabur-installer` reads one YAML file, `/etc/zeabur-installer/config.yaml` by default
-(`--config` names another). Unknown fields are errors, so a typo is caught before anything
-changes. Field names are camelCase.
+Put domains, component choices, and host settings in YAML, then run `zeabur-installer --config config.yaml plan` to preview the installation. The default file path is `/etc/zeabur-installer/config.yaml`. Field names are camelCase. The installer stops on misspelled or unknown fields.
 
-## `access` (required)
+The web interface saves its choices to this same file. For installation through the web interface, see [Install Zeabur on a server](../get-started/quickstart.mdx). For command-line installation, see [Install with a configuration file and commands](../get-started/advanced-install.mdx). For command options, see [Installer commands](./installer.mdx).
 
-How people reach Zeabur and Zeabur Identity.
+## Configuration for creating a cluster
 
-| Field | Meaning |
-|---|---|
-| `mode` | `domain`: public DNS names; certificates come from Let's Encrypt through cert-manager (HTTP-01), so port 80 must be reachable from the internet. `local`: a CA made on the server signs them, for test machines; browsers trust it once `/var/lib/rancher/zeabur-installer/local-ca.crt` is imported. |
-| `identity` | Zeabur Identity's host name, without `https://`. Its issuer is `https://<identity>`. |
-| `zeabur` | Zeabur's host name. It must differ from `identity`: an OpenID Connect issuer is a whole origin. |
-| `invitations` | Default `true`: Zeabur Identity accepts invitation links, which Zeabur's Members page and `zeabur-identityctl invite` make. Set `false` when people and their groups come only from version control; `zeabur-identityctl setup-link` still works. |
-| `suffixes` | The app domains new services' URLs are suggested under, the first one by default, such as `[apps.example.com]`. Each needs a wildcard record, `*.apps.example.com`, pointing at the server; the cluster page checks it and can change the list later. Default: `<address>.sslip.io` when the server's address is public (`203-0-113-7.sslip.io`), else none. `[]` means none. |
+This example uses your own domains. Both DNS names must point to the server, and port `80` must be reachable from the internet so Let's Encrypt can complete HTTP-01 validation.
 
-In both modes the two names must resolve to the server, for browsers and for the server itself.
-Pods resolve names through DNS, not through `/etc/hosts`. For a test machine, names such as
-`login.<address>.sslip.io` resolve to `<address>` without any DNS setup.
+```yaml title="/etc/zeabur-installer/config.yaml"
+preset: minimal
+profile: single-node
+access:
+  mode: domain
+  identity: login.example.com
+  zeabur: zeabur.example.com
+  invitations: true
+zeabur: true
+host:
+  requireEncryptedDisk: true
+```
 
-## Components
+### Top-level fields
 
-| Field | Meaning |
-|---|---|
-| `preset` | `minimal`: ingress, certificates and metrics-server. `standard` (default): everything the catalog recommends for the profile. `secure`: `standard` plus runtime detection, vulnerability scanning and intrusion prevention. |
-| `enable` | Capabilities (`runtime-security`) or component ids (`volume-backup/velero`) added to the preset. A component's dependencies are added with it. |
-| `disable` | Capabilities or component ids taken out. Disabling one that another chosen component needs is an error that names both. |
-| `profile` | `single-node` (default) or `multi-node`; selects the catalog's values for the profile. |
-| `allowDataLoss` | Component ids whose removal may delete the data they keep, such as `replicated-storage/longhorn`. `apply` refuses such a removal until the id is here. See [Remove a component](installer.md#remove-a-component). |
-
-A component that leaves the list (taken out of `enable`, or added to `disable`) is removed by the
-next `apply`; see [Remove a component](installer.md#remove-a-component).
-
-### Storage
-
-The installer always adds the local-path storage class: volumes on the node's own disk. The
-catalog's `replicated-storage` capability, Longhorn, adds the class `longhorn`, whose volumes
-are replicated across nodes and can be expanded.
-
-| Profile | Longhorn | Default class |
+| Field | Default | Purpose |
 |---|---|---|
-| `single-node` | only with `enable: [replicated-storage]` | `local-path` |
-| `multi-node` | in the `standard` preset | `longhorn` |
+| `use` | `team` | `team` is for teams. Set `personal` for personal use; see [Configuration for personal use](#configuration-for-personal-use) for supported fields |
+| `access` | Required | Domains and certificate mode for the sign-in service and Zeabur |
+| `preset` | `standard` | `minimal`, `standard`, or `secure` |
+| `profile` | `single-node` | `single-node` or `multi-node`; selects the Catalog's component settings for that profile |
+| `enable` | `[]` | Capabilities or full component IDs to add |
+| `disable` | `[]` | Capabilities or full component IDs to exclude |
+| `allowDataLoss` | `[]` | Component IDs whose removal you're allowing to delete their data, such as `replicated-storage/longhorn` |
+| `zeabur` | `true` | Install Zeabur Identity and Zeabur. `false` installs only RKE2 and the selected components |
+| `inputs` | `{}` | Non-secret input values grouped by component ID |
+| `secretFiles` | `{}` | Secret file paths grouped by component ID |
+| `rke2Version` | Version pinned by the installer | Override the RKE2 version |
+| `host` | Empty | Extra names for the API certificate and disk encryption requirements |
+| `sources` | Empty | Optional overrides for the pinned Catalog, images, and chart using your own versions |
 
-`plan` shows the classes and which one is the default. Switching an existing cluster to
-`multi-node` makes `longhorn` the default and local-path a plain class; `plan` warns before
-`apply` does it, and volumes already on local-path stay there. If the cluster has a default class
-the installer did not make, `apply` keeps it and leaves local-path out, or, when the plan makes
-`longhorn` the default, stops until you take the annotation off the other class. Databases that
-replicate themselves, such as CloudNativePG clusters, are better on `local-path`: name it in
-their `storageClass`.
+`zeabur: false` only determines what this installation installs. It doesn't remove an existing Zeabur installation. To remove it, use [`uninstall`](./installer.mdx#uninstall).
 
-With Longhorn in the plan, `apply` prepares the node before installing RKE2. It installs the
-iSCSI initiator and NFS client packages that are missing (`open-iscsi` and `nfs-common` with
-apt, `iscsi-initiator-utils` and `nfs-utils` with dnf, `open-iscsi` and `nfs-client` with
-zypper), loads `iscsi_tcp` now and at boot, and enables `iscsid`. On another distribution it
-stops and names the packages to install by hand.
+### `access`
 
-`zeabur-installer plan` lists what was chosen and why (`preset`, `enabled` or `dependency`), and
-what was left out and why: a component that runs on k3s only, for example.
+| Field | Default and rules |
+|---|---|
+| `mode` | Required. `domain` gets certificates from Let's Encrypt through cert-manager (HTTP-01). `local` creates a private CA on the server and is only suitable for test machines |
+| `identity` | Required. Zeabur Identity's hostname. Its issuer is `https://<identity>` |
+| `zeabur` | Required. Zeabur's hostname. It must differ from `identity` |
+| `invitations` | `true`. Whether to accept setup links generated on Zeabur's **Members** page. Turn this off when members are managed only through version control |
+| `suffixes` | Defaults to `<address>.sslip.io` when the server has a public address, such as `203-0-113-7.sslip.io`; otherwise, none. New services' URLs are suggested under these app domains, using the first one by default, such as `[apps.example.com]`. Each domain needs a wildcard record, `*.apps.example.com`, pointing to the server; see [Set up DNS records](../configure/dns.mdx). Set `[]` to stop suggesting URLs |
 
-### Inputs
+Hostnames must not include `https://`, a port, or a path. Use only lowercase letters, numbers, hyphens, and dots, with at least two labels. Each label can have at most 63 characters and can't start or end with a hyphen. The full hostname can have at most 253 characters.
 
-Some components need values, such as Velero's bucket. `plan` stops at a missing one and
-prints the line to add:
+Both the browser and the server must be able to resolve these two names. Replicas resolve names through DNS and can't see entries in the host's `/etc/hosts`. In `local` mode, the CA certificate is at `/var/lib/rancher/zeabur-installer/local-ca.crt`. Import it into the trust store on the user's computer so the browser trusts both URLs.
+
+### Component selection
+
+- `minimal`: ingress, certificates, and metrics-server—the components Zeabur needs to be reachable and show resource usage.
+- `standard`: everything the Catalog recommends for this profile.
+- `secure`: `standard` plus runtime detection, vulnerability scanning, and intrusion prevention.
+
+`enable` accepts capabilities, such as `runtime-security`, or full component IDs, such as `volume-backup/velero`. A component's dependencies are added with it. If `disable` excludes a component that another component needs, `plan` names both and stops. The `plan` output lists the final components, their installation order, and the reasons for exclusions.
+
+A component removed from the list is removed by the next `apply`. If removing a component also deletes its data, add it to `allowDataLoss` first. See [Remove a component](./installer.mdx#remove-components).
 
 ```yaml
 inputs:
@@ -76,11 +75,13 @@ inputs:
     s3-url: https://s3.example.com
 ```
 
-The installer fills `kube-api-cidr` for External Secrets (the subnet of the node address) and
-`cluster-ip` for zot itself. A value in `inputs` overrides it.
+The Catalog defines each component's inputs and their types. If a required value is missing, `plan` names the field to add.
 
-Secret inputs never go in this file. Name a file holding the value instead; it must have mode
-0600:
+The installer fills in `kube-api-cidr` for External Secrets (the subnet containing the node address) and `cluster-ip` for zot. A value in `inputs` overrides it.
+
+### `secretFiles`
+
+Specify secret inputs as file paths, and set the files' permissions to `0600`:
 
 ```yaml
 secretFiles:
@@ -88,80 +89,106 @@ secretFiles:
     credentials: /root/secrets/velero-credentials
 ```
 
-A secret the catalog marks `generate: random` that has no file gets 64 random bytes (as 128
-hexadecimal digits) on the first `apply`, and keeps them afterwards.
+```sh
+sudo chmod 0600 /root/secrets/velero-credentials
+```
 
-## `zeabur`
+Use the format the component's input requires for the file contents. The installer uses the file to create the secret the component needs. Keep secret values in files, not in `inputs`. If a secret the Catalog marks `generate: random` has no file specified, the first `apply` generates it, and later runs reuse it.
 
-`true` (default) installs Zeabur Identity and Zeabur. `false` installs RKE2 and the components only.
+### Storage classes
 
-## `rke2Version`
+The installer always creates `local-path`, which stores data on the node at `/var/lib/zeabur/storage`. When Longhorn is installed, the Catalog's settings for the profile determine the default: `multi-node` uses `longhorn`, and `single-node` keeps `local-path`. `plan` lists the default class and the other classes.
 
-Leave it out to install the release this installer pins, whose downloads are checked against
-digests compiled into the installer. Naming another release, such as `v1.37.1+rke2r1`, is
-allowed but unsupported. The plan warns about it, and its downloads are checked only against the
-release's own `sha256sum-<arch>.txt`. The catalog may also not have been tested on that
-Kubernetes version.
+- `local-path` volumes stay on their original node. Changing the default class doesn't move existing data.
+- When Longhorn becomes the default, the installer changes its previously default `local-path` to a non-default class.
+- If the cluster already has another default class, the installer keeps it. If this installation would make Longhorn the default, `apply` stops. Remove the default annotation from the existing class, then run it again.
 
-## `host`
+When Longhorn is selected, `apply` installs the iSCSI initiator and NFS client on this host, loads `iscsi_tcp`, and starts `iscsid`. Every node running Longhorn needs these. See [Add nodes](../cluster/nodes.mdx).
 
-| Field | Meaning |
+### `host` and `rke2Version`
+
+| Field | Default and purpose |
 |---|---|
-| `tlsSan` | Extra names and addresses for the Kubernetes API server's certificate, to reach it from elsewhere. |
-| `requireEncryptedDisk` | Stop when `/var/lib/rancher` is not on a dm-crypt device. Without it, `apply` and `doctor` only warn. |
+| `host.tlsSan` | `[]`. Extra DNS names or IP addresses for the Kubernetes API server's certificate. Servers only |
+| `host.requireEncryptedDisk` | `false`. When `true`, `apply` stops if the root directory or data directory isn't on an encrypted device |
+| `rke2Version` | The version pinned by the installer. Set this to use another version, such as `v1.37.1+rke2r1` |
 
-## `sources`
+Downloads for the default version are checked against digests compiled into the installer. Downloads for another version can only be checked against that release's own checksum list. `plan` marks the version as unsupported, and it may not match the Kubernetes versions the Catalog has tested.
 
-Development builds, used while a product has no published release. Each one replaces what the
-installer would otherwise download.
+### `sources`
 
-| Field | Meaning |
+Release builds of the installer don't need `sources`. They pin versions of Zeabur Catalog, Zeabur Identity, and Zeabur, download them to `/var/lib/rancher/zeabur-installer/downloads`, and check them against SHA-256 hashes compiled into the installer.
+
+Use `sources` to install your own builds, usually for development and testing. Specify only the fields you want to override; the rest keep their pinned versions. A development build of the installer that you compile yourself doesn't pin any versions, so you must specify `catalog`, `identityImage`, `identityctl`, `zeaburImage`, and `zeaburChart`. `plan` lists any that are missing. Replace the paths with the files you've prepared:
+
+```yaml
+sources:
+  catalog: /root/releases/catalog/index.json
+  identityImage: registry.example.com/identity@sha256:<digest>
+  identityctl: /root/releases/zeabur-identityctl
+  zeaburImage: registry.example.com/zeabur@sha256:<digest>
+  zeaburChart: /root/releases/zeabur-chart
+```
+
+| Field | Accepted value |
 |---|---|
-| `catalog` | A catalog `index.json` on disk. |
-| `imageArchives` | `docker save` archives, copied to RKE2's image directory and imported when it starts. An archive taken out of the list is removed from there. |
-| `identityImage` | Zeabur Identity's image reference. |
-| `identityctl` | A `zeabur-identityctl` binary. |
-| `zeaburImage` | Zeabur's image reference. |
-| `zeaburChart` | Zeabur's chart: a directory or a packaged `.tgz`. |
+| `catalog` | A local `index.json` |
+| `imageArchives` | An array of paths to `docker save` archives, imported when RKE2 starts |
+| `identityImage` | Zeabur Identity's image reference |
+| `identityctl` | A local `zeabur-identityctl` binary |
+| `zeaburImage` | Zeabur's image reference |
+| `zeaburChart` | A Helm chart directory or a packaged `.tgz` |
 
-## `use: personal`
+An archive removed from `imageArchives` is also removed from RKE2's import directory on the next `apply`. This list contains archives already on the host. It has nothing to do with private registry access settings.
 
-`use` is `team` by default. `use: personal` installs KubeSolo and the components for one person,
-with no Zeabur, Zeabur Identity, members or isolation; see
-[A personal install](installer.md#a-personal-install). Such a file takes only these fields:
+## Configuration for personal use
 
-| Field | Meaning |
+With `use: personal` at the top level, the installer installs KubeSolo and components, without the Zeabur dashboard or Zeabur Identity. For instructions and limitations, see [Personal use: Install on a small machine](../get-started/personal.mdx).
+
+```yaml title="/etc/zeabur-installer/config.yaml"
+use: personal
+enable: [builds]
+host:
+  tlsSan: [solo.example.com]
+```
+
+Only the fields in the table below can appear alongside it. `preset`, `profile`, `access`, `zeabur`, `rke2Version`, and `join` aren't accepted.
+
+| Field | Default and purpose |
 |---|---|
-| `enable` | Ingress and certificates come by default; `builds` (Zeabur Builder, installed with zot, needs 1800 MiB of memory), or component ids under these capabilities, may be added. |
-| `disable` | Capabilities or component ids taken out. |
-| `allowDataLoss` | As for a team install. |
-| `inputs`, `secretFiles` | As for a team install. |
-| `host.tlsSan` | Extra API server certificate names, for when your computer reaches the server by another name. |
-| `host.requireEncryptedDisk` | Stop when `/var/lib/kubesolo` is not on a dm-crypt device. |
-| `sources.catalog` | A catalog `index.json` on disk. |
+| `enable` | `[]`. Ingress and certificates come by default. You can add only `builds` (Zeabur Builder, installed with zot, requires at least 1800 MiB of memory) or component IDs under these capabilities |
+| `disable` | `[]`. Capabilities or full component IDs to exclude |
+| `allowDataLoss` | `[]`. Same as in the configuration for creating a cluster |
+| `inputs` | `{}`. Same as in the configuration for creating a cluster, grouped by component ID |
+| `secretFiles` | `{}`. Same as in the configuration for creating a cluster. Files must have permissions `0600` |
+| `host.tlsSan` | `[]`. Add an address or domain here if your computer uses it to reach the API |
+| `host.requireEncryptedDisk` | `false`. When `true`, `apply` stops if `/var/lib/kubesolo` isn't on an encrypted device |
+| `sources.catalog` | Optional. A local Catalog `index.json` to replace the pinned version |
 
-KubeSolo, helm-controller and kubectl are pinned by the installer; no field changes them.
+Components use KubeSolo's built-in `local-path` storage class, which stores data under `/var/lib/kubesolo`. KubeSolo, helm-controller, and kubectl are pinned by the installer; no field changes their versions.
 
-## `join`
+## Configuration for joining an existing cluster
 
-A file with a top-level `join` makes this machine join an existing cluster instead of creating
-one. `zeabur-installer node add` on a server prints it. Only `rke2Version`, `host` and
-`sources.imageArchives` may sit beside it; a joining node installs RKE2 and nothing else.
+A top-level `join` tells the installer to treat this machine as a new node joining an existing cluster and install only RKE2. Only `rke2Version`, `host`, and `sources.imageArchives` can appear alongside it. Fields for creating a cluster, such as `preset` and `access`, aren't accepted.
 
-| Field | Meaning |
+Run `zeabur-installer node add` on an existing server to get the complete YAML, then save it on the new host. It includes the token and server settings, so you don't need to assemble them yourself.
+
+| Field | Default and rules |
 |---|---|
-| `server` | `https://<address>:9345`, a server's RKE2 supervisor. |
-| `role` | `worker` (default) or `server`. |
-| `token` | The token `node add` printed. The file must then be mode 0600. |
-| `tokenFile` | Or a file holding it, mode 0600. |
-| `serverConfig` | Servers only, required: `disable` (RKE2 components the cluster disables) and `identity` (whether kube-apiserver trusts Zeabur Identity). |
-| `longhorn` | `true` when the cluster runs Longhorn: `apply` prepares this node for it as on the first server. `node add` sets it. |
+| `join.server` | Required. The server's supervisor address, such as `https://10.0.0.5:9345` |
+| `join.role` | `worker`. Also accepts `server` |
+| `join.token` | Use either this or `tokenFile`. If you put the token directly in the configuration file, the file must have permissions `0600` |
+| `join.tokenFile` | Use either this or `token`. A token file with permissions `0600` |
+| `join.serverConfig` | Required for `server`; not accepted for workers. Copy `disable` and `identity` exactly as printed by `node add --role server` |
+| `join.longhorn` | `false`. When `true`, installs the host packages Longhorn needs before RKE2 starts |
 
-`host.tlsSan` applies to servers only.
+Workers don't accept `host.tlsSan`. `rke2Version` must match the cluster. A worker bootstrap token can't be used to join a server; use the configuration generated by `node add --role server`.
 
-## Examples
+## Troubleshoot configuration issues
 
-- [installer-examples/domain.yaml](installer-examples/domain.yaml): a server with public DNS names.
-- [installer-examples/local.yaml](installer-examples/local.yaml): a test machine.
-- [installer-examples/development.yaml](installer-examples/development.yaml): unpublished builds.
-- [installer-examples/join.yaml](installer-examples/join.yaml): another node for an existing cluster.
+- unknown field: Check field capitalization, and remove misspelled keys or keys at the wrong level.
+- Invalid hostname: Remove `https://` and the path, and use different names for `identity` and `zeabur`.
+- Missing required input: Add the values for the components and fields listed by `plan`, then run `plan` again.
+- Incorrect token file permissions: Run `chmod 0600` on the new host. Don't commit configuration files containing tokens to a Git repository.
+
+Run `plan` after editing the configuration file. To remove the product and clean up host files, see [Uninstall Zeabur](../leave/uninstall.mdx).
