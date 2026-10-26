@@ -101,7 +101,7 @@ export const zhTW: Messages = {
   "code.crypt.requiredPlain": (path) => `${path} 不在加密的裝置上，但設定要求加密。`,
   "code.crypt.requiredUnknown": (path) => `無法判斷 ${path} 是否加密，但設定要求加密。`,
   "code.crypt.no": (path) =>
-    `${path} 不在加密的裝置上，上面的磁碟區也就沒有加密。測試機無妨，正式環境的資料請裝在加密的磁碟上。`,
+    `${path} 不在加密的磁碟上，磁碟區和資料庫的檔案以明文存放。一般 VPS 沒辦法事後加密，可以照常安裝。要放敏感資料的話，改選主機商有加密磁碟的方案；這項檢查看不到主機商做的加密。`,
   "code.crypt.unknown": (path) =>
     `無法判斷 ${path} 是否加密。請執行 lsblk，看它底下有沒有 crypt 裝置。`,
   "code.docker.none": () => "這台伺服器沒有 Docker。",

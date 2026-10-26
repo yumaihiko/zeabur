@@ -606,7 +606,11 @@ fn encryption(data_dir: &str, required: bool) -> Check {
         ),
         (Encryption::Plain, false) => (
             Status::Warn,
-            format!("{target} is not on an encrypted device, so volumes on it are not encrypted"),
+            format!(
+                "{target} is not on an encrypted disk, so volumes and databases are stored \
+                 unencrypted; most VPS plans can't encrypt it afterwards, so for sensitive data \
+                 choose a plan whose provider encrypts disks"
+            ),
             Code::CryptNo,
         ),
         (Encryption::Unknown, false) => (

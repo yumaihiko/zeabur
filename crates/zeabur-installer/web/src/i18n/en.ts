@@ -115,7 +115,7 @@ export const en = {
   "code.crypt.requiredUnknown": (path: string) =>
     `Could not tell whether ${path} is encrypted, and the configuration requires it.`,
   "code.crypt.no": (path: string) =>
-    `${path} is not on an encrypted device, so volumes on it are not encrypted. Fine for a test machine; for production data, install on an encrypted disk.`,
+    `${path} isn't on an encrypted disk, so volume and database files are stored unencrypted. Most VPS plans can't encrypt it afterwards, so you can go ahead. For sensitive data, pick a plan whose provider encrypts disks; this check can't see that.`,
   "code.crypt.unknown": (path: string) =>
     `Could not tell whether ${path} is encrypted. Run lsblk to see whether a crypt device is under it.`,
   "code.docker.none": () => "Docker is not on this server.",

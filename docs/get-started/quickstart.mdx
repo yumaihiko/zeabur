@@ -56,7 +56,7 @@ Under “Check the server,” review the hostname, architecture, memory, and add
 
 The installer checks admin rights, systemd, the clock, swap, memory reserved for crash dumps, other Kubernetes installations, ports, disk space, and disk encryption. Fix any failed checks, then click “Check again.”
 
-Warnings don't block installation. For example, the installer warns if the disk isn't encrypted. Secrets are encrypted, but volumes aren't. You can continue on a test server.
+Warnings don't block installation. For example, the installer warns if the disk isn't encrypted: secrets are encrypted, but files in volumes and databases aren't. Most VPS plans can't encrypt the system disk afterwards, so you can continue. For sensitive data, choose a plan whose provider encrypts disks. The installer can't see encryption the provider does underneath, so the warning stays.
 
 The footer explains that the installer saves your choices to `/etc/zeabur-installer/config.yaml`.
 

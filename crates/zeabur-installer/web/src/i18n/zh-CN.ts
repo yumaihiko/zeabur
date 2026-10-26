@@ -101,7 +101,7 @@ export const zhCN: Messages = {
   "code.crypt.requiredPlain": (path) => `${path} 不在加密设备上，但配置要求加密。`,
   "code.crypt.requiredUnknown": (path) => `无法判断 ${path} 是否加密，但配置要求加密。`,
   "code.crypt.no": (path) =>
-    `${path} 不在加密的设备上，上面的卷也就没有加密。测试机无妨，正式环境的数据请装在加密的磁盘上。`,
+    `${path} 不在加密的磁盘上，卷和数据库的文件以明文存放。一般 VPS 无法事后加密，可以照常安装。要存放敏感数据的话，改选服务商提供加密磁盘的方案；这项检查看不到服务商做的加密。`,
   "code.crypt.unknown": (path) =>
     `无法判断 ${path} 是否加密。请运行 lsblk，查看它下面有没有 crypt 设备。`,
   "code.docker.none": () => "这台服务器没有 Docker。",
