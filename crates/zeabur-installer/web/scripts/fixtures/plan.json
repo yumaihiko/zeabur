@@ -538,7 +538,7 @@
     },
     "leftOut": {},
     "memory": {
-      "clusterMib": 1300,
+      "clusterMib": 2140,
       "componentsMib": 368,
       "hostMib": 7936,
       "unmeasured": 3

@@ -53,21 +53,28 @@ const EXTERNAL_SECRETS: &str = "external-secrets/external-secrets";
 const KUBE_API_CIDR_INPUT: &str = "kube-api-cidr";
 /// The `ClusterIssuer` of `domain` access, shipped by the catalog's cert-manager component.
 pub const ACME_ISSUER: &str = "letsencrypt";
-/// RKE2's own memory at idle on one node, measured on the test VM (`kubectl top` plus containerd
-/// and the rke2 process), rounded up.
-const RKE2_IDLE_MIB: u64 = 1300;
+/// What a team host uses at idle before any catalog component: the OS, RKE2 and Zeabur with
+/// Identity. On a 4 GiB VM with the `standard` preset, `free` showed 2640 MiB used, about 500 of
+/// it the components (zot, Keel and `CloudNativePG` have no catalog measurement yet, so the
+/// estimate runs about 130 MiB short until they do). The rest is split by the process figures from
+/// that VM: kube-apiserver about 980, etcd 97, kube-controller-manager 92, canal 59, then kubelet,
+/// containerd and the rest of RKE2.
+const BASE_IDLE_MIB: u64 = OS_IDLE_MIB + RKE2_IDLE_MIB + ZEABUR_IDLE_MIB;
+/// Ubuntu Server at idle.
+const OS_IDLE_MIB: u64 = 350;
+/// RKE2 and its control plane at idle, containerd and kubelet included.
+const RKE2_IDLE_MIB: u64 = 1730;
+/// Zeabur and Identity at idle.
+const ZEABUR_IDLE_MIB: u64 = 60;
 /// The least memory a team install needs.
 ///
-/// It is about 2110 MiB at idle plus 250 MiB of headroom, rounded up. The idle part is Ubuntu 350,
-/// RKE2 1300 (`RKE2_IDLE_MIB`), Zeabur and Identity 60, Traefik and cert-manager 150. A server with
-/// 4 GiB passes, also when a crash kernel reserve takes 512 MiB of it. A smaller host can only be a
-/// personal install.
+/// It is the idle base plus Traefik and cert-manager (about 150 MiB, what `minimal` installs) and
+/// 250 MiB of headroom, rounded up. A server with 4 GiB passes, also when a crash kernel reserve
+/// takes 512 MiB of it. A smaller host can only be a personal install.
 ///
-/// This is the floor of `minimal`, not of `standard`. On a 4 GiB VM (3379 MiB `MemTotal`), the
-/// `standard` preset without zot, Keel and `CloudNativePG` used 2490 MiB. The catalog has not
-/// measured those three yet; their requests are 64, 32 and 64 + 32 MiB, so `standard` is about
-/// 2700 MiB and leaves about 650 MiB on that VM.
-pub const MIN_MEMORY_MIB: u64 = 2200;
+/// `standard` needs more: with zot, Keel and `CloudNativePG` it idles at about 2640 MiB (`free`),
+/// which a 4 GiB VM (3379 MiB `MemTotal`) holds with about 740 MiB to spare.
+pub const MIN_MEMORY_MIB: u64 = 2600;
 
 /// Why components' pods need more than `restricted`: those the catalog does not mark privileged,
 /// and those whose reason is worth more than the catalog's flag.
@@ -668,13 +675,13 @@ pub fn products_only(
 
 /// Idle memory, and a warning when the host is short of it.
 fn memory(components: &[ComponentPlan], host_mib: u64, warnings: &mut Vec<Warning>) -> Memory {
-    let memory = idle_memory(RKE2_IDLE_MIB, components, host_mib);
+    let memory = idle_memory(BASE_IDLE_MIB, components, host_mib);
     let idle = memory.cluster_mib + memory.components_mib;
-    if idle > host_mib * 3 / 4 {
+    if idle > host_mib * 4 / 5 {
         warnings.push(warning(
             "memory.tight",
             &[&idle.to_string(), &host_mib.to_string()],
-            format!("At idle, RKE2 and the components use about {idle} MiB of this host's {host_mib} MiB."),
+            format!("At idle, the system, RKE2 and the components use about {idle} MiB of this host's {host_mib} MiB."),
         ));
     }
     memory
@@ -2128,6 +2135,17 @@ mod tests {
             panic!("{} MiB is too little for a team install", small.memory_mib);
         };
         assert!(error.to_string().contains("use: personal"), "{error}");
+    }
+
+    #[test]
+    fn the_standard_preset_fits_a_4_gib_server_without_a_warning() {
+        let index = Index::parse(INDEX.as_bytes()).unwrap();
+        let mut host = facts();
+        host.memory_mib = 3379;
+        let plan = plan(&index, &config(""), &host).unwrap();
+        let idle = plan.memory.cluster_mib + plan.memory.components_mib;
+        assert!(idle < host.memory_mib * 4 / 5, "{idle} MiB");
+        assert!(plan.warnings.iter().all(|w| w.code != "memory.tight"));
     }
 
     #[test]

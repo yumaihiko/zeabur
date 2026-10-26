@@ -486,71 +486,74 @@ mod tests {
 
     #[test]
     fn the_crds_of_a_charts_templates_are_deleted_and_their_objects_count_as_use() {
-        let before = planned("enable: [event-autoscaling/keda]\n");
+        let before = planned("enable: [resource-recommendations/vertical-pod-autoscaler]\n");
         let after = planned("");
         let installed = installed(&before);
-        let mut keda = removals(&index(), &after, &installed, "single-node", &[])
+        let mut vpa = removals(&index(), &after, &installed, "single-node", &[])
             .0
             .into_iter()
-            .find(|r| r.id == "event-autoscaling/keda")
+            .find(|r| r.id == "resource-recommendations/vertical-pod-autoscaler")
             .unwrap();
-        let release = installed.iter().find(|i| i.component == keda.id).unwrap();
+        let release = installed.iter().find(|i| i.component == vpa.id).unwrap();
         let owned = json!({RELEASE_NAME: release.chart, RELEASE_NAMESPACE: release.namespace});
         let other = json!({RELEASE_NAME: release.chart, RELEASE_NAMESPACE: "elsewhere"});
         let crds = [
-            crd("scaledobjects.keda.sh", &owned),
-            crd("cloudeventsources.eventing.keda.sh", &owned),
+            crd("verticalpodautoscalers.autoscaling.k8s.io", &owned),
             crd(
-                "kept.keda.sh",
+                "verticalpodautoscalercheckpoints.autoscaling.k8s.io",
+                &owned,
+            ),
+            crd(
+                "kept.autoscaling.k8s.io",
                 &json!({RELEASE_NAME: release.chart, RELEASE_NAMESPACE: release.namespace, RESOURCE_POLICY: "keep"}),
             ),
-            crd("fromcrdsfolder.keda.sh", &json!({})),
+            crd("fromcrdsfolder.autoscaling.k8s.io", &json!({})),
             crd("widgets.example.com", &other),
         ];
-        let deleted = release_crds(&crds, &installed, &keda.id);
+        let deleted = release_crds(&crds, &installed, &vpa.id);
         assert_eq!(
             deleted,
             [
-                "scaledobjects.keda.sh",
-                "cloudeventsources.eventing.keda.sh"
+                "verticalpodautoscalers.autoscaling.k8s.io",
+                "verticalpodautoscalercheckpoints.autoscaling.k8s.io"
             ]
         );
-        assert!(keda.leftovers.iter().any(|l| l == CRDS));
+        assert!(vpa.leftovers.iter().any(|l| l == CRDS));
 
-        keda.delete_crds(deleted);
-        assert!(!keda.leftovers.iter().any(|l| l == CRDS));
+        vpa.delete_crds(deleted);
+        assert!(!vpa.leftovers.iter().any(|l| l == CRDS));
         assert_eq!(
-            keda.deleted_crds,
+            vpa.deleted_crds,
             [
-                "scaledobjects.keda.sh",
-                "cloudeventsources.eventing.keda.sh"
+                "verticalpodautoscalers.autoscaling.k8s.io",
+                "verticalpodautoscalercheckpoints.autoscaling.k8s.io"
             ]
         );
-        assert!(keda.in_use.contains(&InUse::Objects {
-            resource: "cloudeventsources.eventing.keda.sh".to_owned()
+        assert!(vpa.in_use.contains(&InUse::Objects {
+            resource: "verticalpodautoscalercheckpoints.autoscaling.k8s.io".to_owned()
         }));
     }
 
     #[test]
     fn crds_that_helm_leaves_stay_as_the_catalog_says() {
-        let before = planned("enable: [event-autoscaling/keda]\n");
+        let before = planned("enable: [resource-recommendations/vertical-pod-autoscaler]\n");
         let after = planned("");
         let installed = installed(&before);
-        let mut keda = removals(&index(), &after, &installed, "single-node", &[])
+        let mut vpa = removals(&index(), &after, &installed, "single-node", &[])
             .0
             .into_iter()
-            .find(|r| r.id == "event-autoscaling/keda")
+            .find(|r| r.id == "resource-recommendations/vertical-pod-autoscaler")
             .unwrap();
-        let in_use = keda.in_use.clone();
+        let in_use = vpa.in_use.clone();
         let deleted = release_crds(
-            &[crd("scaledobjects.keda.sh", &json!({}))],
+            &[crd("verticalpodautoscalers.autoscaling.k8s.io", &json!({}))],
             &installed,
-            &keda.id,
+            &vpa.id,
         );
-        keda.delete_crds(deleted);
-        assert!(keda.leftovers.iter().any(|l| l == CRDS));
-        assert_eq!(keda.deleted_crds, Vec::<String>::new());
-        assert_eq!(keda.in_use, in_use);
+        vpa.delete_crds(deleted);
+        assert!(vpa.leftovers.iter().any(|l| l == CRDS));
+        assert_eq!(vpa.deleted_crds, Vec::<String>::new());
+        assert_eq!(vpa.in_use, in_use);
     }
 
     #[test]

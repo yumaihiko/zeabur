@@ -366,7 +366,7 @@ export const zhTW: Messages = {
   "warning.memory.personal.tight": (idle, host) =>
     `閒置時 KubeSolo 和元件大約用掉 ${mib(idle)}，這台機器總共 ${mib(host)}。`,
   "warning.memory.tight": (idle, host) =>
-    `閒置時，RKE2 和元件約使用 ${mib(idle)}，這台伺服器共有 ${mib(host)}。`,
+    `閒置時，系統、RKE2 和元件約使用 ${mib(idle)}，這台伺服器共有 ${mib(host)}。`,
   "warning.rke2.unsupported": (version) =>
     `這個安裝程式不支援 RKE2 ${version}：下載的檔案只能用該版本自己附的檢查碼驗證。`,
   "warning.join.sameRegion": () =>

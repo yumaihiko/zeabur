@@ -1,7 +1,7 @@
 ---
 title: 自己用：在小機器上安裝
 description: 只有自己要用時，用 KubeSolo 在 1.5 GiB 記憶體的機器裝好 Kubernetes 和元件，可以再勾選 Zeabur Builder，再在自己的電腦用 zeaburctl ui 打開 Zeabur。
-source: "66b2fc63f035"
+source: "c91cc8aa3117"
 ---
 
 只有自己要用時，installer 可以改裝 KubeSolo。伺服器上只有 Kubernetes 和元件，不跑 Zeabur 面板和 Zeabur Identity。要用 Zeabur 時，在自己的電腦執行 `zeaburctl ui`，用伺服器給你的 kubeconfig 連線。
@@ -25,7 +25,7 @@ source: "66b2fc63f035"
 
 自己用的版本也沒有成員和權限。Zeabur Identity 發的登入憑證，要 kube-apiserver 用 `--authentication-config` 載入設定才會認得，KubeSolo 目前沒有開放這個設定（[portainer/kubesolo#231](https://github.com/portainer/kubesolo/issues/231)）。所以只能用伺服器給的 kubeconfig 連線，拿到它的人可以控制整個叢集，不適合讓多個人或多個團隊共用。
 
-伺服器可用記憶體低於 2200 MiB 時，installer 只接受自己用。之後要給團隊用，沒有辦法直接升級，要在 4 GiB 記憶體的伺服器上重新用 RKE2 安裝。
+伺服器可用記憶體低於 2600 MiB 時，installer 只接受自己用。之後要給團隊用，沒有辦法直接升級，要在 4 GiB 記憶體的伺服器上重新用 RKE2 安裝。
 
 ## 先準備機器
 
@@ -47,7 +47,7 @@ installer 釘選 KubeSolo、helm-controller 和 kubectl 的版本，下載後核
 
 ![「檢查伺服器」的「給誰用」選了「自己用」，上方只剩四個步驟](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-personal-choose.avif)
 
-伺服器可用記憶體不到 2200 MiB 時，「團隊用」是灰的，只能選「自己用」。
+伺服器可用記憶體不到 2600 MiB 時，「團隊用」是灰的，只能選「自己用」。
 
 ![記憶體只有 1.5 GiB 的伺服器，「團隊用」是灰的，說明這台不夠](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-personal-small.avif)
 

@@ -36,7 +36,7 @@ export type Step = (typeof steps)[number]
 const personalSteps: readonly Step[] = steps.filter((s) => s !== "access")
 
 /** The memory below which a team install is refused (plan.rs, `MIN_MEMORY_MIB`). */
-const teamMinMemoryMib = 2200
+const teamMinMemoryMib = 2600
 
 const emptyPersonal: PersonalConfig = {
   use: "personal",

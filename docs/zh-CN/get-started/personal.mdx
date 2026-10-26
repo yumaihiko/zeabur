@@ -1,7 +1,7 @@
 ---
 title: 个人使用：在小型服务器上安装
 description: 只有自己使用时，用 KubeSolo 在 1.5 GiB 内存的服务器上安装 Kubernetes 和组件，也可以勾选 Zeabur Builder，再在自己的电脑上用 zeaburctl ui 打开 Zeabur。
-source: "66b2fc63f035"
+source: "c91cc8aa3117"
 ---
 
 只有自己使用时，installer 可以改用 KubeSolo。服务器上只有 Kubernetes 和组件，不运行 Zeabur 面板和 Zeabur Identity。要使用 Zeabur，在自己的电脑上运行 `zeaburctl ui`，用服务器提供的 kubeconfig 连接。
@@ -25,7 +25,7 @@ source: "66b2fc63f035"
 
 个人版也没有成员和权限。Zeabur Identity 签发的登录凭证，需要 kube-apiserver 用 `--authentication-config` 加载配置后才能识别，KubeSolo 目前没有开放这项配置（[portainer/kubesolo#231](https://github.com/portainer/kubesolo/issues/231)）。因此只能用服务器提供的 kubeconfig 连接，拿到它的人可以控制整个集群，不适合多人或多个团队共用。
 
-服务器可用内存低于 2200 MiB 时，installer 只接受个人使用模式。以后要供团队使用，无法直接升级，需要在 4 GiB 内存的服务器上重新用 RKE2 安装。
+服务器可用内存低于 2600 MiB 时，installer 只接受个人使用模式。以后要供团队使用，无法直接升级，需要在 4 GiB 内存的服务器上重新用 RKE2 安装。
 
 ## 先准备服务器
 
@@ -47,7 +47,7 @@ installer 固定 KubeSolo、helm-controller 和 kubectl 的版本，下载后校
 
 ![“检查服务器”的“给谁用”选择了“个人使用”，上方只剩四个步骤](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-personal-choose.avif)
 
-服务器可用内存不足 2200 MiB 时，“团队使用”不可选，只能选择“个人使用”。
+服务器可用内存不足 2600 MiB 时，“团队使用”不可选，只能选择“个人使用”。
 
 ![内存只有 1.5 GiB 的服务器，“团队使用”不可选，并提示这台服务器内存不足](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-personal-small.avif)
 

@@ -365,7 +365,7 @@ export const zhCN: Messages = {
   "warning.memory.personal.tight": (idle, host) =>
     `空闲时 KubeSolo 和组件大约用掉 ${mib(idle)}，这台机器总共 ${mib(host)}。`,
   "warning.memory.tight": (idle, host) =>
-    `空闲时，RKE2 和组件约使用 ${mib(idle)}，这台服务器共有 ${mib(host)}。`,
+    `空闲时，系统、RKE2 和组件约使用 ${mib(idle)}，这台服务器共有 ${mib(host)}。`,
   "warning.rke2.unsupported": (version) =>
     `此安装程序不支持 RKE2 ${version}：下载的文件只能用该版本自带的校验和验证。`,
   "warning.join.sameRegion": () =>

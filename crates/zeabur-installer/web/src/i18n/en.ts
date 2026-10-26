@@ -398,7 +398,7 @@ export const en = {
   "warning.memory.personal.tight": (idle: string, host: string) =>
     `At idle, KubeSolo and the components use about ${mib(idle)} of this machine's ${mib(host)}.`,
   "warning.memory.tight": (idle: string, host: string) =>
-    `At idle, RKE2 and the components use about ${mib(idle)} of this server's ${mib(host)}.`,
+    `At idle, the system, RKE2 and the components use about ${mib(idle)} of this server's ${mib(host)}.`,
   "warning.rke2.unsupported": (version: string) =>
     `RKE2 ${version} is not supported by this installer: its downloads are checked only against the release's own checksums.`,
   "warning.join.sameRegion": () =>
