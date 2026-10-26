@@ -1,0 +1,63 @@
+- group: get-started
+  label: 开始使用
+  pages:
+    quickstart: 在一台服务器上安装 Zeabur
+    advanced-install: 使用配置文件和命令安装
+    personal: 个人使用：在小型服务器上安装
+    install: 将 Zeabur 安装到已有集群
+    first-project: 部署第一个服务
+    how-it-works: Zeabur 如何管理服务
+- group: deploy
+  label: 部署服务
+  pages:
+    git: 从 Git 构建并部署服务
+    upload: 上传文件夹并部署服务
+    image: 部署容器镜像
+    compose: 导入 Docker Compose 服务
+    templates: 从应用模板部署
+    databases: 创建、备份与还原数据库
+    object-storage: 创建 S3 对象存储和存储桶
+    cron-jobs: 按定时运行服务命令
+- group: configure
+  label: 调整服务设置
+  pages:
+    projects: 创建和管理项目
+    service-settings: 调整副本、资源和健康检查
+    restart-rollback: 重启、回滚与暂停服务
+    variables: 配置环境变量
+    domains: 添加公开域名与 HTTPS
+    dns: 配置 DNS 记录
+    networking: 服务之间的连接与对外端口
+    ip-limits: 限制入站和出站 IP
+    maintenance: 显示维护与错误页面
+    volumes: 存储文件与备份卷
+    logs-terminal: 查看日志、事件和用量，打开终端
+    objects-yaml: 用 YAML 创建和编辑对象
+    delete-project: 删除项目
+- group: cluster
+  label: 管理集群
+  pages:
+    settings: 调整集群名称、域名和用量历史
+    members: 邀请成员并分配项目权限
+    github-app: 用 GitHub App 部署私有仓库
+    notifications: 将集群告警发送到通知渠道
+    backups: 备份集群并从备份还原
+    nodes: 添加与维护节点
+    components: 检查并安装集群组件
+    external-secrets: 从外部密钥库同步机密变量
+    s3-destinations: 注册共享的 S3 备份目的地
+    diagnosis: 看懂状态、警告与诊断
+- group: reference
+  label: 参考
+  pages:
+    zeaburctl: zeaburctl
+    installer-configuration: Installer 配置
+    installer: Installer 命令
+    permissions: 权限
+    architecture: 架构
+    releases: 发行文件与验证
+    security: 安全性
+- group: leave
+  label: 移除 Zeabur
+  pages:
+    uninstall: 移除 Zeabur，保留服务

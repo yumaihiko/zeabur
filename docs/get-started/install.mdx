@@ -1,0 +1,140 @@
+---
+title: Install Zeabur in an existing cluster
+description: Set up a Zeabur Identity client and use Helm to install the management interface with passkey sign-in.
+---
+
+Register a Zeabur client in Zeabur Identity, store the client secret in the cluster, and install the Helm chart. Then open Zeabur, sign in with a passkey, and view existing namespaces.
+
+## Prepare sign-in and HTTPS
+
+- A kubeconfig with admin rights for the target cluster, plus `kubectl`, Helm 4, and `zeabur-identityctl`.
+- Kubernetes 1.30 or later. By default, the chart creates project member roles and uses `ValidatingAdmissionPolicy` to limit which Namespace fields Developers can change. This API is generally available starting in 1.30.
+- Zeabur Identity with sign-in available over HTTPS, and a kube-apiserver that trusts the Kubernetes tokens it issues. See [Zeabur Identity's get started guide](https://oss.zeabur.com/docs/identity/get-started) for installation instructions.
+- An HTTPS domain for Zeabur, a working Ingress controller, and a TLS secret for that domain. The examples use Traefik, `zeabur.example.com`, and `zeabur-tls`.
+- The Zeabur version to install. The chart is published at `oci://ghcr.io/zeabur-oss/charts/zeabur`, and its default image is pinned to the digest for the same version. See [Release artifacts](../reference/releases.mdx) for download and verification instructions. The examples use `<version>` for the version number.
+
+Zeabur's sign-in domain and the public domains for services you deploy later are configured separately. Get sign-in working for the management interface first, then prepare DNS and certificates for applications.
+
+## Register the Zeabur client
+
+The example uses `https://identity.example.com` as the Identity issuer. Replace both domains with their actual values, and run this command with the cluster admin's kubeconfig:
+
+```sh
+zeabur-identityctl client create zeabur \
+  --type confidential \
+  --audience kubernetes \
+  --display-name Zeabur \
+  --redirect-uri https://zeabur.example.com/auth/callback \
+  --home-url https://zeabur.example.com/ \
+  | kubectl apply -f -
+```
+
+The command prints the client secret once, on stderr. Create the namespace, then read the value interactively in Bash rather than passing it as a command argument:
+
+```bash
+kubectl create namespace zeabur
+read -rs CLIENT_SECRET
+printf %s "$CLIENT_SECRET" | kubectl -n zeabur create secret generic zeabur-oidc \
+  --from-file=client-secret=/dev/stdin
+unset CLIENT_SECRET
+```
+
+After running `read`, paste the client secret and press Enter. Keeping the value out of command arguments prevents other users on the machine from seeing it in the process list. The chart records only the secret's name, so the value stays out of Helm's release records.
+
+## Install the management interface
+
+Make sure `zeabur-tls` is in the `zeabur` namespace, then run:
+
+```sh
+helm install zeabur oci://ghcr.io/zeabur-oss/charts/zeabur \
+  --version <version> \
+  --namespace zeabur \
+  --set clusterName=production \
+  --set publicUrl=https://zeabur.example.com \
+  --set issuer.url=https://identity.example.com \
+  --set issuer.clientSecret.existingSecret=zeabur-oidc \
+  --set ingress.enabled=true \
+  --set ingress.className=traefik \
+  --set ingress.tls.secretName=zeabur-tls
+kubectl -n zeabur rollout status deployment/zeabur
+```
+
+`clusterName` is the cluster name shown in the interface. The domain in `publicUrl` must match the client's callback domain. The chart refuses public URLs that use HTTP or include a path.
+
+This installation adds Zeabur's Deployment, Service, Ingress, configuration, and plan key, along with the ClusterRoles and Namespace admission policy for project members. The chart binds the member roles to nobody. After signing in, an admin sets each person's access on the **Members** page.
+
+Admins who sign in with an admin account have full cluster rights, with no additional setup in Zeabur. See [Permissions](../reference/permissions.mdx#admin-accounts-and-regular-accounts) for admin accounts, session limits, and the sign-in settings on the **Settings** page.
+
+## Sign in and check existing services
+
+Open `https://zeabur.example.com` and sign in with a passkey. Go to **Projects**, find an existing application under **Other namespaces**, and open it to view its services.
+
+![Other namespaces on the Projects page lists namespaces in the cluster that aren't projects yet](https://oss.zeabur.com/shots/zeabur/en/light/existing-namespaces.avif)
+
+To keep it listed as a project, select **Use this namespace**, then review and apply the change. This only adds a project label. It doesn't move the Deployments, Services, or data inside.
+
+If you can sign in but can't see services, check the user's Kubernetes rights first. Zeabur reads the cluster with the signed-in person's token. Its ServiceAccount can only use kubectl terminal replicas in `zeabur-terminals`. An admin can grant project roles on the [Members](../cluster/members.mdx) page.
+
+## Give new services a public URL
+
+Prepare an application domain, such as `apps.example.com`. Point the DNS record for `*.apps.example.com` at the Ingress controller's address, and prepare a cert-manager ClusterIssuer that can issue certificates, such as `letsencrypt`. Update the same release:
+
+```sh
+helm upgrade zeabur oci://ghcr.io/zeabur-oss/charts/zeabur \
+  --version <version> \
+  --namespace zeabur --reuse-values \
+  --set 'domains.suffixes={apps.example.com}' \
+  --set domains.clusterIssuer=letsencrypt
+```
+
+When you deploy `web` in the `shop` project, the form suggests `web-shop.apps.example.com`. You can list multiple application domains separated by commas; the first is the default. You can also change them later in the **Domains** section of the **Cluster** page, which checks DNS records and lists the records to add. See [Set up DNS records](../configure/dns.mdx). If `domains.suffixes` is empty, you must enter the full domain manually. If `domains.clusterIssuer` is empty, new services' public URLs use HTTP.
+
+These settings only name the issuer services should use. Prepare the ClusterIssuer and DNS first; Zeabur doesn't create them from these two values.
+
+## Trust a private CA
+
+If Zeabur Identity, a registry, object storage, or GitHub Enterprise uses a certificate signed by a private CA, or the cluster connects through a proxy that inspects TLS, put the CA certificates in a ConfigMap in Zeabur's namespace and set `extraTrustedCA.configMap`:
+
+```sh
+kubectl -n zeabur create configmap corp-ca --from-file=ca.crt=corp-ca.pem
+helm upgrade zeabur oci://ghcr.io/zeabur-oss/charts/zeabur \
+  --version <version> \
+  --namespace zeabur --reuse-values \
+  --set extraTrustedCA.configMap=corp-ca
+```
+
+If the certificates are in a secret, set `extraTrustedCA.secret` instead. Use only one of these settings. The key is `ca.crt` by default; change it with `extraTrustedCA.key`. The file may hold several certificates.
+
+Zeabur trusts these certificates in addition to the built-in Mozilla CA bundle when signing in to Identity, reading images, reading backups from object storage, and connecting to GitHub. Zeabur reads the file when it starts, so after you change the config file, run `kubectl -n zeabur rollout restart deployment/zeabur`.
+
+zeabur-installer sets `issuer.caBundle` and `builds.caBundle` to reference the local CA that signs Identity's certificate and Zot's CA, respectively. Zeabur trusts them alongside `extraTrustedCA`, so you don't need to set them yourself.
+
+## Common failures
+
+| Situation | What to check |
+| --- | --- |
+| The browser can't open Zeabur | Check public DNS, the Ingress class, the TLS secret, and connectivity to the entry point. Confirm the Deployment is ready before checking the entry point. |
+| Sign-in doesn't return to Zeabur | Check `publicUrl`, the `/auth/callback` registered in Identity, and `issuer.url`. |
+| Identity uses a private CA | Set `extraTrustedCA` so Zeabur trusts the CA that signed Identity's certificate. See [Trust a private CA](#trust-a-private-ca). |
+| Read requests are denied after sign-in | Check the member's identity and groups in Identity, then check the target namespace's RoleBinding. See [Permissions reference](../reference/permissions.mdx). |
+| A new service is ready, but its URL doesn't work | Check the application domain's DNS and certificate. The management interface and applications use different domains, which need separate configuration. |
+| You need to sign in again after an upgrade | The chart runs one Zeabur replica, and sessions live in memory. Replacing the replica requires signing in again. |
+
+## Manage the chart with GitOps
+
+Zeabur uses a key to sign reviewed changes. The chart creates that key on the first install and reads it back on subsequent `helm upgrade` runs. Argo CD and `helm template` generate manifests without connecting to the cluster, so they generate a new key each time. This invalidates changes that have been reviewed but not yet applied. For these tools, create a fixed key first, then set `planKey.existingSecret`:
+
+```sh
+kubectl -n zeabur create secret generic zeabur-plan-key \
+  --from-literal=plan-key="$(openssl rand -hex 32)"
+```
+
+Set `planKey.existingSecret` to `zeabur-plan-key`. To view all chart settings, run `helm show values oci://ghcr.io/zeabur-oss/charts/zeabur --version <version>`.
+
+## Remove the management interface
+
+```sh
+helm uninstall zeabur --namespace zeabur
+```
+
+Applications and the components that provide ingress, certificates, and storage stay in place. The member roles the chart created are removed with the release, so you'll need to manage members' rights separately. See [Remove Zeabur](../leave/uninstall.mdx) for the full list of what stays and the steps to migrate sign-in.

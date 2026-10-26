@@ -1,0 +1,141 @@
+---
+title: 将 Zeabur 安装到已有集群
+description: 配置 Zeabur Identity 客户端，通过 Helm 安装支持通行密钥登录的管理界面。
+source: "cd07cf97c871"
+---
+
+先在 Zeabur Identity 注册 Zeabur 客户端，将 client secret 保存到集群，再安装 Helm chart。完成后，打开 Zeabur 网址，用通行密钥登录并查看已有的 Namespace。
+
+## 先准备登录和 HTTPS
+
+- 可管理目标集群的 kubeconfig，以及 `kubectl`、Helm 4 和 `zeabur-identityctl`。
+- Kubernetes 1.30 及以上版本。chart 默认会创建项目成员角色，并用 `ValidatingAdmissionPolicy` 限制开发者能修改的 Namespace 字段。这个 API 从 1.30 起正式提供。
+- 已支持 HTTPS 登录的 Zeabur Identity，且 kube-apiserver 已信任它签发的 Kubernetes token。安装方法见 [Zeabur Identity 入门](https://oss.zeabur.com/docs/identity/get-started)。
+- Zeabur 的 HTTPS 域名、可用的 Ingress controller，以及该域名的 TLS Secret。以下使用 Traefik、`zeabur.example.com` 和 `zeabur-tls`。
+- 要安装的 Zeabur 版本。chart 发布在 `oci://ghcr.io/zeabur-oss/charts/zeabur`，默认镜像已固定为同一版本的 digest。下载与验证方法见[发布产物](../reference/releases.mdx)。以下用 `<version>` 代表版本号。
+
+Zeabur 自身的登录域名与之后部署服务的公开域名分别配置。先让管理界面支持登录，再准备应用的 DNS 和证书。
+
+## 注册 Zeabur 客户端
+
+以下使用 `https://identity.example.com` 作为 Identity issuer。将两个域名替换为实际值，并使用集群管理员的 kubeconfig 运行：
+
+```sh
+zeabur-identityctl client create zeabur \
+  --type confidential \
+  --audience kubernetes \
+  --display-name Zeabur \
+  --redirect-uri https://zeabur.example.com/auth/callback \
+  --home-url https://zeabur.example.com/ \
+  | kubectl apply -f -
+```
+
+命令会在 stderr 显示一次 client secret。创建 Namespace 后，在 Bash 中交互式读入这个值，不要将它放进命令参数：
+
+```bash
+kubectl create namespace zeabur
+read -rs CLIENT_SECRET
+printf %s "$CLIENT_SECRET" | kubectl -n zeabur create secret generic zeabur-oidc \
+  --from-file=client-secret=/dev/stdin
+unset CLIENT_SECRET
+```
+
+运行 `read` 后粘贴 client secret，再按 Enter。值不放在命令参数中，同一台机器上的其他用户就无法从进程列表看到它。chart 只记录 Secret 名称，实际值不会进入 Helm 的 release 记录。
+
+## 安装管理界面
+
+先确认 `zeabur-tls` 已位于 `zeabur` Namespace，再运行：
+
+```sh
+helm install zeabur oci://ghcr.io/zeabur-oss/charts/zeabur \
+  --version <version> \
+  --namespace zeabur \
+  --set clusterName=production \
+  --set publicUrl=https://zeabur.example.com \
+  --set issuer.url=https://identity.example.com \
+  --set issuer.clientSecret.existingSecret=zeabur-oidc \
+  --set ingress.enabled=true \
+  --set ingress.className=traefik \
+  --set ingress.tls.secretName=zeabur-tls
+kubectl -n zeabur rollout status deployment/zeabur
+```
+
+`clusterName` 是界面显示的集群名称。`publicUrl` 要与客户端的 callback 域名一致。chart 会拒绝 HTTP 或包含路径的公开网址。
+
+这次安装会新增 Zeabur 的 Deployment、Service、Ingress、配置和变更签名密钥，以及项目成员使用的 ClusterRole 和 Namespace admission policy。chart 不会将成员角色绑定给任何人。登录后，由管理员在**成员**中设置每个人的访问范围。
+
+管理员用管理员账号登录，就有整个集群的权限，无需在 Zeabur 中另行配置。管理员账号、登录时间和**设置**页的登录设置，见[权限](../reference/permissions.mdx#管理员账号和普通账号)。
+
+## 登录并确认现有服务
+
+打开 `https://zeabur.example.com`，完成通行密钥登录。进入**项目**，在**其他 Namespace**中找到已有应用，打开查看服务。
+
+![“项目”页的“其他 Namespace”列出集群中尚未作为项目显示的 Namespace](https://oss.zeabur.com/shots/zeabur/zh-CN/light/existing-namespaces.avif)
+
+要将它固定列为项目，选择**使用这个 Namespace**，检查并应用。这只会添加项目标签，不会移动其中的 Deployment、Service 和数据。
+
+如果能登录却看不到服务，先确认该用户的 Kubernetes 权限：Zeabur 用登录者自己的 token 读取集群，它的 ServiceAccount 只能在 `zeabur-terminals` 使用 kubectl 终端的副本。管理员可以在[成员](../cluster/members.mdx)中授予项目角色。
+
+## 让新服务有公开网址
+
+准备应用域名，例如 `apps.example.com`。将 `*.apps.example.com` 的 DNS 指向 Ingress controller 的入口，并准备可签发证书的 cert-manager ClusterIssuer，例如 `letsencrypt`。更新同一个 release：
+
+```sh
+helm upgrade zeabur oci://ghcr.io/zeabur-oss/charts/zeabur \
+  --version <version> \
+  --namespace zeabur --reuse-values \
+  --set 'domains.suffixes={apps.example.com}' \
+  --set domains.clusterIssuer=letsencrypt
+```
+
+之后部署 `shop` 项目的 `web` 时，表单会建议使用 `web-shop.apps.example.com`。可以用逗号列出多个应用域名，默认使用第一个。之后也能在**集群**页的**域名**部分修改，那里会检查 DNS 记录并列出要添加的记录，具体方法见[配置 DNS 记录](../configure/dns.mdx)。如果 `domains.suffixes` 留空，需要手动填写完整域名。如果 `domains.clusterIssuer` 留空，新服务的公开网址使用 HTTP。
+
+这里只指定服务使用的签发者名称。ClusterIssuer 和 DNS 要提前准备好，Zeabur 不会根据这两个值创建它们。
+
+## 信任私有 CA
+
+如果 Zeabur Identity、Registry、对象存储或 GitHub Enterprise 使用私有 CA 签发的证书，或者集群通过会检查 TLS 的代理服务器访问外网，将 CA 证书放进 Zeabur 所在 Namespace 的 ConfigMap，再配置 `extraTrustedCA.configMap`：
+
+```sh
+kubectl -n zeabur create configmap corp-ca --from-file=ca.crt=corp-ca.pem
+helm upgrade zeabur oci://ghcr.io/zeabur-oss/charts/zeabur \
+  --version <version> \
+  --namespace zeabur --reuse-values \
+  --set extraTrustedCA.configMap=corp-ca
+```
+
+如果证书放在 Secret 中，改为配置 `extraTrustedCA.secret`。两者只能选一个。键名默认为 `ca.crt`，可用 `extraTrustedCA.key` 修改，一个文件可以存放多张证书。
+
+Zeabur 登录 Identity、读取镜像、读取对象存储中的备份、连接 GitHub 时，除了内置的 Mozilla CA，也会信任这些证书。Zeabur 只在启动时读取这个文件，修改 ConfigMap 后要运行 `kubectl -n zeabur rollout restart deployment/zeabur`。
+
+`issuer.caBundle` 和 `builds.caBundle` 由 zeabur-installer 配置，分别指向签发 Identity 证书的本地 CA 和 Zot 的 CA。Zeabur 会同时信任它们和 `extraTrustedCA`，无需自行配置。
+
+## 常见失败
+
+| 情况 | 检查位置 |
+| --- | --- |
+| 浏览器无法打开 Zeabur | 核对公开 DNS、Ingress class、TLS Secret 和入口连接。先确认 Deployment 就绪，再检查入口。 |
+| 登录后无法返回 Zeabur | 核对 `publicUrl`、Identity 注册的 `/auth/callback` 和 `issuer.url`。 |
+| Identity 使用私有 CA | 配置 `extraTrustedCA`，让 Zeabur 信任签发 Identity 证书的 CA。见[信任私有 CA](#信任私有-ca)。 |
+| 登录后读取遭拒 | 在 Identity 确认成员身份和用户组，再核对目标 Namespace 的 RoleBinding。见[权限参考](../reference/permissions.mdx)。 |
+| 新服务已就绪，但网址无法访问 | 核对应用域名的 DNS 和证书。管理界面与应用使用不同域名，要分别配置。 |
+| 升级后需要重新登录 | chart 只运行一个 Zeabur 副本，会话保存在内存中，副本替换后需要重新登录。 |
+
+## 用 GitOps 管理 chart
+
+Zeabur 用一把密钥签署已检查的变更。chart 在首次安装时创建这把密钥，之后用 `helm upgrade` 升级会读取同一把。Argo CD 或 `helm template` 不连接集群就生成 manifest，每次都会换一把新密钥，已检查但尚未应用的变更就会失效。这时先创建固定的密钥，再配置 `planKey.existingSecret`：
+
+```sh
+kubectl -n zeabur create secret generic zeabur-plan-key \
+  --from-literal=plan-key="$(openssl rand -hex 32)"
+```
+
+将 `planKey.existingSecret` 设为 `zeabur-plan-key`。chart 的所有配置可用 `helm show values oci://ghcr.io/zeabur-oss/charts/zeabur --version <version>` 查看。
+
+## 移除管理界面
+
+```sh
+helm uninstall zeabur --namespace zeabur
+```
+
+应用和提供入口、证书、存储空间的组件都会保留。chart 创建的成员角色会随 release 移除，成员权限需要另外接管。完整保留清单和登录迁移步骤见[移除 Zeabur](../leave/uninstall.mdx)。
