@@ -288,6 +288,7 @@ mod tests {
             hostname: "vps-1".to_owned(),
             memory_mib: 8192,
             node_ips: Vec::new(),
+            node_prefix: None,
         };
         plan(&index(), &config, &facts).unwrap().components
     }
