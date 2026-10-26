@@ -59,8 +59,9 @@ pub enum PlanError {
     Arch(String),
     /// Too little memory for a team install.
     #[error(
-        "a team install needs a server with at least 4 GiB of memory (RKE2 and Zeabur); this one \
-         has {0} MiB. Install for yourself instead: set `use: personal` (docs/reference/installer-configuration.md)"
+        "a team install needs a server with at least {min} MiB of memory (RKE2 and Zeabur); this one \
+         has {0} MiB. Install for yourself instead: set `use: personal` (docs/reference/installer-configuration.md)",
+        min = plan::MIN_MEMORY_MIB
     )]
     TeamMemory(u64),
     /// This build pins no release, and `sources` does not name these keys.

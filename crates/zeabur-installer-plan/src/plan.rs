@@ -51,9 +51,13 @@ pub const ACME_ISSUER: &str = "letsencrypt";
 /// RKE2's own memory at idle on one node, measured on the test VM (`kubectl top` plus containerd
 /// and the rke2 process), rounded up.
 const RKE2_IDLE_MIB: u64 = 1300;
-/// The least memory of a server with 4 GiB, RKE2's minimum. The kernel and the firmware keep part
-/// of the 4096 MiB, so such a server reports less. A smaller host can only be a personal install.
-pub const MIN_MEMORY_MIB: u64 = 3800;
+/// The least memory a team install needs.
+///
+/// It is about 2110 MiB at idle plus 250 MiB of headroom, rounded up. The idle part is Ubuntu 350,
+/// RKE2 1300 (`RKE2_IDLE_MIB`), Zeabur and Identity 60, Traefik and cert-manager 150. A server with
+/// 4 GiB passes, also when a crash kernel reserve takes 512 MiB of it. A smaller host can only be a
+/// personal install.
+pub const MIN_MEMORY_MIB: u64 = 2200;
 
 /// Why components' pods need more than `restricted`: those the catalog does not mark privileged,
 /// and those whose reason is worth more than the catalog's flag.
@@ -2046,14 +2050,14 @@ mod tests {
     }
 
     #[test]
-    fn a_team_install_needs_a_server_with_4_gib() {
+    fn a_team_install_needs_the_least_memory() {
         let index = Index::parse(INDEX.as_bytes()).unwrap();
         let mut small = facts();
-        small.memory_mib = 3800;
+        small.memory_mib = MIN_MEMORY_MIB;
         assert!(plan(&index, &config(""), &small).is_ok());
-        small.memory_mib = 3799;
+        small.memory_mib = MIN_MEMORY_MIB - 1;
         let Err(error) = plan(&index, &config(""), &small) else {
-            panic!("3799 MiB is too little for a team install");
+            panic!("{} MiB is too little for a team install", small.memory_mib);
         };
         assert!(error.to_string().contains("use: personal"), "{error}");
     }

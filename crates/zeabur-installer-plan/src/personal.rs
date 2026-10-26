@@ -152,7 +152,7 @@ pub fn plan(
         &[],
         "A personal install is for one person: whoever has the kubeconfig is cluster admin, \
          and nothing isolates apps from each other (KubeSolo enforces no NetworkPolicy). For a \
-         team, install with RKE2 on a server with at least 4 GiB."
+         team, install with RKE2 on a server with 4 GiB."
             .to_owned(),
     )];
     if !index

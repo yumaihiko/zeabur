@@ -583,6 +583,6 @@
       "values": ["/var/lib"]
     }
   ],
-  "teamMinMemoryMib": 3800,
+  "teamMinMemoryMib": 2200,
   "use": "team"
 }
