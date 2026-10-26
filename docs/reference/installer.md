@@ -210,7 +210,7 @@ and stays. A component the catalog no longer lists stays too; `plan` warns and g
 
 | Component | In use while |
 |---|---|
-| One with custom resources | objects of its CRDs exist outside the namespaces of the components removed with it |
+| One with custom resources | objects of its CRDs, or of any CRD in the same API group, exist outside the namespaces of the components removed with it |
 | Longhorn | a PersistentVolume of the driver `driver.longhorn.io` exists |
 | zot | a Pod outside zot's namespace runs an image from `zot.zot.svc:5000` |
 

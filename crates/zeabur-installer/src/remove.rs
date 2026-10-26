@@ -128,19 +128,16 @@ fn used_by(
     for check in &removal.in_use {
         match check {
             InUse::Objects { resource } => {
-                if kubectl
-                    .get("customresourcedefinition", resource, None)?
-                    .is_none()
-                {
-                    continue;
-                }
-                for object in list(kubectl, resource)?.iter().filter(|o| elsewhere(o)) {
-                    found.push(format!(
-                        "{} {}/{}",
-                        object["kind"].as_str().unwrap_or(resource),
-                        namespace(object).unwrap_or_default(),
-                        name(object)
-                    ));
+                let crds = list_cluster(kubectl, "customresourcedefinitions")?;
+                for resource in group_resources(&crds, resource) {
+                    for object in list(kubectl, &resource)?.iter().filter(|o| elsewhere(o)) {
+                        found.push(format!(
+                            "{} {}/{}",
+                            object["kind"].as_str().unwrap_or(&resource),
+                            namespace(object).unwrap_or_default(),
+                            name(object)
+                        ));
+                    }
                 }
             }
             InUse::Volumes { driver } => {
@@ -186,6 +183,24 @@ fn used_by(
     Ok(found)
 }
 
+/// The CRDs of `crd`'s API group, by name: a component's other kinds (External Secrets'
+/// SecretStore beside its ExternalSecret) go with its CRDs, so their objects count too. Empty when
+/// the cluster has none of the group.
+fn group_resources(crds: &[Value], crd: &str) -> Vec<String> {
+    let Some((_, group)) = crd.split_once('.') else {
+        return Vec::new();
+    };
+    crds.iter()
+        .filter(|c| c.pointer("/spec/group").and_then(Value::as_str) == Some(group))
+        .map(|c| name(c).to_owned())
+        .collect()
+}
+
+fn list_cluster(kubectl: &Kubectl, resource: &str) -> Result<Vec<Value>, InstallError> {
+    let text = kubectl.run(&["get", resource, "--output=json"], None)?;
+    items(&text)
+}
+
 fn list(kubectl: &Kubectl, resource: &str) -> Result<Vec<Value>, InstallError> {
     let text = kubectl.run(
         &["get", resource, "--all-namespaces", "--output=json"],
@@ -215,4 +230,28 @@ fn name(object: &Value) -> &str {
         .pointer("/metadata/name")
         .and_then(Value::as_str)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::group_resources;
+
+    #[test]
+    fn a_components_other_kinds_in_its_group_count() {
+        let crds = [
+            json!({"metadata": {"name": "externalsecrets.external-secrets.io"}, "spec": {"group": "external-secrets.io"}}),
+            json!({"metadata": {"name": "secretstores.external-secrets.io"}, "spec": {"group": "external-secrets.io"}}),
+            json!({"metadata": {"name": "scaledobjects.keda.sh"}, "spec": {"group": "keda.sh"}}),
+        ];
+        assert_eq!(
+            group_resources(&crds, "externalsecrets.external-secrets.io"),
+            [
+                "externalsecrets.external-secrets.io",
+                "secretstores.external-secrets.io"
+            ]
+        );
+        assert!(group_resources(&crds, "widgets.example.com").is_empty());
+    }
 }

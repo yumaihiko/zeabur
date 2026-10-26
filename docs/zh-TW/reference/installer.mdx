@@ -132,7 +132,7 @@ installer 只移除自己裝的元件。用 Helm、Flux 或 Argo CD 裝的沒有
 
 | 元件 | 什麼情況算在使用 |
 |---|---|
-| 有自訂資源的元件 | 一起移除的元件的 Namespace 以外，還有它 CRD 的物件 |
+| 有自訂資源的元件 | 一起移除的元件的 Namespace 以外，還有它 CRD 的物件（同一個 API group 的 CRD 也算） |
 | Longhorn | 還有 driver 是 `driver.longhorn.io` 的 PersistentVolume |
 | zot | zot 的 Namespace 以外，還有副本用 `zot.zot.svc:5000` 的映像檔 |
 
