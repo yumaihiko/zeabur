@@ -303,11 +303,13 @@ export const zhCN: Messages = {
   "node.reservedMemory": (n, node, share) =>
     n === 1 ? `${node}：内存已预留 ${share}` : `${n} 个节点的内存快被预留完了`,
   "node.reservedMemory.why": "请求内存的新副本可能要等到有空间。",
-  "node.reservedMemory.fix": "调低上面服务的内存预留量，或加一个节点。",
+  "node.reservedMemory.fix":
+    "调低上面服务的内存预留量，或加一台节点：用 Zeabur Installer 安装的集群，在服务器运行 sudo zeabur-installer node add。",
   "node.reservedCpu": (n, node, share) =>
     n === 1 ? `${node}：CPU 已预留 ${share}` : `${n} 个节点的 CPU 快被预留完了`,
   "node.reservedCpu.why": "请求 CPU 的新副本可能要等到有空间。",
-  "node.reservedCpu.fix": "调低上面服务的 CPU 预留量，或加一个节点。",
+  "node.reservedCpu.fix":
+    "调低上面服务的 CPU 预留量，或加一台节点：用 Zeabur Installer 安装的集群，在服务器运行 sudo zeabur-installer node add。",
   "unreachable.title": (name) => `连不上 ${name}`,
   "unreachable.zeabur": "Zeabur 没有响应",
   "unreachable.lastHeard": "上次响应",

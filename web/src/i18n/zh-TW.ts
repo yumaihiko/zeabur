@@ -303,11 +303,13 @@ export const zhTW: Messages = {
   "node.reservedMemory": (n, node, share) =>
     n === 1 ? `${node}：記憶體已保留 ${share}` : `${n} 個節點的記憶體快被保留完了`,
   "node.reservedMemory.why": "要求記憶體的新副本可能要等到有空間。",
-  "node.reservedMemory.fix": "調低上面服務的記憶體保留量，或加一個節點。",
+  "node.reservedMemory.fix":
+    "調低上面服務的記憶體保留量，或加一台節點：用 Zeabur Installer 安裝的叢集，在伺服器執行 sudo zeabur-installer node add。",
   "node.reservedCpu": (n, node, share) =>
     n === 1 ? `${node}：CPU 已保留 ${share}` : `${n} 個節點的 CPU 快被保留完了`,
   "node.reservedCpu.why": "要求 CPU 的新副本可能要等到有空間。",
-  "node.reservedCpu.fix": "調低上面服務的 CPU 保留量，或加一個節點。",
+  "node.reservedCpu.fix":
+    "調低上面服務的 CPU 保留量，或加一台節點：用 Zeabur Installer 安裝的叢集，在伺服器執行 sudo zeabur-installer node add。",
   "unreachable.title": (name) => `連不到 ${name}`,
   "unreachable.zeabur": "Zeabur 沒有回應",
   "unreachable.lastHeard": "上次回應",

@@ -326,11 +326,13 @@ export const en = {
   "node.reservedMemory": (n: number, node: string, share: string) =>
     n === 1 ? `${node}: memory ${share} reserved` : `${n} nodes have almost all memory reserved`,
   "node.reservedMemory.why": "New replicas that ask for memory may wait for room.",
-  "node.reservedMemory.fix": "Lower the memory requests of the services there, or add a node.",
+  "node.reservedMemory.fix":
+    "Lower the memory requests of the services there, or add a node. On a cluster installed with Zeabur Installer, run sudo zeabur-installer node add on the server.",
   "node.reservedCpu": (n: number, node: string, share: string) =>
     n === 1 ? `${node}: CPU ${share} reserved` : `${n} nodes have almost all CPU reserved`,
   "node.reservedCpu.why": "New replicas that ask for CPU may wait for room.",
-  "node.reservedCpu.fix": "Lower the CPU requests of the services there, or add a node.",
+  "node.reservedCpu.fix":
+    "Lower the CPU requests of the services there, or add a node. On a cluster installed with Zeabur Installer, run sudo zeabur-installer node add on the server.",
   "unreachable.title": (name: string) => `Cannot reach ${name}`,
   "unreachable.zeabur": "Zeabur does not respond",
   "unreachable.lastHeard": "Last answered",
