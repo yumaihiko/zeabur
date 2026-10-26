@@ -160,6 +160,13 @@ export function useT(): Translate {
   return use(I18nContext).t
 }
 
+/** The message for a key built from catalog names (`input.<component>.<input>`), or `fallback`
+ * when this build has none. */
+export function named(t: Translate, key: string, fallback: string): string {
+  if (!Object.hasOwn(en, key) || typeof en[key as Key] !== "string") return fallback
+  return (t as (key: string) => string)(key)
+}
+
 type CodedKey = Extract<Key, `code.${string}` | `warning.${string}` | `check.${string}`>
 
 /** A message the server names by key (`code.ports.busy`) with its values; the server's own

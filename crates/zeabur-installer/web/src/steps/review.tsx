@@ -112,6 +112,11 @@ export function ReviewStep({ wizard }: { wizard: Wizard }) {
       {plan && fit ? (
         <Panel title={t("review.summary")}>
           <Rows>
+            {plan.use !== "personal" ? (
+              <Row label={t("review.after")}>
+                <AfterInstall plan={plan} catalog={catalog} />
+              </Row>
+            ) : null}
             <Row label={t("review.memory")}>
               <div className="flex flex-col gap-1">
                 <MemoryVerdict fit={fit} />
@@ -337,10 +342,17 @@ function RemovalRow({
     </div>
   )
 }
-
-function Disclosure({ label, children }: { label: string; children: ReactNode }) {
+function Disclosure({
+  label,
+  small,
+  children,
+}: {
+  label: string
+  small?: boolean
+  children: ReactNode
+}) {
   return (
-    <div className="text-sm">
+    <div className={small ? "text-xs" : "text-sm"}>
       <Collapsible>
         <CollapsibleTrigger variant="disclosure">
           <CaretRightIcon aria-hidden="true" />
@@ -348,6 +360,66 @@ function Disclosure({ label, children }: { label: string; children: ReactNode })
         </CollapsibleTrigger>
         <CollapsibleContent>{children}</CollapsibleContent>
       </Collapsible>
+    </div>
+  )
+}
+
+/** The Zeabur features that need a component, with the components that give them. */
+const features = [
+  ["git", (id: string) => id.startsWith("builds/")],
+  ["registry", (id: string) => id.startsWith("container-registry/")],
+  ["updates", (id: string) => id.startsWith("image-updates/")],
+  ["postgres", (id: string) => id === "databases/cloudnative-pg"],
+  ["usage", (id: string) => id === "metrics/victoria-metrics"],
+  ["logs", (id: string) => id.startsWith("logs/")],
+] as const
+
+function AfterInstall({ plan, catalog }: { plan: Plan; catalog: CatalogComponent[] }) {
+  const t = useT()
+  const rows = features.map(([feature, provides]) => ({
+    feature,
+    chosen: plan.components.filter((c) => provides(c.id)).map((c) => c.displayName),
+    offered: catalog.filter((c) => provides(c.id)).map((c) => c.displayName),
+  }))
+  const has = (feature: (typeof features)[number][0]) =>
+    rows.some((row) => row.feature === feature && row.chosen.length)
+  const git = rows.find((row) => row.feature === "git")
+  const can = [
+    t("can.image"),
+    has("git") ? t("can.git") : "",
+    has("postgres") ? t("can.postgres") : "",
+  ].filter(Boolean)
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span>{t("review.can", can)}</span>
+      {has("git") ? null : (
+        <span className="text-xs text-secondary">
+          {git?.offered.length ? t("review.gitNeeds", git.offered) : t("review.gitMissing")}
+        </span>
+      )}
+      <span className="text-xs text-secondary">
+        {t(has("postgres") ? "review.dbBackupsLater" : "review.backupsLater")}
+      </span>
+      <Disclosure label={t("review.features")} small>
+        <ul className="mt-2 flex flex-col gap-1 text-xs">
+          {rows.map((row) => (
+            <li key={row.feature} className={row.chosen.length ? "" : "text-tertiary"}>
+              <span className="text-secondary">{t(`feature.${row.feature}`)}</span>
+              {t("common.colon")}
+              {row.chosen.length
+                ? t("common.list", row.chosen)
+                : row.offered.length
+                  ? t("review.notChosen")
+                  : t("review.notInCatalog")}
+            </li>
+          ))}
+          <li className="text-tertiary">
+            <span className="text-secondary">{t("feature.backups")}</span>
+            {t("common.colon")}
+            {t("review.inZeabur")}
+          </li>
+        </ul>
+      </Disclosure>
     </div>
   )
 }

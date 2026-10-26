@@ -1,7 +1,7 @@
 ---
 title: 用設定檔和指令安裝
 description: 把安裝選擇寫成 YAML，用 plan 檢查、apply 安裝，適合重複安裝和版本控制。
-source: "55d3ff3585fc"
+source: "09de689cf07c"
 ---
 
 把安裝選擇寫進 `/etc/zeabur-installer/config.yaml`，用 `plan` 查看計畫，再用 `apply` 安裝。這個方式適合把設定放進版本控制、在多台機器重複同樣的安裝，或透過自動化工具安裝。
@@ -69,7 +69,7 @@ sudo zeabur-installer plan --json
 
 `plan --json` 不會執行主機檢查。
 
-沒有設定檔時，`plan` 會用這台伺服器的位址產生 sslip.io 名稱，以 `local` 模式和 `standard` 組合提供參考。執行 `apply` 前一定要建立設定檔。
+沒有設定檔時，`plan` 會用這台伺服器的位址產生 sslip.io 名稱，以 `standard` 組合提供參考。伺服器有公開位址時用 `domain` 模式，否則用 `local` 模式。執行 `apply` 前一定要建立設定檔。
 
 ## 執行安裝
 

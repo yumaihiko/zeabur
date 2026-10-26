@@ -62,6 +62,11 @@ const RKE2_IDLE_MIB: u64 = 1300;
 /// RKE2 1300 (`RKE2_IDLE_MIB`), Zeabur and Identity 60, Traefik and cert-manager 150. A server with
 /// 4 GiB passes, also when a crash kernel reserve takes 512 MiB of it. A smaller host can only be a
 /// personal install.
+///
+/// This is the floor of `minimal`, not of `standard`. On a 4 GiB VM (3379 MiB `MemTotal`), the
+/// `standard` preset without zot, Keel and `CloudNativePG` used 2490 MiB. The catalog has not
+/// measured those three yet; their requests are 64, 32 and 64 + 32 MiB, so `standard` is about
+/// 2700 MiB and leaves about 650 MiB on that VM.
 pub const MIN_MEMORY_MIB: u64 = 2200;
 
 /// Why components' pods need more than `restricted`: those the catalog does not mark privileged,
@@ -763,6 +768,15 @@ pub fn installer_fills(component: &str, input: &str) -> bool {
     )
 }
 
+/// Inputs that the installer adds to a catalog component: (component, input, release, values
+/// path). The catalog sets a default at the path.
+const INSTALLER_INPUTS: &[(&str, &str, &str, &str)] = &[(
+    "volume-backup/velero",
+    "region",
+    "velero",
+    "configuration.backupStorageLocation.0.config.region",
+)];
+
 /// The value of an input the installer knows; a configured value wins over it.
 fn known_input(component: &str, input: &str, facts: &Facts) -> Option<Value> {
     match (component, input) {
@@ -1017,6 +1031,11 @@ fn inputs(component: &Component, choices: &Choices<'_>) -> Result<Inputs, PlanEr
                 }
                 None => {}
             }
+        }
+    }
+    for (_, name, release, path) in INSTALLER_INPUTS.iter().filter(|(c, ..)| *c == id) {
+        if let Some(value) = given.and_then(|g| g.get(*name)) {
+            paths.push(((*release).to_owned(), (*path).to_owned(), value.clone()));
         }
     }
     Ok((secrets, paths))
@@ -1498,6 +1517,9 @@ mod tests {
             [
                 "ingress/traefik",
                 "certificates/cert-manager",
+                "container-registry/zot",
+                "databases/cloudnative-pg",
+                "image-updates/keel",
                 "observability-operator/victoria-metrics-operator",
                 "logs/victoria-logs",
                 "metrics/metrics-server",
@@ -1552,6 +1574,37 @@ mod tests {
         };
         assert_eq!(level(""), Some(false));
         assert_eq!(level("    file-backup: true\n"), Some(true));
+    }
+
+    #[test]
+    fn velero_takes_the_buckets_region() {
+        let index = Index::parse(INDEX.as_bytes()).unwrap();
+        let values = |extra: &str| {
+            let plan = plan(
+                &index,
+                &config(&format!(
+                    "enable: [volume-backup/velero]\ninputs:\n  volume-backup/velero:\n    \
+                     bucket: b\n    s3-url: https://r2.example.com\n{extra}\
+                     secretFiles:\n  volume-backup/velero:\n    credentials: /tmp/c\n"
+                )),
+                &facts(),
+            )
+            .unwrap();
+            let velero = plan
+                .components
+                .iter()
+                .find(|c| c.id == "volume-backup/velero")
+                .unwrap();
+            let ReleasePlan::HelmChart { object, .. } = &velero.releases[0] else {
+                panic!("velero is a chart")
+            };
+            let content = object["spec"]["valuesContent"].as_str().unwrap();
+            serde_saphyr::from_str::<Value>(content).unwrap()["configuration"]
+                ["backupStorageLocation"][0]["config"]["region"]
+                .clone()
+        };
+        assert_eq!(values(""), json!("us-east-1"));
+        assert_eq!(values("    region: auto\n"), json!("auto"));
     }
 
     #[test]
@@ -1664,51 +1717,23 @@ mod tests {
         assert!(matches!(err, PlanError::NeedsDisabled { .. }), "{err}");
     }
 
-    /// The fixture's catalog with a zot that takes the `cluster-ip` input.
-    fn index_with_zot() -> Index {
-        let mut index: Value = serde_json::from_str(INDEX).unwrap();
-        let components = index["components"].as_array_mut().unwrap();
-        let mut zot = components
-            .iter()
-            .find(|c| c["id"] == "config-reload/reloader")
-            .unwrap()
-            .clone();
-        zot["id"] = json!(ZOT);
-        zot["capability"] = json!("container-registry");
-        zot["metadata"]["name"] = json!("zot");
-        zot["requires"] = json!(["certificates/cert-manager"]);
-        let order = json!(["ingress/traefik", "certificates/cert-manager", ZOT]);
-        zot["installOrder"] = json!({"single-node": order, "multi-node": order});
-        zot["inputs"] = json!([{
-            "name": "cluster-ip",
-            "description": "A fixed ClusterIP.",
-            "release": "zot",
-            "path": "service.clusterIP",
-        }]);
-        zot["releases"] = json!([{
-            "name": "zot",
-            "namespace": "zot",
-            "chart": "zot",
-            "repo": "https://zotregistry.dev/helm-charts",
-            "version": "0.1.128",
-            "values": "service:\n  type: ClusterIP\n",
-        }]);
-        components.push(zot);
-        Index::parse(index.to_string().as_bytes()).unwrap()
-    }
-
     fn zot_values(plan: &Plan) -> String {
         let zot = plan.components.iter().find(|c| c.id == ZOT).unwrap();
-        let ReleasePlan::HelmChart { object, .. } = &zot.releases[0] else {
-            panic!()
-        };
-        object["spec"]["valuesContent"].as_str().unwrap().to_owned()
+        zot.releases
+            .iter()
+            .find_map(|release| match release {
+                ReleasePlan::HelmChart { object, .. } => {
+                    object["spec"]["valuesContent"].as_str().map(str::to_owned)
+                }
+                ReleasePlan::Manifests { .. } | ReleasePlan::Urls { .. } => None,
+            })
+            .unwrap()
     }
 
     #[test]
     fn nodes_pull_from_zot_through_its_fixed_address() {
-        let index = index_with_zot();
-        let without = plan(&index, &config(""), &facts()).unwrap();
+        let index = Index::parse(INDEX.as_bytes()).unwrap();
+        let without = plan(&index, &config("disable: [container-registry]\n"), &facts()).unwrap();
         assert_eq!(without.zot_cluster_ip, None);
         assert!(
             !without
@@ -1871,7 +1896,7 @@ mod tests {
     #[test]
     fn products_only_are_what_the_plan_installs() {
         let index = Index::parse(INDEX.as_bytes()).unwrap();
-        let none = "disable: [logs/victoria-logs, metrics/victoria-metrics]\n";
+        let none = "disable: [logs/victoria-logs, metrics/victoria-metrics, container-registry]\n";
         let p = plan(&index, &config(none), &facts()).unwrap();
         assert_eq!(
             products_only(&config(none), &facts()).unwrap(),
@@ -1922,8 +1947,8 @@ mod tests {
 
     #[test]
     fn zeabur_trusts_zots_ca_only_when_zot_is_installed() {
-        let index = index_with_zot();
-        let without = plan(&index, &config(""), &facts()).unwrap();
+        let index = Index::parse(INDEX.as_bytes()).unwrap();
+        let without = plan(&index, &config("disable: [container-registry]\n"), &facts()).unwrap();
         assert!(without.zeabur.unwrap().values.get("builds").is_none());
         let with = plan(
             &index,

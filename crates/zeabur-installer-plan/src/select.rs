@@ -39,6 +39,15 @@ const PERSONAL_DEFAULT: &[&str] = &["ingress", "certificates"];
 /// Components `minimal` installs: reachable over HTTPS, and usage numbers for Zeabur.
 const MINIMAL: &[&str] = &["ingress", "certificates", "metrics/metrics-server"];
 
+/// What `standard` adds to the catalog's recommended components, so that a team can deploy
+/// images and make PostgreSQL databases. Zeabur Builder is not here: the pinned catalog has no
+/// `builds` component.
+const STANDARD: &[&str] = &[
+    "container-registry",
+    "image-updates",
+    "databases/cloudnative-pg",
+];
+
 /// What `secure` adds to `standard`. Backups are left out until the installer can configure an
 /// encrypted repository: an unencrypted backup undoes disk encryption.
 const SECURE: &[&str] = &[
@@ -77,9 +86,9 @@ pub fn select(index: &Index, config: &Config) -> Result<Selection, PlanError> {
     let profile = config.profile.as_str();
     let preset: Vec<String> = match config.preset {
         Preset::Minimal => resolve_all(index, profile, MINIMAL)?,
-        Preset::Standard => recommended(index, profile),
+        Preset::Standard => standard(index, profile)?,
         Preset::Secure => {
-            let mut ids = recommended(index, profile);
+            let mut ids = standard(index, profile)?;
             ids.extend(resolve_all(index, profile, SECURE)?);
             ids
         }
@@ -211,6 +220,12 @@ fn choose(index: &Index, wanted: &Wanted<'_>) -> Result<Selection, PlanError> {
         components: order,
         left_out,
     })
+}
+
+fn standard(index: &Index, profile: &str) -> Result<Vec<String>, PlanError> {
+    let mut ids = recommended(index, profile);
+    ids.extend(resolve_all(index, profile, STANDARD)?);
+    Ok(ids)
 }
 
 fn recommended(index: &Index, profile: &str) -> Vec<String> {

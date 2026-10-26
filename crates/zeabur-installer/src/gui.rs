@@ -96,8 +96,16 @@ pub(crate) fn run(config_path: &Path, listen: SocketAddr) -> Result<(), InstallE
         server.token
     ));
     if server.loopback {
+        let user = std::env::var("SUDO_USER")
+            .ok()
+            .filter(|u| !u.is_empty())
+            .unwrap_or_else(|| "root".to_owned());
+        let host = ssh_host(
+            &facts::addresses(),
+            facts::read().ok().map(|f| f.hostname).as_deref(),
+        );
         out::line(&format!(
-            "From your computer, forward the port first: ssh -L {0}:127.0.0.1:{0} root@<this server>",
+            "From your computer, forward the port first: ssh -L {0}:127.0.0.1:{0} {user}@{host}",
             listen.port()
         ));
     } else {
@@ -207,7 +215,7 @@ impl Server {
         } else {
             "team"
         };
-        let team = team.or_else(|| addresses.first().map(|a| Config::defaults(a)));
+        let team = team.or_else(|| Config::defaults(&addresses));
         let personal = personal.unwrap_or_else(PersonalConfig::defaults);
         let host = facts::read().ok();
         let facts = host.as_ref().map_or(Value::Null, |f| json!(f));
@@ -285,7 +293,10 @@ impl Server {
             .unwrap_or_else(|| Path::new("/etc/zeabur-installer"))
             .join("secrets");
         let mut files = Vec::new();
-        for (component, values) in secrets {
+        for (component, mut values) in secrets {
+            if component == VELERO {
+                velero_credentials(&mut values)?;
+            }
             for (name, value) in values.into_iter().filter(|(_, v)| !v.is_empty()) {
                 let path = dir.join(format!("{}.{name}", component.replace('/', "_")));
                 config
@@ -429,6 +440,46 @@ fn follow(reader: impl Read + Send + 'static, job: Arc<Mutex<Job>>) -> JoinHandl
     })
 }
 
+/// The address that `ssh` reaches this server at: the first public address, else the first
+/// address, else the host name.
+fn ssh_host(addresses: &[String], hostname: Option<&str>) -> String {
+    addresses
+        .iter()
+        .find(|a| plan::is_public(a))
+        .or_else(|| addresses.first())
+        .cloned()
+        .or_else(|| hostname.filter(|h| !h.is_empty()).map(str::to_owned))
+        .unwrap_or_else(|| "<this server>".to_owned())
+}
+
+const VELERO: &str = "volume-backup/velero";
+
+/// Replaces the two S3 keys that the page asks for with Velero's `credentials` input, an AWS
+/// credentials file.
+fn velero_credentials(values: &mut BTreeMap<String, String>) -> Result<(), InstallError> {
+    let id = values.remove("access-key-id").unwrap_or_default();
+    let key = values.remove("secret-access-key").unwrap_or_default();
+    let (id, key) = (id.trim(), key.trim());
+    if id.is_empty() && key.is_empty() {
+        return Ok(());
+    }
+    if id.is_empty() || key.is_empty() {
+        return Err(InstallError::Message(
+            "Velero needs both the access key ID and the secret access key".to_owned(),
+        ));
+    }
+    if [id, key].iter().any(|k| k.chars().any(char::is_whitespace)) {
+        return Err(InstallError::Message(
+            "Velero's access keys cannot contain spaces or line breaks".to_owned(),
+        ));
+    }
+    values.insert(
+        "credentials".to_owned(),
+        format!("[default]\naws_access_key_id={id}\naws_secret_access_key={key}\n"),
+    );
+    Ok(())
+}
+
 /// The catalog, as the components page shows it.
 fn catalog_json(index: &Index, profile: &str, arch: &str) -> Value {
     let components: Vec<Value> = index
@@ -514,7 +565,39 @@ fn asset(request: &Request, path: &str) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use zeabur_installer_host::preflight::{Code, Topic};
+
+    use super::{ssh_host, velero_credentials};
+
+    #[test]
+    fn velero_gets_a_credentials_file_from_two_keys() {
+        let keys = |id: &str, key: &str| {
+            let mut values = BTreeMap::from([
+                ("access-key-id".to_owned(), id.to_owned()),
+                ("secret-access-key".to_owned(), key.to_owned()),
+            ]);
+            velero_credentials(&mut values).map(|()| values)
+        };
+        let values = keys(" AKIA1 ", "s3cret").unwrap();
+        assert_eq!(
+            values.get("credentials").map(String::as_str),
+            Some("[default]\naws_access_key_id=AKIA1\naws_secret_access_key=s3cret\n")
+        );
+        assert!(!values.contains_key("access-key-id"));
+        assert!(keys("", "").unwrap().is_empty());
+        assert!(keys("AKIA1", "").is_err());
+        assert!(keys("AKIA1", "a\naws_session_token=x").is_err());
+    }
+
+    #[test]
+    fn the_ssh_hint_names_this_server() {
+        let addresses = ["10.0.0.5".to_owned(), "203.0.114.7".to_owned()];
+        assert_eq!(ssh_host(&addresses, Some("vps-1")), "203.0.114.7");
+        assert_eq!(ssh_host(&addresses[..1], Some("vps-1")), "10.0.0.5");
+        assert_eq!(ssh_host(&[], Some("vps-1")), "vps-1");
+    }
 
     /// zh-TW and zh-CN are typed against English, so TypeScript rejects a key missing there.
     #[test]

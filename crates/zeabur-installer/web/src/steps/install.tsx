@@ -134,7 +134,13 @@ export function InstallStep({ wizard }: { wizard: Wizard }) {
       }
       description={
         done
-          ? t(wizard.use === "personal" ? "done.personalDescription" : "done.description")
+          ? t(
+              wizard.use === "personal"
+                ? "done.personalDescription"
+                : local
+                  ? "done.descriptionLocal"
+                  : "done.description",
+            )
           : failed
             ? t("install.failed")
             : t("install.description")
@@ -199,7 +205,18 @@ export function InstallStep({ wizard }: { wizard: Wizard }) {
 
       {done && wizard.use === "team" ? (
         <>
-          <Panel title={t("done.setup")}>
+          {local ? (
+            <Panel title={t("done.caStep")}>
+              <div className="flex flex-col gap-3 sm:items-start">
+                <p className="text-sm text-secondary">{t("done.caHint")}</p>
+                <a href="/api/local-ca.crt" className={buttonVariants({ variant: "primary" })}>
+                  <DownloadIcon aria-hidden="true" />
+                  {t("done.caDownload")}
+                </a>
+              </div>
+            </Panel>
+          ) : null}
+          <Panel title={t(local ? "done.setupStep" : "done.setup")}>
             {link ? (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-secondary">{t("done.setupHint")}</p>
@@ -241,20 +258,6 @@ export function InstallStep({ wizard }: { wizard: Wizard }) {
               <Row label={t("done.identity")}>
                 <span className="font-mono text-xs">{identity}</span>
               </Row>
-              {local ? (
-                <Row label={t("done.ca")}>
-                  <div className="flex flex-col items-start gap-2">
-                    <span className="text-sm text-secondary">{t("done.caHint")}</span>
-                    <a
-                      href="/api/local-ca.crt"
-                      className={buttonVariants({ variant: "outline", size: "sm" })}
-                    >
-                      <DownloadIcon aria-hidden="true" />
-                      {t("done.caDownload")}
-                    </a>
-                  </div>
-                </Row>
-              ) : null}
             </Rows>
           </Panel>
         </>

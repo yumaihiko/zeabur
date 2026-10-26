@@ -59,10 +59,10 @@
           {
             "default": null,
             "description": "A free address in the cluster's Service CIDR for the registry's Service, such as 10.43.0.50 on k3s and RKE2. Nodes pull through a registry mirror to it. Left out: an address is assigned and only pods reach the registry.\n",
+            "filled": true,
             "generated": false,
             "name": "cluster-ip",
             "required": false,
-            "filled": false,
             "secret": false
           }
         ],
@@ -71,6 +71,81 @@
         "personalMinMemoryMib": 1800,
         "privileged": false,
         "security": "No RBAC: a ServiceAccount without roles. Serves the OCI registry API over TLS on port 5000 inside the cluster.\n",
+        "supported": true
+      },
+      {
+        "capability": "databases",
+        "default": "optional",
+        "displayName": "CloudNativePG",
+        "distributions": [],
+        "id": "databases/cloudnative-pg",
+        "idleMemoryMib": null,
+        "inputs": [],
+        "needs": ["ingress/traefik", "certificates/cert-manager"],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "Manages pods, Services, Secrets and PVCs for Clusters in every namespace.",
+        "supported": true
+      },
+      {
+        "capability": "databases",
+        "default": "optional",
+        "displayName": "Dragonfly Operator",
+        "distributions": [],
+        "id": "databases/dragonfly-operator",
+        "idleMemoryMib": null,
+        "inputs": [],
+        "needs": [],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "Manages pods, StatefulSets, Services and PDBs for Dragonfly objects in every namespace.",
+        "supported": true
+      },
+      {
+        "capability": "databases",
+        "default": "optional",
+        "displayName": "MariaDB Operator",
+        "distributions": [],
+        "id": "databases/mariadb-operator",
+        "idleMemoryMib": null,
+        "inputs": [],
+        "needs": ["ingress/traefik", "certificates/cert-manager"],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "Manages pods, Services, Secrets, PVCs, Jobs and RBAC for MariaDB objects in every namespace.",
+        "supported": true
+      },
+      {
+        "capability": "databases",
+        "default": "optional",
+        "displayName": "MOCO",
+        "distributions": [],
+        "id": "databases/moco",
+        "idleMemoryMib": null,
+        "inputs": [],
+        "needs": ["ingress/traefik", "certificates/cert-manager"],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "Manages pods, StatefulSets, Services, Secrets, PVCs, CronJobs, Jobs and Roles for MySQLClusters in every namespace, and copies certificates into them.\n",
+        "supported": true
+      },
+      {
+        "capability": "databases",
+        "default": "optional",
+        "displayName": "Percona Operator for MongoDB",
+        "distributions": [],
+        "id": "databases/percona-mongodb",
+        "idleMemoryMib": null,
+        "inputs": [],
+        "needs": [],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "Manages pods, Services, Secrets and PVCs for MongoDB clusters in every namespace.",
         "supported": true
       },
       {
@@ -104,6 +179,46 @@
         "supported": true
       },
       {
+        "capability": "external-secrets",
+        "default": "optional",
+        "displayName": "External Secrets Operator",
+        "distributions": [],
+        "id": "external-secrets/external-secrets",
+        "idleMemoryMib": null,
+        "inputs": [
+          {
+            "default": null,
+            "description": "IPv4 CIDR of the Kubernetes API server addresses as the CNI sees them, such as the control-plane node IPs.",
+            "filled": true,
+            "generated": false,
+            "name": "kube-api-cidr",
+            "required": true,
+            "secret": false
+          }
+        ],
+        "needs": ["ingress/traefik", "certificates/cert-manager"],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "ClusterRole: reads, creates, updates and deletes Secrets in every namespace; creates ServiceAccount tokens in every namespace (for SecretStores that authenticate as a ServiceAccount); reads ConfigMaps, ServiceAccounts and its own CRDs; reads and updates Namespaces; creates Events. The webhook has no RBAC. The chart aggregates read access to its CRDs into view, and write access into edit and admin.\n",
+        "supported": true
+      },
+      {
+        "capability": "image-updates",
+        "default": "optional",
+        "displayName": "Keel",
+        "distributions": [],
+        "id": "image-updates/keel",
+        "idleMemoryMib": null,
+        "inputs": [],
+        "needs": [],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "ClusterRole: reads, lists and watches every Secret (registry credentials of tracked workloads), Namespace and Node; reads, updates and deletes Pods, ReplicaSets, ReplicationControllers, Deployments, StatefulSets, DaemonSets, Jobs and CronJobs in every namespace.\n",
+        "supported": true
+      },
+      {
         "capability": "ingress",
         "default": "recommended",
         "displayName": "Traefik Proxy",
@@ -129,28 +244,28 @@
           {
             "default": null,
             "description": "The Traefik bouncer uses this key to call the CrowdSec local API.",
+            "filled": false,
             "generated": true,
             "name": "bouncer-key",
             "required": false,
-            "filled": false,
             "secret": true
           },
           {
             "default": null,
             "description": "The local API (LAPI) signs agent sessions with this shared secret.",
+            "filled": false,
             "generated": true,
             "name": "lapi-secret",
             "required": false,
-            "filled": false,
             "secret": true
           },
           {
             "default": null,
             "description": "Agents register with the local API using this token.",
+            "filled": false,
             "generated": true,
             "name": "registration-token",
             "required": false,
-            "filled": false,
             "secret": true
           }
         ],
@@ -211,14 +326,14 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages VictoriaMetrics objects and scrapes pods in all namespaces.",
+        "security": "Manages VictoriaMetrics objects, scrapes pods in all namespaces, and reads builds, databases, backups and certificates in all namespaces for alerts.\n",
         "supported": true
       },
       {
         "capability": "node-updates",
         "default": "recommended",
         "displayName": "System Upgrade Controller",
-        "distributions": ["k3s"],
+        "distributions": ["k3s", "rke2"],
         "id": "node-updates/system-upgrade-controller",
         "idleMemoryMib": 12,
         "inputs": [],
@@ -227,7 +342,22 @@
         "personalMinMemoryMib": null,
         "privileged": true,
         "security": "Cordons and drains nodes, and creates privileged Jobs that run Plan images on the host.",
-        "supported": false
+        "supported": true
+      },
+      {
+        "capability": "object-storage",
+        "default": "optional",
+        "displayName": "SeaweedFS Operator",
+        "distributions": [],
+        "id": "object-storage/seaweedfs-operator",
+        "idleMemoryMib": null,
+        "inputs": [],
+        "needs": ["ingress/traefik", "certificates/cert-manager"],
+        "personal": false,
+        "personalMinMemoryMib": null,
+        "privileged": false,
+        "security": "Manages pods, StatefulSets, Services, Secrets, PVCs, Jobs and Ingresses for Seaweed objects in every namespace, and calls each cluster's admin API.\n",
+        "supported": true
       },
       {
         "capability": "observability-operator",
@@ -241,7 +371,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages VictoriaMetrics and VictoriaLogs objects and their workloads in all namespaces.",
+        "security": "Manages VictoriaMetrics and VictoriaLogs objects and their workloads in all namespaces. It can read every Secret, create pods in any namespace, and create ClusterRoles and bindings, so its token equals cluster-admin.\n",
         "supported": true
       },
       {
@@ -255,19 +385,19 @@
           {
             "default": null,
             "description": "The operator uses the Tailscale OAuth client with this ID. The client needs write scope for Services, Devices Core and Auth Keys, and the tag tag:k8s-operator. The tailnet policy must make tag:k8s-operator an owner of tag:k8s, the proxies' default tag.\n",
+            "filled": false,
             "generated": false,
             "name": "oauth-client-id",
             "required": true,
-            "filled": false,
             "secret": true
           },
           {
             "default": null,
             "description": "The operator authenticates with this OAuth client secret.",
+            "filled": false,
             "generated": false,
             "name": "oauth-client-secret",
             "required": true,
-            "filled": false,
             "secret": true
           }
         ],
@@ -290,7 +420,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "Privileged pods on every node: they mount /dev, /proc, /boot, /etc and /var/lib/longhorn from the host, run iscsiadm and mount in the host's namespaces, and manage pods, PVs and storage classes cluster-wide.\n",
+        "security": "Privileged pods on every node: they mount /dev, /proc, /boot, /etc and /var/lib/longhorn from the host, run iscsiadm and mount in the host's namespaces, and manage pods, PVs and storage classes cluster-wide. The chart binds the longhorn-support-bundle ServiceAccount to cluster-admin; only support bundle pods mount its token.\n",
         "supported": true
       },
       {
@@ -320,7 +450,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "Reads pod and node metadata to enrich alerts.",
+        "security": "Reads pod and node metadata to enrich alerts; falcosidekick writes PolicyReports in every namespace.\n",
         "supported": true
       },
       {
@@ -369,36 +499,63 @@
           {
             "default": null,
             "description": "Velero stores backups in this S3 bucket.",
+            "filled": false,
             "generated": false,
             "name": "bucket",
             "required": true,
-            "filled": false,
             "secret": false
           },
           {
             "default": null,
             "description": "Velero connects to this S3 endpoint URL; any S3-compatible service works.",
+            "filled": false,
             "generated": false,
             "name": "s3-url",
             "required": true,
-            "filled": false,
             "secret": false
           },
           {
             "default": null,
             "description": "Velero reads the bucket's credentials from this AWS-style credentials file.",
+            "filled": false,
             "generated": false,
             "name": "credentials",
             "required": true,
-            "filled": false,
             "secret": true
+          },
+          {
+            "default": null,
+            "description": "Kopia encrypts file-system backups with this password. Without the Secret, Velero uses its built-in password, which is public.\n",
+            "filled": false,
+            "generated": true,
+            "name": "repository-password",
+            "required": false,
+            "secret": true
+          },
+          {
+            "default": null,
+            "description": "The S3 server encrypts every backup object, Secrets included, with this SSE-C key. The AWS plugin needs exactly 32 bytes.\n",
+            "filled": false,
+            "generated": true,
+            "name": "backup-key",
+            "required": false,
+            "secret": true
+          },
+          {
+            "default": false,
+            "description": "Off by default. Set true to install the node agent on every node, so Velero can copy volume files with Kopia. The agent runs as root, mounts host paths, holds Velero's cluster-admin token, and needs the velero namespace to allow the privileged Pod Security level. Each Backup and Schedule must then set defaultVolumesToFsBackup to true. Zeabur's schedule does. While the input is false, such a backup fails partly.\n",
+            "filled": false,
+            "generated": false,
+            "name": "file-backup",
+            "required": false,
+            "secret": false
           }
         ],
         "needs": [],
         "personal": false,
         "personalMinMemoryMib": null,
-        "privileged": true,
-        "security": "Bound to cluster-admin; reads and restores every object.",
+        "privileged": false,
+        "security": "Bound to cluster-admin; reads and restores every object. By default no Pod is privileged and the velero namespace needs only the baseline Pod Security level. With the file-backup input, a root node agent on every node holds the same token, mounts host paths and needs the privileged level.\n",
         "supported": true
       },
       {

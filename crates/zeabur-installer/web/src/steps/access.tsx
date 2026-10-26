@@ -9,7 +9,7 @@ import type { Wizard } from "@/app"
 import { Panel, Segmented } from "@/components/bits"
 import { useT } from "@/i18n"
 import { StepPage } from "@/steps/frame"
-import { hostName, SuffixesPanel, suffixesValid } from "@/steps/suffixes"
+import { hostName, isPublic, SuffixesPanel, suffixesValid } from "@/steps/suffixes"
 import { Button } from "@zeabur/design-system/components/button"
 import { Field, FieldDescription, FieldLabel } from "@zeabur/design-system/components/field"
 import { Input } from "@zeabur/design-system/components/input"
@@ -18,7 +18,9 @@ export function AccessStep({ wizard }: { wizard: Wizard }) {
   const t = useT()
   const { config, server } = wizard
   const access = config.access
-  const address = server.addresses.find((a) => !a.includes(":"))
+  const ipv4 = server.addresses.filter((a) => !a.includes(":"))
+  const address = ipv4.find(isPublic) ?? ipv4[0]
+  const sslip = address && (access.mode === "local" || isPublic(address))
   const setAccess = (next: Partial<typeof access>) =>
     wizard.setConfig({ ...config, access: { ...access, ...next } })
   const same = access.zeabur !== "" && access.zeabur === access.identity
@@ -78,7 +80,7 @@ export function AccessStep({ wizard }: { wizard: Wizard }) {
       <Panel
         title={t("access.names")}
         action={
-          access.mode === "local" && address ? (
+          sslip ? (
             <Button
               variant="outline"
               size="sm"
@@ -112,9 +114,7 @@ export function AccessStep({ wizard }: { wizard: Wizard }) {
             onChange={(identity) => setAccess({ identity })}
             error={same ? t("access.same") : undefined}
           />
-          {access.mode === "local" && address ? (
-            <p className="text-xs text-tertiary">{t("access.sslipHint", address)}</p>
-          ) : null}
+          {sslip ? <p className="text-xs text-tertiary">{t("access.sslipHint", address)}</p> : null}
         </div>
       </Panel>
 

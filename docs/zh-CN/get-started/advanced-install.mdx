@@ -1,7 +1,7 @@
 ---
 title: 使用配置文件和命令安装
 description: 将安装选项写入 YAML，用 plan 检查、apply 安装，适合重复安装和版本控制。
-source: "55d3ff3585fc"
+source: "09de689cf07c"
 ---
 
 将安装选项写入 `/etc/zeabur-installer/config.yaml`，用 `plan` 查看安装计划，再用 `apply` 安装。这种方式适合将配置纳入版本控制、在多台机器上重复相同的安装，或通过自动化工具安装。
@@ -69,7 +69,7 @@ sudo zeabur-installer plan --json
 
 `plan --json` 不会检查主机。
 
-没有配置文件时，`plan` 会根据这台服务器的地址生成 sslip.io 名称，以 `local` 模式和 `standard` 组合提供参考。运行 `apply` 前必须创建配置文件。
+没有配置文件时，`plan` 会根据这台服务器的地址生成 sslip.io 名称，以 `standard` 组合提供参考。服务器有公网地址时使用 `domain` 模式，否则使用 `local` 模式。运行 `apply` 前必须创建配置文件。
 
 ## 运行安装
 

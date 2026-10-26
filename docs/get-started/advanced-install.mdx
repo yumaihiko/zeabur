@@ -68,7 +68,7 @@ sudo zeabur-installer plan --json
 
 `plan --json` doesn't run host checks.
 
-Without a config file, `plan` generates sslip.io names from the server's address and shows a preview using `local` mode and the `standard` preset. You must create a config file before running `apply`.
+Without a config file, `plan` generates sslip.io names from the server's address and shows a preview using the `standard` preset. It uses `domain` mode when the server has a public address, and `local` mode otherwise. You must create a config file before running `apply`.
 
 ## Run the installation
 

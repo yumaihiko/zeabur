@@ -171,7 +171,7 @@ impl PersonalConfig {
 pub enum Preset {
     /// Ingress, certificates and metrics-server: what Zeabur needs to be reached and to show usage.
     Minimal,
-    /// Everything the catalog recommends for the profile.
+    /// Everything the catalog recommends for the profile, with zot, Keel and `CloudNativePG`.
     #[default]
     Standard,
     /// `standard` with runtime detection, vulnerability scanning and intrusion prevention.
@@ -562,19 +562,29 @@ const fn yes() -> bool {
 }
 
 impl Config {
-    /// The configuration used when there is no file: a test machine reached through sslip.io
-    /// names for `address`, with the standard preset.
+    /// The configuration used when there is no file: sslip.io names for the first public address,
+    /// else for the first address, with the standard preset. A public address gets Let's Encrypt
+    /// certificates; another address is a test machine with a local CA.
     #[must_use]
-    pub fn defaults(address: &str) -> Self {
+    pub fn defaults(addresses: &[String]) -> Option<Self> {
+        let address = addresses
+            .iter()
+            .find(|a| crate::plan::is_public(a))
+            .or_else(|| addresses.first())?;
+        let mode = if crate::plan::is_public(address) {
+            AccessMode::Domain
+        } else {
+            AccessMode::Local
+        };
         let name = address.replace(':', "-");
-        Self {
+        Some(Self {
             use_: Use::Team,
             preset: Preset::default(),
             enable: Vec::new(),
             disable: Vec::new(),
             profile: single_node(),
             access: Access {
-                mode: AccessMode::Local,
+                mode,
                 identity: format!("login.{name}.sslip.io"),
                 zeabur: format!("zeabur.{name}.sslip.io"),
                 invitations: true,
@@ -587,7 +597,7 @@ impl Config {
             rke2_version: None,
             host: Host::default(),
             sources: Sources::default(),
-        }
+        })
     }
 
     /// Parses and checks a configuration file.
@@ -695,6 +705,25 @@ mod tests {
         assert!(!Config::parse(&off).unwrap().access.invitations);
         let wildcard = MINIMAL.replace('}', ", suffixes: ['*.apps.example.com']}");
         assert!(Config::parse(&wildcard).is_err());
+    }
+
+    #[test]
+    fn without_a_file_a_public_address_gets_lets_encrypt() {
+        let defaults = |addresses: &[&str]| {
+            let addresses: Vec<String> = addresses.iter().map(|&a| a.to_owned()).collect();
+            Config::defaults(&addresses).map(|c| (c.access.mode, c.access.zeabur))
+        };
+        assert_eq!(
+            defaults(&["10.0.0.5", "203.0.114.7"]),
+            Some((AccessMode::Domain, "zeabur.203.0.114.7.sslip.io".to_owned()))
+        );
+        for private in ["10.0.0.5", "100.64.0.1", "169.254.1.1"] {
+            assert_eq!(
+                defaults(&[private]),
+                Some((AccessMode::Local, format!("zeabur.{private}.sslip.io")))
+            );
+        }
+        assert_eq!(defaults(&[]), None);
     }
 
     #[test]

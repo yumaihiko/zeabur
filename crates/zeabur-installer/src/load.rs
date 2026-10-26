@@ -70,14 +70,14 @@ pub(crate) fn config_or_defaults(path: &Path) -> Result<(Config, bool), InstallE
     if path.exists() {
         return Ok((config(path)?, false));
     }
-    let address = facts::addresses().into_iter().next().ok_or_else(|| {
+    let config = Config::defaults(&facts::addresses()).ok_or_else(|| {
         InstallError::Message(format!(
             "{} does not exist and the server has no global address to make sslip.io names \
              from; see docs/reference/installer-configuration.md",
             path.display()
         ))
     })?;
-    Ok((Config::defaults(&address), true))
+    Ok((config, true))
 }
 
 /// Reads the configuration file.

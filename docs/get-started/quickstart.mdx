@@ -36,11 +36,13 @@ By default, the installer listens only on `127.0.0.1:8085`. The terminal prints 
 http://127.0.0.1:8085/?token=…
 ```
 
-Open another terminal on your computer and create an SSH tunnel:
+Below the link, it prints an `ssh -L` command with this server's address already filled in, for example:
 
 ```sh
-ssh -L 8085:127.0.0.1:8085 root@<server>
+ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 ```
+
+Open another terminal on your computer and run that command to create an SSH tunnel. If you ran the installer with `sudo`, the command uses the account you signed in to the server with.
 
 Then open the link with the token in your computer's browser.
 
@@ -67,7 +69,7 @@ Under “How will everyone connect to Zeabur?”, set two different domains:
 
 ![Certificate and domain settings under “How will everyone connect to Zeabur?”](https://oss.zeabur.com/shots/zeabur/en/light/installer-access.avif)
 
-Under “Certificates,” select “Public domain” or “Test server.”
+Under “Certificates,” select “Public domain” or “Test server.” If the server has a public address, “Public domain” is the default and both domains start as `<address>.sslip.io` names. If it has only private addresses (such as `10.x`, `192.168.x`, or Tailscale's `100.64.x`), “Test server” is the default.
 
 “Application domain” at the bottom of the page determines the suggested address for new services. You can leave it blank and enter a full domain for each service later, or set it on the **Cluster** page.
 
@@ -77,6 +79,8 @@ Select “Public domain” to use your own domains. Both domains need DNS record
 
 Let's Encrypt issues the certificates. Below each field, the installer shows whether the domain points to this server.
 
+If you don't have a domain yet, click “Use sslip.io domains” to use `zeabur.<address>.sslip.io` and `login.<address>.sslip.io`. These names resolve to the server's public address, so Let's Encrypt can still issue the certificates.
+
 ### Test server
 
 For testing, select “Test server,” then click “Use sslip.io domains” to fill in:
@@ -84,7 +88,7 @@ For testing, select “Test server,” then click “Use sslip.io domains” to 
 - `zeabur.<address>.sslip.io`
 - `login.<address>.sslip.io`
 
-This requires no DNS configuration. A certificate authority created on the server issues the certificates. After installation, you'll need to import the certificate into your browser or operating system and trust it.
+This requires no DNS configuration. A certificate authority created on the server issues the certificates. Zeabur, sign-in, and your apps' domains all use certificates from this authority, so after installation you must import it into your browser or operating system and trust it before you can register a passkey.
 
 ## 3. Choose components
 
@@ -95,8 +99,12 @@ Under “Choose components,” select a “Preset,” then select or clear indiv
 | Preset | Includes |
 | --- | --- |
 | “Minimal” | Ingress, certificates, and metrics-server |
-| “Standard” | All components the catalog recommends for a single server; this is the default |
+| “Standard” | The components the catalog recommends for a single server, plus a container registry (zot), image updates (Keel), and PostgreSQL (CloudNativePG); this is the default |
 | “Hardened” | “Standard” plus runtime threat detection, vulnerability scanning, and intrusion prevention |
+
+With “Standard,” you can deploy apps from images and create PostgreSQL databases right after installation. Deploying from Git needs Zeabur Builder, which this version's catalog doesn't include yet.
+
+Some components need settings before you can continue. For example, Velero asks for the S3 endpoint, bucket, region, and access keys, and the installer writes the credentials file Velero needs.
 
 The installer adds dependencies automatically and labels them “Required by other components.” Components labeled “Privileged” run with host privileges.
 
@@ -110,6 +118,7 @@ Under “Review,” check the addresses, components, and memory estimate, then c
 
 The summary lists:
 
+- What you can do after installation and what to set up later. For example, database backups need an S3 bucket, which you set up in Zeabur after installation. Expand “What each component adds” to see which component provides each feature.
 - Memory use at idle.
 - Selected components.
 - The Kubernetes version, which is the RKE2 version.
@@ -136,6 +145,8 @@ Closing the page doesn't interrupt installation. Reopen the link with the token 
 
 When “Zeabur is ready” appears, click “Register passkey” under “First administrator.” After registration, click “Open Zeabur” to sign in.
 
+Test server mode adds one step, and it comes first: under “1. Trust the certificate authority,” click “Download certificate,” import the certificate into your browser or operating system, and trust it for websites. Then register the passkey under “2. Register the first administrator.” Until the certificate is trusted, the browser shows a warning and passkey registration fails. Your apps' domains use this certificate authority too, so other computers that open them must import it as well.
+
 This is an admin account. It can sign in only with a passkey and has full rights across the cluster. For everyday work such as deploying services and viewing logs, invite yourself to a regular account from **Members**. See [Admin accounts and regular accounts](../reference/permissions.mdx#admin-accounts-and-regular-accounts).
 
 ![“Zeabur is ready” showing the registration entry point for the first administrator](https://oss.zeabur.com/shots/zeabur/en/light/installer-done.avif)
@@ -144,7 +155,7 @@ This is an admin account. It can sign in only with a passkey and has full rights
 The first administrator's registration link creates an admin account. Whoever opens it first gets full control of the cluster, so share it only with the person who will administer the cluster. The link can be used once and expires after 24 hours.
 </Callout>
 
-In test server mode, first click “Download certificate,” then import the certificate into your browser or operating system and trust it. Otherwise, the browser shows a warning. The certificate is also stored on the server at:
+The certificate is also stored on the server at:
 
 ```text
 /var/lib/rancher/zeabur-installer/local-ca.crt

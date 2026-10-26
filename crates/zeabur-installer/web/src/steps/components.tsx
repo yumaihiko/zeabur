@@ -1,4 +1,4 @@
-import { useId } from "react"
+import { useId, useState } from "react"
 import CaretDownIcon from "~icons/ph/caret-down"
 import CaretRightIcon from "~icons/ph/caret-right"
 
@@ -6,7 +6,16 @@ import type { CatalogComponent, Config, Input as CatalogInput, Preset } from "@/
 import type { Wizard } from "@/app"
 import { Panel, Segmented } from "@/components/bits"
 import { MemoryVerdict, memoryAdvice } from "@/components/memory"
-import { coded, useT, type Translate } from "@/i18n"
+import { coded, named, useT, type Translate } from "@/i18n"
+import {
+  inputKind,
+  lacksInput,
+  velero,
+  veleroForm,
+  veleroInputs,
+  veleroKeys,
+  type InputKind,
+} from "@/lib/inputs"
 import { memoryFit } from "@/lib/memory"
 import { StepPage } from "@/steps/frame"
 import { Alert, AlertDescription, AlertTitle } from "@zeabur/design-system/components/alert"
@@ -21,6 +30,7 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@zeabur/design-system/components/field"
 import { Input } from "@zeabur/design-system/components/input"
 import { LoadingDots } from "@zeabur/design-system/components/spinner"
+import { Textarea } from "@zeabur/design-system/components/textarea"
 import { Tooltip } from "@zeabur/design-system/components/tooltip"
 
 const presets: Preset[] = ["minimal", "standard", "secure"]
@@ -60,6 +70,9 @@ export function ComponentsStep({ wizard }: { wizard: Wizard }) {
     })
   }
   const advice = fit ? memoryAdvice(t, fit) : ""
+  const given = { inputs: choices.inputs, secrets: wizard.secrets }
+  // The plan names the first missing input in configuration terms; the rows ask for them instead.
+  const incomplete = catalog.filter((c) => chosen(c.id) && lacksInput(c, given))
   return (
     <StepPage
       title={t("components.title")}
@@ -70,9 +83,25 @@ export function ComponentsStep({ wizard }: { wizard: Wizard }) {
         </Button>
       }
       next={
-        <Button disabled={!plan || wizard.planning} onClick={() => wizard.go("review")}>
-          {t("common.continue")}
-        </Button>
+        <>
+          {incomplete.length ? (
+            <span className="text-xs text-warn-strong">
+              {t(
+                "components.incomplete",
+                t(
+                  "common.list",
+                  incomplete.map((c) => c.displayName),
+                ),
+              )}
+            </span>
+          ) : null}
+          <Button
+            disabled={!plan || wizard.planning || incomplete.length > 0}
+            onClick={() => wizard.go("review")}
+          >
+            {t("common.continue")}
+          </Button>
+        </>
       }
     >
       {personal ? null : (
@@ -91,7 +120,7 @@ export function ComponentsStep({ wizard }: { wizard: Wizard }) {
         </Panel>
       )}
 
-      {planned && "error" in planned ? (
+      {planned && "error" in planned && !incomplete.length ? (
         <Alert variant="destructive">
           <AlertTitle>{t("common.error")}</AlertTitle>
           <AlertDescription>{planned.error}</AlertDescription>
@@ -177,7 +206,10 @@ function ComponentRow({
   const t = useT()
   const id = useId()
   const disabled = !supported || needed
-  const asked = component.inputs.filter((input) => !input.filled)
+  const form = veleroForm(component)
+  const asked = component.inputs.filter(
+    (input) => !input.filled && !(form && veleroInputs.includes(input.name)),
+  )
   const required = asked.filter((input) => input.required)
   const optional = asked.filter((input) => !input.required)
   const unsupported = tooSmall
@@ -226,8 +258,9 @@ function ComponentRow({
         <CollapsibleContent>
           <p className="mt-1 ml-7.5 text-sm text-secondary">{component.security}</p>
         </CollapsibleContent>
-        {chosen && required.length ? (
+        {chosen && (form || required.length) ? (
           <div className="mt-2 ml-7.5 flex flex-col gap-4 rounded-lg border border-v2-border p-4">
+            {form ? <VeleroFields wizard={wizard} /> : null}
             {required.map((input) => (
               <InputField key={input.name} component={component.id} input={input} wizard={wizard} />
             ))}
@@ -265,6 +298,148 @@ function show(value: unknown): string {
   return value === undefined || value === null ? "" : String(value)
 }
 
+/** The S3 location Velero writes to, asked as the panel's backup location form asks it. gui.rs
+ * makes the `credentials` file from the two keys. */
+function VeleroFields({ wizard }: { wizard: Wizard }) {
+  const t = useT()
+  const choices = wizard.active
+  const given = choices.inputs[velero] ?? {}
+  const secrets = wizard.secrets[velero] ?? {}
+  const setInput = (name: string, text: string) => {
+    const values = { ...choices.inputs[velero] }
+    if (text.trim() === "") delete values[name]
+    else values[name] = text.trim()
+    wizard.setChoices({
+      enable: choices.enable,
+      disable: choices.disable,
+      inputs: { ...choices.inputs, [velero]: values },
+    })
+  }
+  const [keyId, secretKey] = veleroKeys
+  return (
+    <>
+      <Setting
+        label={t("velero.endpoint")}
+        help={t("velero.endpointHint")}
+        kind="url"
+        required
+        value={show(given["s3-url"])}
+        placeholder="https://<account>.r2.cloudflarestorage.com"
+        onChange={(text) => setInput("s3-url", text)}
+      />
+      <Setting
+        label={t("velero.bucket")}
+        kind="text"
+        required
+        value={show(given.bucket)}
+        placeholder="zeabur-backups"
+        onChange={(text) => setInput("bucket", text)}
+      />
+      <Setting
+        label={t("velero.region")}
+        help={t("velero.regionHint")}
+        kind="text"
+        value={show(given.region)}
+        placeholder="us-east-1"
+        onChange={(text) => setInput("region", text)}
+      />
+      <Setting
+        label={t("velero.accessKey")}
+        kind="text"
+        required
+        value={secrets[keyId] ?? ""}
+        onChange={(text) => wizard.setSecret(velero, keyId, text)}
+      />
+      <Setting
+        label={t("velero.secretKey")}
+        help={t("components.secret")}
+        kind="secret"
+        required
+        value={secrets[secretKey] ?? ""}
+        onChange={(text) => wizard.setSecret(velero, secretKey, text)}
+      />
+    </>
+  )
+}
+
+/** One field. It keeps what the person types and passes each change on. */
+function Setting({
+  label,
+  help,
+  kind,
+  required,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  help?: string
+  kind: InputKind
+  required?: boolean
+  value: string
+  placeholder?: string
+  onChange: (text: string) => void
+}) {
+  const t = useT()
+  const id = useId()
+  const [text, setText] = useState(value)
+  const change = (next: string) => {
+    setText(next)
+    onChange(next)
+  }
+  const name = (
+    <>
+      {label}
+      {required ? (
+        <span className="ml-2 text-xs font-normal text-tertiary">{t("components.required")}</span>
+      ) : null}
+    </>
+  )
+  if (kind === "boolean") {
+    return (
+      <Field>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={id}
+            checked={text === "true"}
+            onCheckedChange={(on) => change(on ? "true" : "false")}
+          />
+          <label htmlFor={id} className="text-sm font-medium text-main">
+            {name}
+          </label>
+        </div>
+        {help ? <FieldDescription className="ml-6">{help}</FieldDescription> : null}
+      </Field>
+    )
+  }
+  return (
+    <Field>
+      <FieldLabel>{name}</FieldLabel>
+      {kind === "multiline" ? (
+        <Textarea
+          value={text}
+          placeholder={placeholder}
+          mono
+          autoComplete="off"
+          className="max-w-md"
+          onChange={(event) => change(event.target.value)}
+        />
+      ) : (
+        <Input
+          type={kind === "secret" ? "password" : kind === "url" ? "url" : "text"}
+          value={text}
+          placeholder={placeholder}
+          mono
+          autoComplete="off"
+          className="max-w-md"
+          onChange={(event) => change(event.target.value)}
+        />
+      )}
+      {help ? <FieldDescription>{help}</FieldDescription> : null}
+    </Field>
+  )
+}
+
 /** What a person types, as the configuration holds it: `[a, b]` is a list, digits a number. */
 function parse(text: string): unknown {
   const trimmed = text.trim()
@@ -291,9 +466,10 @@ function InputField({
 }) {
   const t = useT()
   const choices = wizard.active
+  const kind = inputKind(component, input)
   const value = input.secret
     ? (wizard.secrets[component]?.[input.name] ?? "")
-    : show(choices.inputs[component]?.[input.name])
+    : show(choices.inputs[component]?.[input.name] ?? (kind === "boolean" ? input.default : ""))
   const set = (text: string) => {
     if (input.secret) {
       wizard.setSecret(component, input.name, text)
@@ -305,30 +481,23 @@ function InputField({
     const inputs: Config["inputs"] = { ...choices.inputs, [component]: values }
     wizard.setChoices({ enable: choices.enable, disable: choices.disable, inputs })
   }
+  const key = `${component}.${input.name}`
+  const help = named(t, `inputHelp.${key}`, input.description)
   const notes = [
-    input.description,
+    help,
     Array.isArray(input.default) ? t("components.list") : "",
     input.generated ? t("components.generated") : "",
     input.secret ? t("components.secret") : "",
   ].filter(Boolean)
   return (
-    <Field>
-      <FieldLabel>
-        <span className="font-mono">{input.name}</span>
-        {input.required ? (
-          <span className="ml-2 text-xs font-normal text-tertiary">{t("components.required")}</span>
-        ) : null}
-      </FieldLabel>
-      <Input
-        type={input.secret ? "password" : "text"}
-        defaultValue={value}
-        placeholder={show(input.default)}
-        mono
-        autoComplete="off"
-        className="max-w-md"
-        onBlur={(event) => set(event.target.value)}
-      />
-      <FieldDescription>{notes.join(" ")}</FieldDescription>
-    </Field>
+    <Setting
+      label={named(t, `input.${key}`, input.name)}
+      help={notes.join(" ")}
+      kind={kind}
+      required={input.required}
+      value={value}
+      placeholder={kind === "boolean" ? undefined : show(input.default)}
+      onChange={set}
+    />
   )
 }

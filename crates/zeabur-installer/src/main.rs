@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use zeabur_installer_host::{HostError, facts, token};
-use zeabur_installer_plan::config::Role;
+use zeabur_installer_plan::config::{AccessMode, Role};
 use zeabur_installer_plan::{PlanError, plan};
 
 /// Install RKE2 hardened with the CIS profile, the Zeabur Catalog's components, Zeabur Identity
@@ -250,8 +250,12 @@ fn show_plan(cli: &Cli, json: bool) -> Result<(), InstallError> {
     let index = load::catalog(config.sources.catalog.as_deref(), apply::STATE_DIR)?;
     let plan = apply::make_plan(&index, &config)?;
     if defaults && !json {
+        let kind = match config.access.mode {
+            AccessMode::Domain => "with Let's Encrypt certificates",
+            AccessMode::Local => "on a test machine with a local CA",
+        };
         out::line(&format!(
-            "No configuration at {}; planning with the defaults: a test machine at {} and {}, \
+            "No configuration at {}; planning with the defaults: {} and {} {kind}, \
              standard components. Write the file to change them (docs/reference/installer-configuration.md).\n",
             cli.config.display(),
             config.access.zeabur,

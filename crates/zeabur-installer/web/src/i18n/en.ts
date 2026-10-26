@@ -153,7 +153,7 @@ export const en = {
   "access.domainHint":
     "Let's Encrypt issues the certificates, so ports 80 and 443 must be reachable from the internet.",
   "access.localHint":
-    "A certificate authority made on this server signs them. Browsers trust it once you import it, which the last step offers.",
+    "A certificate authority made on this server signs them, for Zeabur, sign-in and your apps' domains. Browsers trust it once you import it, which the last step offers.",
   "access.names": "Domains",
   "access.zeabur": "Zeabur",
   "access.zeaburHint": "Where people open Zeabur.",
@@ -200,7 +200,8 @@ export const en = {
   "preset.standard": "Standard",
   "preset.secure": "Hardened",
   "presetHint.minimal": "Ingress, certificates and metrics-server: what Zeabur needs to run.",
-  "presetHint.standard": "Everything the catalog recommends for one server.",
+  "presetHint.standard":
+    "Everything the catalog recommends for one server, plus a container registry, image updates and PostgreSQL.",
   "presetHint.secure":
     "Standard, plus runtime threat detection, vulnerability scanning and intrusion prevention.",
   "components.chosen": (n: number) => `${plural(n, "component", "components")} chosen`,
@@ -223,10 +224,48 @@ export const en = {
   "components.generated": "Generated when left empty.",
   "components.list": "Write a list: [a, b].",
   "components.secret": "Saved to a file only root can read, never in the configuration.",
+  "components.incomplete": (names: string) => `Fill in the settings of ${names} to continue.`,
+  "velero.endpoint": "Endpoint",
+  "velero.endpointHint":
+    "The S3 address of your storage. For AWS S3, https://s3.<region>.amazonaws.com.",
+  "velero.bucket": "Bucket",
+  "velero.region": "Region",
+  "velero.regionHint": "us-east-1 when left empty. Cloudflare R2 uses auto.",
+  "velero.accessKey": "Access key ID",
+  "velero.secretKey": "Secret access key",
+  "input.volume-backup/velero.s3-url": "Endpoint",
+  "input.volume-backup/velero.bucket": "Bucket",
+  "input.volume-backup/velero.credentials": "Credentials file",
+  "inputHelp.volume-backup/velero.credentials":
+    "An AWS credentials file: [default], then aws_access_key_id and aws_secret_access_key lines.",
+  "input.volume-backup/velero.repository-password": "Volume copy password",
+  "inputHelp.volume-backup/velero.repository-password":
+    "Kopia encrypts the copies of volume files with it.",
+  "input.volume-backup/velero.backup-key": "Backup encryption key",
+  "inputHelp.volume-backup/velero.backup-key":
+    "The S3 server encrypts every backup with this key (SSE-C). It must be 32 characters.",
+  "input.volume-backup/velero.file-backup": "Copy volume files",
+  "inputHelp.volume-backup/velero.file-backup":
+    "Adds an agent on every node that copies the files in volumes. It runs as root with access to the host.",
+  "input.remote-access/tailscale-operator.oauth-client-id": "OAuth client ID",
+  "inputHelp.remote-access/tailscale-operator.oauth-client-id":
+    "Make an OAuth client in the Tailscale admin console with write access to Devices Core, Auth Keys and Services, and the tag tag:k8s-operator. In the tailnet policy, tag:k8s-operator must own tag:k8s.",
+  "input.remote-access/tailscale-operator.oauth-client-secret": "OAuth client secret",
+  "inputHelp.remote-access/tailscale-operator.oauth-client-secret":
+    "The secret of the same OAuth client.",
+  "input.intrusion-prevention/crowdsec.bouncer-key": "Bouncer key",
+  "inputHelp.intrusion-prevention/crowdsec.bouncer-key":
+    "Traefik's bouncer calls CrowdSec's local API with it.",
+  "input.intrusion-prevention/crowdsec.lapi-secret": "Local API secret",
+  "inputHelp.intrusion-prevention/crowdsec.lapi-secret":
+    "CrowdSec's local API signs agent sessions with it.",
+  "input.intrusion-prevention/crowdsec.registration-token": "Registration token",
+  "inputHelp.intrusion-prevention/crowdsec.registration-token":
+    "CrowdSec's agents register with the local API with it.",
   "capability.certificates": "Certificates",
   "capability.builds": "Builds",
   "capability.config-reload": "Config reload",
-  "capability.container-registry": "Image registry",
+  "capability.container-registry": "Container registry",
   "capability.dns": "DNS",
   "capability.event-autoscaling": "Event autoscaling",
   "capability.ingress": "Ingress",
@@ -266,6 +305,28 @@ export const en = {
   "review.memory": "Memory at idle",
   "review.time": "Time",
   "review.timeValue": "10 to 20 minutes",
+  "review.after": "After installing",
+  "review.can": (items: string[]) => `You can ${list(items)}.`,
+  "review.gitMissing":
+    "Deploying from Git needs Zeabur Builder, which this catalog doesn't have yet.",
+  "review.gitNeeds": (names: string[]) => `Deploying from Git needs ${list(names)}.`,
+  "review.backupsLater": "Backups need an S3 bucket, which you set up in Zeabur after installing.",
+  "review.dbBackupsLater":
+    "Database backups need an S3 bucket, which you set up in Zeabur after installing.",
+  "review.features": "What each component adds",
+  "review.notChosen": "Not chosen",
+  "review.notInCatalog": "Not in this catalog yet",
+  "review.inZeabur": "In Zeabur, after installing",
+  "can.image": "deploy apps from images",
+  "can.git": "deploy from Git",
+  "can.postgres": "create PostgreSQL databases",
+  "feature.git": "Deploy from Git",
+  "feature.registry": "Container registry",
+  "feature.updates": "Image updates",
+  "feature.postgres": "PostgreSQL",
+  "feature.usage": "Usage history",
+  "feature.logs": "Log history",
+  "feature.backups": "Database backups",
   "review.warnings": "Before you install",
   "review.plan": "Full plan",
   "review.config": "Configuration file",
@@ -422,9 +483,12 @@ export const en = {
   "done.open": "Open Zeabur",
   "done.zeabur": "Zeabur",
   "done.identity": "Sign-in",
-  "done.ca": "Certificate authority",
+  "done.descriptionLocal":
+    "Trust this server's certificate authority first, then register the first administrator's passkey. Stop the installer with Ctrl-C when you are done.",
+  "done.caStep": "1. Trust the certificate authority",
+  "done.setupStep": "2. Register the first administrator",
   "done.caHint":
-    "Import it into your browser or system and trust it for websites, or browsers will warn about these sites.",
+    "Zeabur, sign-in and your apps' domains all use certificates from this authority. Import it into your system or browser and trust it for websites. Until then, browsers warn about these sites and passkey registration fails.",
   "done.caDownload": "Download certificate",
   "done.noLink":
     "Zeabur was already set up, so no new link was made. Run zeabur-identityctl setup-link --username admin for one.",
