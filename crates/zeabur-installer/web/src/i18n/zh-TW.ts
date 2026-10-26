@@ -60,6 +60,7 @@ export const zhTW: Messages = {
   "check.systemd": "systemd",
   "check.time": "時鐘",
   "check.swap": "Swap",
+  "check.crashKernel": "當機傾印",
   "check.otherKubernetes": "其他 Kubernetes",
   "check.ports": "連接埠",
   "check.diskSpace": "磁碟空間",
@@ -82,6 +83,9 @@ export const zhTW: Messages = {
   "code.swap.on": () =>
     "Swap 已開啟，kubelet 建議關閉。請執行 swapoff -a，並從 /etc/fstab 移除 swap 那一行。",
   "code.swap.unknown": () => "無法判斷 Swap 是否開啟。請執行 swapon --show 確認。",
+  "code.crash.none": () => "沒有為當機傾印保留記憶體。",
+  "code.crash.kept": (mib) =>
+    `核心為當機傾印（kdump）保留了 ${mib} MiB 記憶體。用不到的話可以關掉，把記憶體還給系統：執行 sudo apt purge kdump-tools && sudo update-grub，然後重新開機。`,
   "code.others.none": () => "沒有發現。",
   "code.others.found": (...paths) =>
     `發現其他 Kubernetes 發行版的檔案（${listZh("zh-TW", paths)}）。如果它還在執行，請先解除安裝。`,

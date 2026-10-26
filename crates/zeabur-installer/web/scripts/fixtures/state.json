@@ -440,6 +440,13 @@
       "values": []
     },
     {
+      "code": "crash.none",
+      "detail": "no memory kept for a crash kernel",
+      "name": "crashKernel",
+      "status": "pass",
+      "values": []
+    },
+    {
       "code": "others.none",
       "detail": "none found",
       "name": "otherKubernetes",
@@ -544,6 +551,13 @@
       "code": "swap.off",
       "detail": "swap is off",
       "name": "swap",
+      "status": "pass",
+      "values": []
+    },
+    {
+      "code": "crash.none",
+      "detail": "no memory kept for a crash kernel",
+      "name": "crashKernel",
       "status": "pass",
       "values": []
     },

@@ -15,7 +15,8 @@ interrupted install or repairs drift.
    10250. ServiceLB takes 80 and 443 on every node, workers too, and forwards them on the nodes
    where Traefik runs (its Service keeps the client's address with `externalTrafficPolicy:
    Local`); Traefik can move to any node. It checks that there is enough disk space and whether
-   the disk is encrypted, and asks `timedatectl` whether the clock is synchronised. A failed
+   the disk is encrypted, asks `timedatectl` whether the clock is synchronised, and warns when the
+   kernel keeps memory for a crash kernel (kdump). A failed
    check stops the run before anything changes.
 2. **Node preparation.** Only when the plan includes Longhorn. Longhorn attaches volumes over
    iSCSI from the node itself, so the installer installs the iSCSI initiator and NFS client

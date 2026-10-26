@@ -60,6 +60,7 @@ export const zhCN: Messages = {
   "check.systemd": "systemd",
   "check.time": "时钟",
   "check.swap": "Swap",
+  "check.crashKernel": "崩溃转储",
   "check.otherKubernetes": "其他 Kubernetes",
   "check.ports": "端口",
   "check.diskSpace": "磁盘空间",
@@ -82,6 +83,9 @@ export const zhCN: Messages = {
   "code.swap.on": () =>
     "Swap 已开启，kubelet 建议关闭。请运行 swapoff -a，并从 /etc/fstab 删除 swap 那一行。",
   "code.swap.unknown": () => "无法判断 Swap 是否开启。请运行 swapon --show 查看。",
+  "code.crash.none": () => "没有为崩溃转储保留内存。",
+  "code.crash.kept": (mib) =>
+    `内核为崩溃转储（kdump）保留了 ${mib} MiB 内存。用不到的话可以关掉，把内存还给系统：运行 sudo apt purge kdump-tools && sudo update-grub，然后重启。`,
   "code.others.none": () => "未发现。",
   "code.others.found": (...paths) =>
     `发现其他 Kubernetes 发行版的文件（${listZh("zh-CN", paths)}）。如果它还在运行，请先卸载。`,

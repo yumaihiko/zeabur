@@ -68,6 +68,7 @@ export const en = {
   "check.systemd": "systemd",
   "check.time": "Clock",
   "check.swap": "Swap",
+  "check.crashKernel": "Crash kernel",
   "check.otherKubernetes": "Other Kubernetes",
   "check.ports": "Ports",
   "check.diskSpace": "Disk space",
@@ -92,6 +93,9 @@ export const en = {
   "code.swap.on": () =>
     "Swap is on; the kubelet expects it off. Run swapoff -a and remove the swap entry from /etc/fstab.",
   "code.swap.unknown": () => "Could not tell whether swap is on. Run swapon --show to see it.",
+  "code.crash.none": () => "No memory is kept for a crash kernel.",
+  "code.crash.kept": (mib: string) =>
+    `The kernel keeps ${mib} MiB for a crash kernel (kdump). If you do not need it, run sudo apt purge kdump-tools && sudo update-grub, then reboot to give the memory back.`,
   "code.others.none": () => "None found.",
   "code.others.found": (...paths: string[]) =>
     `Found files of another Kubernetes distribution (${list(paths)}). If it still runs, uninstall it first.`,

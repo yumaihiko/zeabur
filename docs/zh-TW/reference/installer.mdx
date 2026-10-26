@@ -37,7 +37,7 @@ sudo zeabur-installer --config /etc/zeabur-installer/config.yaml apply
 sudo zeabur-installer doctor
 ```
 
-需要 Linux、systemd 和 root 權限。installer 先檢查主機、連接埠、磁碟和時間同步，有一項失敗就在寫入任何東西前停下。時鐘沒同步只會警告。server 要用 `80`、`443`、`6443`、`9345`、`10250`，worker 只用 `80`、`443`、`10250`。ServiceLB 在每個節點占用 `80`、`443`。
+需要 Linux、systemd 和 root 權限。installer 先檢查主機、連接埠、磁碟和時間同步，有一項失敗就在寫入任何東西前停下。時鐘沒同步只會警告。核心為當機傾印（kdump）保留記憶體時也會提醒，附上關掉的指令。server 要用 `80`、`443`、`6443`、`9345`、`10250`，worker 只用 `80`、`443`、`10250`。ServiceLB 在每個節點占用 `80`、`443`。
 
 建立叢集時依序執行：
 

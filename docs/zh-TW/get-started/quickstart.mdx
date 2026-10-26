@@ -52,7 +52,7 @@ ssh -L 8085:127.0.0.1:8085 root@<伺服器>
 
 ![「檢查伺服器」顯示主機資訊與檢查結果](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-host.avif)
 
-檢查項目包括管理員權限、systemd、時鐘、Swap、其他 Kubernetes、連接埠、磁碟空間和磁碟加密。未通過的項目要先修正，修正後按「重新檢查」。
+檢查項目包括管理員權限、systemd、時鐘、Swap、當機傾印保留的記憶體、其他 Kubernetes、連接埠、磁碟空間和磁碟加密。未通過的項目要先修正，修正後按「重新檢查」。
 
 警告可以繼續。例如，磁碟沒有加密時會出現警告。Secret 會加密，磁碟區不會，測試機可以繼續安裝。
 

@@ -59,6 +59,7 @@ keyed! {
         Systemd => "systemd",
         Time => "time",
         Swap => "swap",
+        CrashKernel => "crashKernel",
         OtherKubernetes => "otherKubernetes",
         Ports => "ports",
         DiskSpace => "diskSpace",
@@ -80,6 +81,7 @@ impl Topic {
             Self::Systemd => "systemd",
             Self::Time => "time",
             Self::Swap => "swap",
+            Self::CrashKernel => "crash kernel",
             Self::OtherKubernetes => "other Kubernetes",
             Self::Ports => "ports",
             Self::DiskSpace => "disk space",
@@ -107,6 +109,8 @@ keyed! {
         SwapOff => "swap.off",
         SwapOn => "swap.on",
         SwapUnknown => "swap.unknown",
+        CrashNone => "crash.none",
+        CrashKept => "crash.kept",
         OthersNone => "others.none",
         OthersFound => "others.found",
         PortsFree => "ports.free",
@@ -223,6 +227,7 @@ pub fn run(options: Options) -> Vec<Check> {
         systemd(),
         time_sync(),
         swap(),
+        crash_kernel(),
         other_distributions(options.node),
     ];
     if options.node == Node::KubeSolo {
@@ -345,6 +350,35 @@ fn swap() -> Check {
             Code::SwapUnknown,
         ),
     }
+}
+
+fn crash_kernel() -> Check {
+    crash_reserve(
+        fs::read_to_string("/sys/kernel/kexec_crash_size")
+            .ok()
+            .as_deref(),
+    )
+}
+
+fn crash_reserve(raw: Option<&str>) -> Check {
+    let mib = raw
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .map_or(0, |bytes| bytes >> 20);
+    if mib == 0 {
+        return check(
+            Topic::CrashKernel,
+            Status::Pass,
+            "no memory kept for a crash kernel",
+            Code::CrashNone,
+        );
+    }
+    check(
+        Topic::CrashKernel,
+        Status::Warn,
+        format!("the kernel keeps {mib} MiB for a crash kernel (kdump); to free it: sudo apt purge kdump-tools && sudo update-grub, then reboot"),
+        Code::CrashKept,
+    )
+    .values(&[&mib.to_string()])
 }
 
 fn other_distributions(node: Node) -> Check {
@@ -637,6 +671,14 @@ mod tests {
         assert_eq!(available_kib(df), Some(49_094_708));
         assert_eq!(gib(3_250_586), "3.1");
         assert_eq!(gib(10 << 20), "10.0");
+        let crash = |raw| {
+            let c = crash_reserve(raw);
+            (c.status, c.code)
+        };
+        assert_eq!(crash(None), (Status::Pass, Code::CrashNone));
+        assert_eq!(crash(Some("0\n")), (Status::Pass, Code::CrashNone));
+        assert_eq!(crash(Some("536870912\n")), (Status::Warn, Code::CrashKept));
+        assert_eq!(crash_reserve(Some("536870912\n")).values, ["512"]);
         let ports = |node| -> Vec<String> {
             needed_ports(node)
                 .iter()
