@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router"
-import { lazy, Suspense, useState } from "react"
+import { useState } from "react"
 import ArchiveIcon from "~icons/ph/archive"
 import ArrowSquareOutIcon from "~icons/ph/arrow-square-out"
 import ArrowsClockwiseIcon from "~icons/ph/arrows-clockwise"
@@ -28,6 +28,7 @@ import { isStatus, type Schemas } from "@/api/client"
 import { capabilitiesQuery, clusterIncidentsQuery } from "@/api/queries"
 import { useCapabilityLabel } from "@/components/capabilities"
 import { Segmented } from "@/components/bits"
+import { LazyInstallerSheet } from "@/components/lazy-installer-sheet"
 import { LoadingRows } from "@/components/page"
 import { Problem } from "@/components/problem"
 import { StatusPill } from "@/components/status"
@@ -43,10 +44,6 @@ import { ClusterFrame } from "@/routes/cluster/frame"
 import { Section } from "@/routes/cluster/section"
 
 const route = getRouteApi("/cluster/components")
-
-const InstallerSheet = lazy(() =>
-  import("@/routes/cluster/installer-sheet").then((m) => ({ default: m.InstallerSheet })),
-)
 
 const categories: {
   key: "traffic" | "observability" | "scaling" | "security" | "data" | "operations"
@@ -145,16 +142,13 @@ export function ComponentsPage() {
   return (
     <ClusterFrame tab="components">
       {open ? (
-        <Suspense fallback={null}>
-          <InstallerSheet
-            component={open}
-            name={opened?.displayName ?? open}
-            installed={list.some((c) => opened !== undefined && isInstalled(c, opened))}
-            onClose={() =>
-              void navigate({ search: (previous) => ({ ...previous, component: undefined }) })
-            }
-          />
-        </Suspense>
+        <LazyInstallerSheet
+          components={[{ id: open, name: opened?.displayName ?? open }]}
+          remove={list.some((c) => opened !== undefined && isInstalled(c, opened))}
+          onClose={() =>
+            void navigate({ search: (previous) => ({ ...previous, component: undefined }) })
+          }
+        />
       ) : null}
       <InstalledSection />
 

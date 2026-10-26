@@ -34,6 +34,15 @@ type Manifest = Record<string, unknown>
 
 export const engines: Engine[] = ["postgresql", "mongodb", "mysql", "mariadb", "dragonfly"]
 
+/** The catalogue component whose operator runs each engine. */
+export const engineOperator: Record<Engine, string> = {
+  postgresql: "databases/cloudnative-pg",
+  mongodb: "databases/percona-mongodb",
+  mysql: "databases/moco",
+  mariadb: "databases/mariadb-operator",
+  dragonfly: "databases/dragonfly-operator",
+}
+
 const ENGINE_NAMES: Record<Engine, string> = {
   postgresql: "PostgreSQL",
   mongodb: "MongoDB",

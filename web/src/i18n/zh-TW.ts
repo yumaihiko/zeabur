@@ -683,7 +683,6 @@ export const zhTW: Messages = {
   "builds.autoUpdatePolicy": (policy) =>
     `Keel 依 ${policy} 規則更新這個服務，這個規則是在 Zeabur 以外設定的。`,
   "builds.keelMissing": "自動部署需要叢集裡的 Keel 元件，目前還沒有安裝。",
-  "builds.installKeel": "安裝方式",
   "builds.history": "紀錄",
   "builds.trigger.webhook": "推送觸發",
   "builds.trigger.poll": "新的提交",
@@ -1060,11 +1059,15 @@ export const zhTW: Messages = {
   "settings.unsupported": "不支援",
   "settings.installCommand": "安裝",
   "settings.removeCommand": "移除",
+  "installer.how": "安裝方式",
+  "installer.installTitle": (names) => `安裝 ${names}`,
+  "installer.removeTitle": (name) => `移除 ${name}`,
   "installer.intro": "元件由 zeabur-installer 安裝和移除，要在當初裝叢集的那台伺服器上執行。",
-  "installer.gui": (name) => `開啟安裝程式的頁面，在「元件」勾選 ${name}，然後安裝：`,
+  "installer.gui": (names) => `開啟安裝程式的頁面，在「元件」勾選 ${names}，然後安裝：`,
   "installer.guiRemove": (name) => `開啟安裝程式的頁面，在「元件」取消勾選 ${name}，然後安裝：`,
   "installer.guiReach": "頁面只開在伺服器的 127.0.0.1:8085，用 ssh -L 8085:127.0.0.1:8085 連過去。",
-  "installer.config": (path) => `或在 ${path} 的 enable 加上它，再執行 apply：`,
+  "installer.config": (path, many) =>
+    `或在 ${path} 的 enable 加上${many ? "這些元件" : "它"}，再執行 apply：`,
   "installer.configRemove": (path) =>
     `或從 ${path} 的 enable 拿掉它，預設就會裝的元件則加到 disable，再執行 apply：`,
   "installer.stays":
@@ -1072,6 +1075,9 @@ export const zhTW: Messages = {
   "installer.elsewhere": "如果是用 Helm、K3s 或 GitOps 工具裝的，就用同一個工具移除。",
   "installer.otherCluster":
     "叢集不是用 zeabur-installer 裝的話，可以印出 manifests，用 kubectl 套用，或提交到 GitOps 儲存庫。加上 --format helm 會改印 Helm 指令。",
+  "installer.notHere":
+    "這個叢集不是用 zeabur-installer 裝的。印出 manifests 後用 kubectl 套用，或提交到 GitOps 儲存庫。加上 --format helm 會改印 Helm 指令。",
+  "installer.builderDocs": "照 Zeabur Builder 文件安裝",
   "settings.homepage": "首頁",
   "settings.opensInNewTab": "（在新分頁開啟）",
   "category.traffic": "流量",
@@ -2244,7 +2250,6 @@ export const zhTW: Messages = {
   "add.database": "資料庫",
   "add.advanced": "進階",
   "add.yaml": "從 YAML 建立…",
-  "add.needsComponent": "需要先安裝元件",
   "add.imageTitle": "部署映像檔",
   "add.imageBody": (project) => `在 ${project} 執行容器映像檔。建立前會先讓你確認要新增的物件。`,
   "add.field.image": "映像檔",
@@ -2321,12 +2326,11 @@ export const zhTW: Messages = {
   "add.templateNeeds": (cpu, memory) => `需要 ${cpu} CPU、${memory} 記憶體`,
   "add.templateTightMemory": "叢集記憶體不夠",
   "add.templateTightCpu": "叢集 CPU 不夠",
-  "add.templateMissing": (names) => `需要先安裝 ${names}`,
+  "add.installFirst": (names) => `需要先安裝 ${names}`,
   "add.templateDeploy": (name) => `部署 ${name}`,
   "add.templateBack": "所有範本",
-  "add.templateMissingBody":
-    "這個應用程式要靠這個元件才能執行。先在伺服器上用 zeabur-installer 裝好，再回來部署。",
-  "add.templateInstall": (name) => `安裝 ${name}`,
+  "add.templateMissingBody": (many) =>
+    `這個應用程式要靠${many ? "這些元件" : "這個元件"}才能執行。先裝到叢集上，再回來部署。`,
   "add.templateUnknown": (names) =>
     `Zeabur 無法確認 ${names} 是否已安裝；如果沒裝，檢查變更時會提醒你。`,
   "add.templateNoIssuer":
@@ -2474,10 +2478,7 @@ export const zhTW: Messages = {
   "add.planGit": (name) => `從 Git 部署 ${name}`,
   "add.card.git": "建置並執行 Git 儲存庫。",
   "add.palette.git": (project) => `在 ${project} 從 Git 部署`,
-  "add.gitMissing.builder": "需要叢集裡有 Zeabur Builder。",
-  "add.gitMissing.registry":
-    "需要容器 registry：用 installer 安裝 zot，或在 Zeabur 的 chart 設定 builds.registry。",
-  "add.gitMissing.keel": "自動部署需要 Keel，請用 installer 安裝。",
+  "add.gitNeedsWhy": "從 Git 部署和上傳資料夾都要用到這些元件。",
   "add.gitMissing.registrySetting":
     "Zeabur 沒有設定建置用的 registry，請在 chart 設定 builds.registry。",
   "add.upload": "上傳資料夾",
@@ -2808,6 +2809,7 @@ export const zhTW: Messages = {
   "db.backup.runs": "備份紀錄",
   "db.backup.storeIdle": (store) => `${store} 已經存在，但這個資料庫還沒有把備份送到那裡。`,
   "db.backup.pluginMissing": "備份 PostgreSQL 需要 CloudNativePG 的 Barman Cloud 外掛。",
+  "db.backup.pluginWhy": "CloudNativePG 元件附帶備份要用的 Barman Cloud 外掛。",
   "db.backup.walNote": "PostgreSQL 也會持續把交易日誌（WAL）封存到那裡。",
   "db.backup.keepsEverything": "所有備份都會保留。要刪除舊備份，在儲存貯體設定生命週期規則。",
   "db.backup.fixedFolder": (folder) => `MOCO 會寫到儲存貯體裡的 ${folder}。`,

@@ -2806,6 +2806,11 @@ export interface components {
     CapabilityList: {
       /** @description Zeabur Catalog's commit. */
       catalogueCommit: string
+      /**
+       * @description Whether zeabur-installer set up the cluster, by its record, the ConfigMap
+       *     `kube-system/zeabur-installer`. `None` when that read was refused.
+       */
+      installer?: boolean | null
       /** @description Each capability, sorted by name: existing (with evidence) or not (with what to install). */
       items: components["schemas"]["Capability"][]
     }

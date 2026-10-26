@@ -681,7 +681,6 @@ export const zhCN: Messages = {
   "builds.autoUpdatePolicy": (policy) =>
     `Keel 按 ${policy} 规则更新这个服务，这个规则是在 Zeabur 之外设置的。`,
   "builds.keelMissing": "自动部署需要集群里的 Keel 组件，目前还没有安装。",
-  "builds.installKeel": "安装方式",
   "builds.history": "记录",
   "builds.trigger.webhook": "推送触发",
   "builds.trigger.poll": "新的提交",
@@ -1056,11 +1055,15 @@ export const zhCN: Messages = {
   "settings.unsupported": "不支持",
   "settings.installCommand": "安装",
   "settings.removeCommand": "移除",
+  "installer.how": "安装方式",
+  "installer.installTitle": (names) => `安装 ${names}`,
+  "installer.removeTitle": (name) => `移除 ${name}`,
   "installer.intro": "组件由 zeabur-installer 安装和移除，要在当初装集群的那台服务器上运行。",
-  "installer.gui": (name) => `打开安装程序的页面，在“组件”勾选 ${name}，然后安装：`,
+  "installer.gui": (names) => `打开安装程序的页面，在“组件”勾选 ${names}，然后安装：`,
   "installer.guiRemove": (name) => `打开安装程序的页面，在“组件”取消勾选 ${name}，然后安装：`,
   "installer.guiReach": "页面只开在服务器的 127.0.0.1:8085，用 ssh -L 8085:127.0.0.1:8085 连过去。",
-  "installer.config": (path) => `或在 ${path} 的 enable 加上它，再运行 apply：`,
+  "installer.config": (path, many) =>
+    `或在 ${path} 的 enable 加上${many ? "这些组件" : "它"}，再运行 apply：`,
   "installer.configRemove": (path) =>
     `或从 ${path} 的 enable 去掉它，预设就会装的组件则加到 disable，再运行 apply：`,
   "installer.stays":
@@ -1068,6 +1071,9 @@ export const zhCN: Messages = {
   "installer.elsewhere": "如果是用 Helm、K3s 或 GitOps 工具装的，就用同一个工具移除。",
   "installer.otherCluster":
     "集群不是用 zeabur-installer 装的话，可以打印 manifests，用 kubectl 应用，或提交到 GitOps 仓库。加上 --format helm 会改为打印 Helm 命令。",
+  "installer.notHere":
+    "这个集群不是用 zeabur-installer 装的。打印 manifests 后用 kubectl 应用，或提交到 GitOps 仓库。加上 --format helm 会改为打印 Helm 命令。",
+  "installer.builderDocs": "按 Zeabur Builder 文档安装",
   "settings.homepage": "主页",
   "settings.opensInNewTab": "（在新标签页打开）",
   "category.traffic": "流量",
@@ -2238,7 +2244,6 @@ export const zhCN: Messages = {
   "add.database": "数据库",
   "add.advanced": "高级",
   "add.yaml": "从 YAML 创建…",
-  "add.needsComponent": "需要先安装组件",
   "add.imageTitle": "部署镜像",
   "add.imageBody": (project) => `在 ${project} 运行容器镜像。创建前会先让你确认要新建的对象。`,
   "add.field.image": "镜像",
@@ -2315,12 +2320,11 @@ export const zhCN: Messages = {
   "add.templateNeeds": (cpu, memory) => `需要 ${cpu} CPU、${memory} 内存`,
   "add.templateTightMemory": "集群内存不够",
   "add.templateTightCpu": "集群 CPU 不够",
-  "add.templateMissing": (names) => `需要先安装 ${names}`,
+  "add.installFirst": (names) => `需要先安装 ${names}`,
   "add.templateDeploy": (name) => `部署 ${name}`,
   "add.templateBack": "所有模板",
-  "add.templateMissingBody":
-    "这个应用要靠这个组件才能运行。先在服务器上用 zeabur-installer 装好，再回来部署。",
-  "add.templateInstall": (name) => `安装 ${name}`,
+  "add.templateMissingBody": (many) =>
+    `这个应用要靠${many ? "这些组件" : "这个组件"}才能运行。先装到集群上，再回来部署。`,
   "add.templateUnknown": (names) =>
     `Zeabur 无法确认 ${names} 是否已安装；如果没装，检查变更时会提醒你。`,
   "add.templateNoIssuer":
@@ -2467,10 +2471,7 @@ export const zhCN: Messages = {
   "add.planGit": (name) => `从 Git 部署 ${name}`,
   "add.card.git": "构建并运行 Git 仓库。",
   "add.palette.git": (project) => `在 ${project} 从 Git 部署`,
-  "add.gitMissing.builder": "需要集群里有 Zeabur Builder。",
-  "add.gitMissing.registry":
-    "需要容器 registry：用 installer 安装 zot，或在 Zeabur 的 chart 中设置 builds.registry。",
-  "add.gitMissing.keel": "自动部署需要 Keel，请用 installer 安装。",
+  "add.gitNeedsWhy": "从 Git 部署和上传文件夹都要用到这些组件。",
   "add.gitMissing.registrySetting":
     "Zeabur 没有设置构建用的 registry，请在 chart 设置 builds.registry。",
   "add.upload": "上传文件夹",
@@ -2799,6 +2800,7 @@ export const zhCN: Messages = {
   "db.backup.runs": "备份记录",
   "db.backup.storeIdle": (store) => `${store} 已经存在，但这个数据库还没有把备份发送到那里。`,
   "db.backup.pluginMissing": "备份 PostgreSQL 需要 CloudNativePG 的 Barman Cloud 插件。",
+  "db.backup.pluginWhy": "CloudNativePG 组件附带备份要用的 Barman Cloud 插件。",
   "db.backup.walNote": "PostgreSQL 也会持续把预写日志（WAL）归档到那里。",
   "db.backup.keepsEverything": "所有备份都会保留。要删除旧备份，在存储桶设置生命周期规则。",
   "db.backup.fixedFolder": (folder) => `MOCO 会写到存储桶里的 ${folder}。`,

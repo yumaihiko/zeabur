@@ -14,9 +14,10 @@ import TextAlignLeftIcon from "~icons/ph/text-align-left"
 import WarningIcon from "~icons/ph/warning"
 
 import type { Schemas } from "@/api/client"
-import { databasesQuery, objectsQuery, projectQuery } from "@/api/queries"
+import { capabilitiesQuery, databasesQuery, objectsQuery, projectQuery } from "@/api/queries"
 import { Ago } from "@/components/bits"
 import { ConnectServices } from "@/components/connect"
+import { InstallAlert } from "@/components/lazy-installer-sheet"
 import { CopyText } from "@/components/copy-text"
 import { useBackups } from "@/components/backups"
 import { DatabaseState } from "@/components/databases"
@@ -53,6 +54,7 @@ import {
   backUpNowSummary,
   enableBackups,
   engineName,
+  engineOperator,
   eventsOf,
   backupNames,
   exportTool,
@@ -71,6 +73,7 @@ import {
   type BackupTarget,
   type Database,
 } from "@/model/databases"
+import { needed } from "@/model/installer"
 import type { Event, Health } from "@/model/service"
 import { useProjectEvents } from "@/routes/project/data"
 import { Restore, Restored } from "@/routes/database/restore"
@@ -611,19 +614,17 @@ function Backups({
   const store = database.backups.store
   const on = backupsOn(database)
   const pluginMissing = database.engine === "postgresql" && !readable
+  const capabilities = useQuery({ ...capabilitiesQuery, retry: false }).data?.items
   return (
     <div className="flex flex-col gap-7">
       {pluginMissing ? (
-        <Alert variant="warn">
-          <WarningIcon aria-hidden="true" />
-          <AlertDescription>
-            {t("db.backup.pluginMissing")}
-            {t("common.gap")}
-            <Link to="/cluster/components" className="underline">
-              {t("backups.seeComponents")}
-            </Link>
-          </AlertDescription>
-        </Alert>
+        <InstallAlert
+          variant="warn"
+          icon={<WarningIcon aria-hidden="true" />}
+          text={t("db.backup.pluginMissing")}
+          components={[needed(engineOperator.postgresql, capabilities)]}
+          reason={t("db.backup.pluginWhy")}
+        />
       ) : null}
       {on && store ? (
         <Target project={project} database={database} />

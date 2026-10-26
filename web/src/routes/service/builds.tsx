@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { lazy, Suspense, useState } from "react"
+import { useState } from "react"
 import ArrowClockwiseIcon from "~icons/ph/arrow-clockwise"
 import ArrowSquareOutIcon from "~icons/ph/arrow-square-out"
 import CubeIcon from "~icons/ph/cube"
@@ -11,13 +11,14 @@ import UploadSimpleIcon from "~icons/ph/upload-simple"
 import { api, toProblem, unwrap } from "@/api/client"
 import { buildsQuery, capabilitiesQuery, logsQuery } from "@/api/queries"
 import { Ago, CopyButton, Segmented } from "@/components/bits"
+import { InstallAlert } from "@/components/lazy-installer-sheet"
 import { LoadingRows } from "@/components/page"
 import { GateTip, useHereGate } from "@/components/gate"
 import { usePlanner } from "@/components/plan/planner"
 import { FormField } from "@/components/form-field"
 import { Problem } from "@/components/problem"
 import { UploadFolderDrawer, UploadProgress } from "@/components/upload-folder"
-import { Alert, AlertAction, AlertDescription } from "@zeabur/design-system/components/alert"
+import { Alert, AlertDescription } from "@zeabur/design-system/components/alert"
 import { Button } from "@zeabur/design-system/components/button"
 import { CopyInput } from "@zeabur/design-system/components/copy-input"
 import {
@@ -62,11 +63,8 @@ import {
   type Built,
 } from "@/model/builds"
 import { deployKeyPage, parseRepository } from "@/model/git-service"
+import { KEEL, needed } from "@/model/installer"
 import { imageTag, isTask, type Service } from "@/model/service"
-
-const InstallerSheet = lazy(() =>
-  import("@/routes/cluster/installer-sheet").then((m) => ({ default: m.InstallerSheet })),
-)
 
 /** The service's builds, when a Zeabur Builder `Build` makes one of its images. */
 export function useServiceBuilds(project: string, service: Service) {
@@ -489,7 +487,6 @@ function AutoUpdate({
   plan: Plan
 }) {
   const t = useT()
-  const [installing, setInstalling] = useState(false)
   const toggleGate = useHereGate("changeServices")
   const capabilities = useQuery({ ...capabilitiesQuery, retry: false })
   const keel = capabilities.data?.items.find((c) => c.name === "image-updates")
@@ -539,24 +536,11 @@ function AutoUpdate({
         )}
       </div>
       {missing ? (
-        <Alert variant="info">
-          <AlertDescription>{t("builds.keelMissing")}</AlertDescription>
-          <AlertAction>
-            <Button variant="outline" size="xs" onClick={() => setInstalling(true)}>
-              {t("builds.installKeel")}
-            </Button>
-          </AlertAction>
-        </Alert>
-      ) : null}
-      {installing ? (
-        <Suspense fallback={null}>
-          <InstallerSheet
-            component="image-updates/keel"
-            name="Keel"
-            installed={false}
-            onClose={() => setInstalling(false)}
-          />
-        </Suspense>
+        <InstallAlert
+          variant="info"
+          text={t("builds.keelMissing")}
+          components={[needed(KEEL, capabilities.data?.items)]}
+        />
       ) : null}
     </section>
   )

@@ -728,7 +728,6 @@ export const en = {
   "builds.autoUpdatePolicy": (policy: string) =>
     `Keel updates this service with its ${policy} policy, set outside Zeabur.`,
   "builds.keelMissing": "Auto-deploy needs the Keel component, which this cluster doesn't have.",
-  "builds.installKeel": "How to install",
   "builds.history": "History",
   "builds.trigger.webhook": "Pushed",
   "builds.trigger.poll": "New commit",
@@ -1134,15 +1133,19 @@ export const en = {
   "settings.unsupported": "Not supported",
   "settings.installCommand": "Install",
   "settings.removeCommand": "Remove",
+  "installer.how": "How to install",
+  "installer.installTitle": (names: string) => `Install ${names}`,
+  "installer.removeTitle": (name: string) => `Remove ${name}`,
   "installer.intro":
     "zeabur-installer installs and removes components. Run it on the server it installed the cluster on.",
-  "installer.gui": (name: string) =>
-    `Open the installer's page, tick ${name} under Components, and install:`,
+  "installer.gui": (names: string) =>
+    `Open the installer's page, tick ${names} under Components, and install:`,
   "installer.guiRemove": (name: string) =>
     `Open the installer's page, untick ${name} under Components, and install:`,
   "installer.guiReach":
     "The page listens on 127.0.0.1:8085 on the server. Reach it with ssh -L 8085:127.0.0.1:8085.",
-  "installer.config": (path: string) => `Or add it to enable in ${path}, then apply:`,
+  "installer.config": (path: string, many: boolean) =>
+    `Or add ${many ? "them" : "it"} to enable in ${path}, then apply:`,
   "installer.configRemove": (path: string) =>
     `Or take it out of enable in ${path} (for a component the preset installs, add it to disable), then apply:`,
   "installer.stays":
@@ -1150,6 +1153,9 @@ export const en = {
   "installer.elsewhere": "If Helm, K3s or a GitOps tool installed it, remove it with that tool.",
   "installer.otherCluster":
     "For a cluster that zeabur-installer didn't install, print the manifests. Apply them with kubectl, or commit them to your GitOps repository. Add --format helm for Helm commands.",
+  "installer.notHere":
+    "zeabur-installer didn't set up this cluster. Print the manifests, then apply them with kubectl or commit them to your GitOps repository. Add --format helm for Helm commands.",
+  "installer.builderDocs": "Install Zeabur Builder from its docs",
   "settings.homepage": "Home page",
   "settings.opensInNewTab": "(opens in a new tab)",
   "category.traffic": "Traffic",
@@ -2442,7 +2448,6 @@ export const en = {
   "add.database": "Database",
   "add.advanced": "Advanced",
   "add.yaml": "From YAML…",
-  "add.needsComponent": "Install its component first",
   "add.imageTitle": "Deploy an image",
   "add.imageBody": (project: string) =>
     `Runs a container image in ${project}. You review the objects before anything is created.`,
@@ -2525,12 +2530,11 @@ export const en = {
   "add.templateNeeds": (cpu: string, memory: string) => `Needs ${cpu} and ${memory} of memory`,
   "add.templateTightMemory": "Not enough memory free",
   "add.templateTightCpu": "Not enough CPU free",
-  "add.templateMissing": (names: string) => `Install ${names} first`,
+  "add.installFirst": (names: string) => `Install ${names} first`,
   "add.templateDeploy": (name: string) => `Deploy ${name}`,
   "add.templateBack": "All templates",
-  "add.templateMissingBody":
-    "This app runs on that component. Install it with zeabur-installer on the server, then come back.",
-  "add.templateInstall": (name: string) => `Install ${name}`,
+  "add.templateMissingBody": (many: boolean) =>
+    `This app won't run without ${many ? "them" : "it"}. Install ${many ? "them" : "it"} on the cluster, then come back to deploy.`,
   "add.templateUnknown": (names: string) =>
     `Zeabur can't tell whether ${names} is installed. If it isn't, the review says so.`,
   "add.templateNoIssuer":
@@ -2701,10 +2705,7 @@ export const en = {
   "add.planGit": (name: string) => `Deploy ${name} from Git`,
   "add.card.git": "Build a Git repository and run it.",
   "add.palette.git": (project: string) => `Deploy from Git in ${project}`,
-  "add.gitMissing.builder": "Needs Zeabur Builder in this cluster.",
-  "add.gitMissing.registry":
-    "Needs a container registry: install zot with the installer, or set builds.registry in Zeabur's chart.",
-  "add.gitMissing.keel": "Needs Keel for auto-deploy. Install it with the installer.",
+  "add.gitNeedsWhy": "Deploy from Git and Upload a folder need these components.",
   "add.gitMissing.registrySetting":
     "Zeabur has no registry for builds: set builds.registry in its chart.",
   "add.upload": "Upload a folder",
@@ -3064,6 +3065,8 @@ export const en = {
     `${store} exists, but this database does not send its backups there yet.`,
   "db.backup.pluginMissing":
     "Backing up PostgreSQL needs the Barman Cloud plugin for CloudNativePG.",
+  "db.backup.pluginWhy":
+    "The CloudNativePG component comes with the Barman Cloud plugin that backups need.",
   "db.backup.walNote": "PostgreSQL also archives its write-ahead log there continuously.",
   "db.backup.keepsEverything":
     "Every backup is kept. Set a lifecycle rule on the bucket to delete old ones.",

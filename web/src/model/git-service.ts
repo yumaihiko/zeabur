@@ -11,6 +11,7 @@ import {
   type DomainSettings,
   type ImageService,
 } from "@/model/image-service"
+import { BUILDER, KEEL, ZOT } from "@/model/installer"
 import type { Profile } from "@/model/pod-security"
 
 type Change = Schemas["Change"]
@@ -473,10 +474,17 @@ export function buildOptionsChanges(build: Build, options: BuildOptions): Change
   return changes
 }
 
-/** Why "Deploy from Git" cannot be used in this cluster, when it cannot. Unknown stays open. */
-export type GitMissing = "builder" | "registry" | "keel" | "registrySetting"
+/** What "Deploy from Git" lacks in this cluster: components to install (`enable` entries), and
+ * whether Zeabur's chart names no registry. Unknown counts as there. */
+export interface GitNeeds {
+  install: string[]
+  registrySetting: boolean
+}
 
-export function gitMissing({
+/** The catalogue's zot, at the address the chart names by default. */
+const ZOT_ADDRESS = /^zot\.zot\.svc(\.cluster\.local)?(:\d+)?$/
+
+export function gitNeeds({
   builds,
   capabilities,
   registry,
@@ -485,11 +493,13 @@ export function gitMissing({
   capabilities: Schemas["Capability"][] | undefined
   /** `""` when Zeabur has no registry setting; `undefined` while unknown. */
   registry: string | undefined
-}): GitMissing | undefined {
-  if (builds === "not-installed") return "builder"
+}): GitNeeds | undefined {
   const absent = (name: string) => capabilities?.find((c) => c.name === name)?.existing === false
-  // The registry setting names the registry; detection only recognises the catalog's Zot.
-  if (registry === "") return absent("container-registry") ? "registry" : "registrySetting"
-  if (absent("image-updates")) return "keel"
-  return undefined
+  const install: string[] = []
+  if (builds === "not-installed") install.push(BUILDER.id)
+  // Detection only recognises the catalogue's zot, so another registry is taken as running.
+  if (registry && ZOT_ADDRESS.test(registry) && absent("container-registry")) install.push(ZOT)
+  if (absent("image-updates")) install.push(KEEL)
+  const registrySetting = registry === ""
+  return install.length > 0 || registrySetting ? { install, registrySetting } : undefined
 }

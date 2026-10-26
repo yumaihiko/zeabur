@@ -19,7 +19,7 @@ import {
   deployKeyPage,
   keyscanCommand,
   pinnedHost,
-  gitMissing,
+  gitNeeds,
   gitObjects,
   newGitService,
   parseRepository,
@@ -346,21 +346,45 @@ describe("what the cluster lacks", () => {
     ({ name, existing, components: [], evidence: [], installations: [] }) as never
   const noZot = capability("container-registry", false)
   const noKeel = capability("image-updates", false)
+  const zot = "zot.zot.svc:5000"
   test.each([
-    ["the Builder", "not-installed", [], "zot", "builder"],
-    ["a registry to install", "installed", [noZot, noKeel], "", "registry"],
-    ["the registry setting", "installed", undefined, "", "registrySetting"],
+    [
+      "everything, all at once",
+      "not-installed",
+      [noZot, noKeel],
+      zot,
+      {
+        install: ["builds", "container-registry/zot", "image-updates/keel"],
+        registrySetting: false,
+      },
+    ],
+    [
+      "the Builder alone",
+      "not-installed",
+      [],
+      zot,
+      { install: ["builds"], registrySetting: false },
+    ],
+    [
+      "the registry setting, which no component gives",
+      "installed",
+      [noZot],
+      "",
+      { install: [], registrySetting: true },
+    ],
     [
       "Keel, past a configured registry detection doesn't know",
       "installed",
       [noZot, noKeel],
       "ghcr.io/acme",
-      "keel",
+      { install: ["image-updates/keel"], registrySetting: false },
     ],
     ["nothing with a configured registry", "installed", [noZot], "harbor.example.com", undefined],
     ["nothing while unknown", undefined, undefined, undefined, undefined],
-  ] as const)("%s", (_, builds, capabilities, registry, missing) => {
-    expect(gitMissing({ builds, capabilities: capabilities as never, registry })).toBe(missing)
+  ] as const)("%s", (_, builds, capabilities, registry, needs) => {
+    expect(gitNeeds({ builds, capabilities: capabilities as never, registry })).toEqual(
+      needs as never,
+    )
   })
 })
 

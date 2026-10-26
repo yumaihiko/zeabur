@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 import { useId, useState } from "react"
 import ArrowLeftIcon from "~icons/ph/arrow-left"
 import ArrowSquareOutIcon from "~icons/ph/arrow-square-out"
@@ -7,6 +6,7 @@ import CaretRightIcon from "~icons/ph/caret-right"
 
 import { clusterQuery, nodesQuery, templatesQuery } from "@/api/queries"
 import { FormField } from "@/components/form-field"
+import { InstallAlert } from "@/components/lazy-installer-sheet"
 import { PlanDrawer } from "@/components/plan/plan-drawer"
 import { usePlanStep, type PlanStepState } from "@/components/plan/planner"
 import { useI18n, useT, type Translate } from "@/i18n"
@@ -30,7 +30,7 @@ import {
 } from "@/model/app-templates"
 import { suggestedHost } from "@/model/image-service"
 import { templateRoom } from "@/model/template-room"
-import { Alert, AlertDescription, AlertTitle } from "@zeabur/design-system/components/alert"
+import { Alert, AlertDescription } from "@zeabur/design-system/components/alert"
 import { Button } from "@zeabur/design-system/components/button"
 import { Card } from "@zeabur/design-system/components/card"
 import {
@@ -171,7 +171,7 @@ function TemplateRow({
         {absent.length > 0 ? (
           <span className="type-meta text-warn-strong">
             {t(
-              "add.templateMissing",
+              "add.installFirst",
               t(
                 "common.list",
                 absent.map((r) => r.name),
@@ -352,41 +352,23 @@ function About({ template }: { template: AppTemplate }) {
 
 function Missing({ template }: { template: AppTemplate }) {
   const t = useT()
-  const absent = missing(template)
+  const absent = missing(template).map((r) => ({
+    id: r.component ? `${r.capability}/${r.component}` : r.capability,
+    name: r.name,
+  }))
   return (
-    <Alert variant="warn">
-      <AlertTitle>
-        {t(
-          "add.templateMissing",
-          t(
-            "common.list",
-            absent.map((r) => r.name),
-          ),
-        )}
-      </AlertTitle>
-      <AlertDescription>
-        <p>{t("add.templateMissingBody")}</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {absent.map((r) => (
-            <Button
-              key={r.name}
-              variant="outline"
-              size="sm"
-              render={
-                <Link
-                  to="/cluster/components"
-                  search={{
-                    component: r.component ? `${r.capability}/${r.component}` : undefined,
-                  }}
-                />
-              }
-            >
-              {t("add.templateInstall", r.name)}
-            </Button>
-          ))}
-        </div>
-      </AlertDescription>
-    </Alert>
+    <InstallAlert
+      variant="warn"
+      title={t(
+        "add.installFirst",
+        t(
+          "common.list",
+          absent.map((r) => r.name),
+        ),
+      )}
+      text={t("add.templateMissingBody", absent.length > 1)}
+      components={absent}
+    />
   )
 }
 
