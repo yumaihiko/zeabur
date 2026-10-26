@@ -61,7 +61,7 @@ kubectl -n zeabur rollout status deployment/zeabur
 
 `clusterName` is the cluster name shown in the interface. The domain in `publicUrl` must match the client's callback domain. The chart refuses public URLs that use HTTP or include a path.
 
-This installation adds Zeabur's Deployment, Service, Ingress, configuration, and plan key, along with the ClusterRoles and Namespace admission policy for project members. The chart binds the member roles to nobody. After signing in, an admin sets each person's access on the **Members** page.
+This installation adds Zeabur's Deployment, Service, Ingress, configuration, and plan key, along with the ClusterRoles and Namespace admission policy for project members. The chart doesn't bind the member roles to anyone. After signing in, an admin sets each person's access on the **Members** page.
 
 Admins who sign in with an admin account have full cluster rights, with no additional setup in Zeabur. See [Permissions](../reference/permissions.mdx#admin-accounts-and-regular-accounts) for admin accounts, session limits, and the sign-in settings on the **Settings** page.
 
@@ -130,6 +130,16 @@ kubectl -n zeabur create secret generic zeabur-plan-key \
 ```
 
 Set `planKey.existingSecret` to `zeabur-plan-key`. To view all chart settings, run `helm show values oci://ghcr.io/zeabur-oss/charts/zeabur --version <version>`.
+
+## Install the components Zeabur needs
+
+If the cluster wasn't installed with zeabur-installer, Zeabur's components page only shows status; it doesn't install components. Use [`zeaburctl components export`](../reference/zeaburctl.mdx#components-export) to print a component's manifests, then apply them with `kubectl` or commit them to a GitOps repository:
+
+```sh
+zeaburctl components export certificates/cert-manager --format flux > cert-manager.yaml
+```
+
+For K3s or RKE2 clusters, use the default `helmchart` format so the built-in helm-controller handles installation. For other clusters, use `helm`, `flux`, or `argocd`.
 
 ## Remove the management interface
 
