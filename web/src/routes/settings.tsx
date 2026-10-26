@@ -466,7 +466,11 @@ function TeamsRow({ setting, editable, save }: SignInRowProps) {
         ) : (
           <span>{t(`settings.teams.${setting.teams}`)}</span>
         )}
-        <p className="text-xs text-muted-foreground">{t(`settings.teams.${setting.teams}Means`)}</p>
+        <p className="text-xs text-muted-foreground">
+          {setting.adminAal3 && setting.teams === "single"
+            ? t("settings.teams.aal3")
+            : t(`settings.teams.${setting.teams}Means`)}
+        </p>
       </div>
     </Row>
   )

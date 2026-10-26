@@ -202,7 +202,7 @@ why. Add a row before introducing a new concept.
 | regular account (every sign-in method, the rights its roles give) | 一般帳號 | 普通账号 | |
 | device-bound passkey (BE unset: a security key, or a passkey that stays on one device) | 不會同步的通行密鑰 | 不会同步的通行密钥 | Say what it does, not 綁定裝置; synced ones are 會同步的通行密鑰 |
 | sign-in settings (teams, AAL3) | 登入設定 | 登录设置 | |
-| one team / several teams (the `teams` setting) | 一個團隊／多個團隊 | 一个团队／多个团队 | |
+| admin idle sign-out (the `teams` setting: 1 hour / 15 minutes) | 管理員閒置多久登出 | 管理员闲置多久退出登录 | Name what it controls; the options are the times, not team counts |
 | Admin / Developer / Viewer (a role in a project) | 管理員／開發者／檢視者 | 管理员／开发者／查看者 | |
 | session | 工作階段 | 会话 | |
 | credential | 認證資訊 | 凭证 | zh-TW 憑證 is a certificate |

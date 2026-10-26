@@ -110,13 +110,13 @@ Only the account type can grant the `admins` group. Zeabur Identity doesn't acce
 
 ## How long sign-in lasts
 
-Regular accounts must sign in again after 1 hour of inactivity. Admin accounts have the same 1-hour limit, reduced to 15 minutes when multiple teams or AAL3 is enabled. All accounts must sign in again after 12 hours, even if they're active.
+Regular accounts must sign in again after 1 hour of inactivity. Admin accounts also default to 1 hour. You can change this to 15 minutes on the Settings page, and it's always 15 minutes when AAL3 is on. All accounts must sign in again after 12 hours, even if they're active.
 
 | Account | Token lifetime | Idle timeout | Maximum session length |
 |---|---|---|---|
 | Regular account | 10 minutes | 1 hour | 12 hours after sign-in |
-| Admin account, one team | 5 minutes | 1 hour | 12 hours after sign-in |
-| Admin account, multiple teams or AAL3 enabled | 5 minutes | 15 minutes | 12 hours after sign-in |
+| Admin account, default | 5 minutes | 1 hour | 12 hours after sign-in |
+| Admin account, set to 15 minutes or AAL3 enabled | 5 minutes | 15 minutes | 12 hours after sign-in |
 
 Zeabur automatically refreshes expired tokens without asking you to use your passkey again. The 12-hour limit starts when you sign in with a passkey, GitHub, or Google. Refreshing a token doesn't extend it. The Zeabur web interface has a 1-hour idle timeout, or the shorter timeout set by Zeabur Identity.
 
@@ -130,10 +130,10 @@ Terminals stay open while in use and close after 15 minutes of inactivity.
 
 | Setting | Config file key and values | Default | Effect |
 |---|---|---|---|
-| Teams | `teams`: `single` or `multiple` | `single`, one team | With multiple teams, admin sessions end after 15 minutes of inactivity. |
+| Admin idle sign-out | `teams`: `single` (1 hour) or `multiple` (15 minutes) | `single`, 1 hour | With 15 minutes, admin sessions end after 15 minutes of inactivity. |
 | AAL3 | `admin-aal3`: `false` or `true` | `false`, off | Admin accounts require device-bound passkeys, and sessions end after 15 minutes of inactivity. |
 
-Installation can't determine whether one team or multiple teams will use the cluster, so it always starts with one team. In a single-team cluster, the admin is usually the only user, so the idle timeout matches regular accounts. If multiple teams share the cluster, change the setting to multiple teams.
+Installation can't determine whether one team or multiple teams will use the cluster, so it always starts with 1 hour. In a single-team cluster, the admin is usually the only user, so the idle timeout matches regular accounts. If multiple teams share the cluster, change the setting to 15 minutes.
 
 Neither setting has a Helm value because Zeabur Identity isn't part of the Zeabur chart. Change them on the **Settings** page or use kubectl to edit the same config file:
 
