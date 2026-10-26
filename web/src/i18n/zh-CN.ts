@@ -2459,8 +2459,8 @@ export const zhCN: Messages = {
   "add.palette.git": (project) => `在 ${project} 从 Git 部署`,
   "add.gitMissing.builder": "需要集群里有 Zeabur Builder。",
   "add.gitMissing.registry":
-    "需要容器 registry：到组件页安装，或在 Zeabur 的 chart 中设置 builds.registry。",
-  "add.gitMissing.keel": "自动部署需要 Keel，请到组件页安装。",
+    "需要容器 registry：用 installer 安装 zot，或在 Zeabur 的 chart 中设置 builds.registry。",
+  "add.gitMissing.keel": "自动部署需要 Keel，请用 installer 安装。",
   "add.gitMissing.registrySetting":
     "Zeabur 没有设置构建用的 registry，请在 chart 设置 builds.registry。",
   "add.upload": "上传文件夹",

@@ -2692,8 +2692,8 @@ export const en = {
   "add.palette.git": (project: string) => `Deploy from Git in ${project}`,
   "add.gitMissing.builder": "Needs Zeabur Builder in this cluster.",
   "add.gitMissing.registry":
-    "Needs a container registry: install one in Components, or set builds.registry in Zeabur's chart.",
-  "add.gitMissing.keel": "Needs Keel for auto-deploy. Install it in Components.",
+    "Needs a container registry: install zot with the installer, or set builds.registry in Zeabur's chart.",
+  "add.gitMissing.keel": "Needs Keel for auto-deploy. Install it with the installer.",
   "add.gitMissing.registrySetting":
     "Zeabur has no registry for builds: set builds.registry in its chart.",
   "add.upload": "Upload a folder",

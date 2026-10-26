@@ -2466,8 +2466,8 @@ export const zhTW: Messages = {
   "add.palette.git": (project) => `在 ${project} 從 Git 部署`,
   "add.gitMissing.builder": "需要叢集裡有 Zeabur Builder。",
   "add.gitMissing.registry":
-    "需要容器 registry：到元件頁安裝，或在 Zeabur 的 chart 設定 builds.registry。",
-  "add.gitMissing.keel": "自動部署需要 Keel，請到元件頁安裝。",
+    "需要容器 registry：用 installer 安裝 zot，或在 Zeabur 的 chart 設定 builds.registry。",
+  "add.gitMissing.keel": "自動部署需要 Keel，請用 installer 安裝。",
   "add.gitMissing.registrySetting":
     "Zeabur 沒有設定建置用的 registry，請在 chart 設定 builds.registry。",
   "add.upload": "上傳資料夾",
