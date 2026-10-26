@@ -1,0 +1,166 @@
+---
+title: Configure DNS records
+description: Point all generated addresses to the cluster with one wildcard record, and add records in Cloudflare, Route 53, or your registrar's DNS.
+---
+
+The application domain is the domain shared by generated addresses. Set up a wildcard record once, and every new service address will resolve to the cluster. For example, if the application domain is `apps.example.com`, add an A record for `*.apps.example.com` that points to the server's IPv4 address. If the server has an IPv6 address, add an AAAA record too. New addresses such as `web-shop.apps.example.com` won't need separate records.
+
+Let's Encrypt issues a separate HTTPS certificate for each address using HTTP-01 validation, so the server's TCP port 80 must be reachable from the internet. Zeabur doesn't change DNS records for you. Add them at your DNS provider.
+
+## Choose an application domain
+
+The application domain can be any subdomain, such as `apps.example.com`, or the domain itself, `example.com`.
+
+| Application domain | Wildcard record to add | Example service address |
+| --- | --- | --- |
+| `apps.example.com` | `*.apps.example.com` | `web-shop.apps.example.com` |
+| `example.com` | `*.example.com` | `web-shop.example.com` |
+
+A wildcard covers only one level of names. `*.example.com` covers `web-shop.example.com`, but not `example.com` itself or `a.b.example.com`.
+
+## Find the records to add in Zeabur
+
+Open the **Domains** section on the **Cluster** page. Each application domain lists the records to add, including the type, name, and value, with copy buttons. It also shows whether the domain currently resolves to the cluster. After adding the records at your DNS provider, return here and click **Check again**.
+
+Start with a TTL of 300 seconds so corrections take effect sooner if you enter something incorrectly. Once you've confirmed the records work, you can increase it.
+
+![The Domains section on the Cluster page lists the application domain apps.example.com as pointing to this cluster, with Recheck and Edit buttons](https://oss.zeabur.com/shots/zeabur/en/light/cluster-domains.avif)
+
+## Add records at your DNS provider
+
+The examples below use `example.com` as the domain and `apps.example.com` as the application domain. Set the A record's value to the server's IPv4 address. If the server has an IPv6 address, add an AAAA record with the same name.
+
+### Cloudflare
+
+<Steps>
+<Step>
+
+#### Open the records page
+
+Select the domain in Cloudflare, go to **DNS** > **Records**, and click **Add record**.
+
+</Step>
+<Step>
+
+#### Enter the record
+
+| Field | Value |
+| --- | --- |
+| Type | `A` |
+| Name | `*.apps`, or `*` if the application domain is the domain itself |
+| IPv4 address | The server's IPv4 address |
+| Proxy status | Turn it off to select **DNS only** (gray cloud) |
+| TTL | Auto |
+
+</Step>
+<Step>
+
+#### Save and check
+
+Click **Save**, then return to the **Domains** section in Zeabur and click **Check again**.
+
+</Step>
+</Steps>
+
+With the gray cloud, Let's Encrypt connects directly to the server for HTTP-01 validation, and Zeabur's check also returns the server's address.
+
+To turn on the orange cloud (**Proxied**) and route traffic through Cloudflare, set Cloudflare's SSL/TLS mode to **Full (strict)**. DNS will then return Cloudflare's addresses, and Zeabur will show the domain as **Points elsewhere**.
+
+### Route 53
+
+<Steps>
+<Step>
+
+#### Open the hosted zone
+
+In the Route 53 console, select **Hosted zones**, open the domain's hosted zone, and click **Create record**.
+
+</Step>
+<Step>
+
+#### Enter the record
+
+| Field | Value |
+| --- | --- |
+| Record name | `*.apps`, or `*` if the application domain is the domain itself |
+| Record type | `A` |
+| Value | The server's IPv4 address |
+| TTL (seconds) | `300` |
+| Routing policy | Simple routing |
+
+</Step>
+<Step>
+
+#### Save and check
+
+Click **Create records**, then return to the **Domains** section in Zeabur and click **Check again**. Route 53 changes usually take effect within a minute.
+
+</Step>
+</Steps>
+
+### Your registrar's DNS
+
+Field names vary across DNS management pages at registrars such as Gandi, Namecheap, and HiNet. Use these values:
+
+| Field | Value |
+| --- | --- |
+| Type | `A`; add `AAAA` too if the server has an IPv6 address |
+| Host or name | `*.apps` if the application domain is `apps.example.com`, or `*` if it's `example.com` |
+| Value | The server's IP address |
+| TTL | `300` to `3600` seconds; start with `300` |
+
+For a record at the domain itself, `example.com`, the name is usually `@`.
+
+Some panels require the full name, while others append the domain automatically. Before saving, check the full name shown in the panel so you don't end up with `*.apps.example.com.example.com`.
+
+## Custom domains
+
+Add a separate A or AAAA record for each custom domain, pointing to the server's IP address. You can also add a CNAME pointing to a name under the application domain, such as `web-shop.apps.example.com`. The service's **Networking** tab lists the records to add for the domain. For the steps to add a domain, see [Add a public domain and HTTPS](./domains.mdx).
+
+The domain itself (such as `example.com`) can only use A or AAAA records at most DNS providers, which don't allow a CNAME there. Cloudflare is an exception: it flattens a CNAME at the domain itself into A records (CNAME flattening). When adding a record for the domain itself in Route 53, leave **Record name** empty rather than entering `@`.
+
+## Without your own domain
+
+If you didn't enter an application domain during installation and the server has a public IP address, generated addresses use `<IP dashes>.sslip.io`, with no DNS setup needed. For a server with the IP address `203.0.113.7`, an address looks like this:
+
+```text
+web-shop.203-0-113-7.sslip.io
+```
+
+These addresses include the server's IP address, and issued certificates also appear in public certificate transparency (CT) logs. All users share Let's Encrypt's issuance limits for `sslip.io`. If you hit a rate limit, certificate issuance will take longer, and cert-manager will retry automatically. Use your own domain for production services.
+
+## Check the application domain and ingress address with kubectl
+
+DNS records live outside the cluster. Zeabur doesn't write any objects for them; it reads two things to list the records to add.
+
+Application domain: the value entered during installation is the Helm chart's `domains.suffixes`. If you've changed it on the **Cluster** page, the new list is stored in the `zeabur-settings` config file in the Zeabur namespace, under the `domain-suffixes` key, with one domain per line:
+
+```sh
+kubectl -n zeabur get configmap zeabur-settings -o jsonpath='{.data.domain-suffixes}'
+```
+
+If there's no output, Zeabur uses the value from installation.
+
+Address the records should point to: Zeabur reads the Ingress `status.loadBalancer`, which holds the ingress's external address:
+
+```sh
+kubectl get ingress -A
+```
+
+The `ADDRESS` column contains the value to use in the A or AAAA record. If it's empty, the ingress hasn't received an external address yet. Ask the cluster administrator for the server's public IP address.
+
+## Verify the result
+
+The **Domains** section on the **Cluster** page shows whether each application domain currently resolves to the cluster. After changing a record, click **Check again**. On your computer, use `dig` to look up any name under the application domain:
+
+```sh
+dig +short anything.apps.example.com
+```
+
+| Result | Meaning |
+| --- | --- |
+| Returns the server's IP address | The name resolves to the server |
+| No output, or `NXDOMAIN` | The record hasn't taken effect yet, or the name is misspelled |
+| Returns another IP address | The record points elsewhere, or traffic goes through a proxy such as Cloudflare's orange cloud |
+
+After you change a record, other DNS servers must wait for their cached answers to expire before they can retrieve the new value. This can take up to the old record's TTL. If a newly added name was previously queried and returned a “does not exist” response, that cached answer must expire too.

@@ -1,0 +1,113 @@
+---
+title: Delete a project
+description: Delete a project's namespace and everything in it. Check which data will remain before you confirm.
+---
+
+A project is a Kubernetes namespace. In the **Danger zone** of a project's **Settings**, click **Delete project**. Zeabur deletes that namespace and everything in it: services, databases, volumes, settings, and secrets, as `kubectl delete namespace` does. It can't be undone; you can only bring the project back from a backup.
+
+To stop showing a namespace in Zeabur without deleting anything, use **Remove from Zeabur** in the same place. It removes the project label only.
+
+## Before you start
+
+- You need permission to delete the namespace (`delete namespaces/<project>`) and the database objects in it. The review lists any permissions you lack, and the cluster also rejects the changes when you apply them.
+- Zeabur's own namespace, system namespaces starting with `kube-`, components installed by the installer (labeled `zeabur.com/platform=true`), and `zeabur-terminals` can't be deleted here.
+
+## Review what will be deleted
+
+<Steps>
+<Step>
+
+### Check what goes with the project
+
+After you click **Delete project**, the review has two sections. **Goes with the project** lists:
+
+- The services, by name.
+- Each database, with the time of its last backup.
+- Each volume, with the time of its last backup and whether its data stays. When the volume's PersistentVolume is set to `Retain`, the data stays in that PersistentVolume; `Delete` deletes it. When Zeabur can't read the PersistentVolume, it reads the StorageClass's `reclaimPolicy`. If it can't read either, it says it can't tell.
+- The tool replicas you opened for the project. They run in `zeabur-terminals`; Zeabur deletes them after the namespace.
+
+A database or volume with no successful backup in the last day shows **Back up first**. Click it to review the backup instead. Apply the backup, wait for it to finish, then come back to delete the project. This button uses the same **Back up now** action as the database page and volume backups. It appears only for databases and volumes with backups already configured.
+
+</Step>
+<Step>
+
+### Check what stays
+
+**Stays** lists the backups in S3 and everything outside the project, such as other projects and cluster settings.
+
+K8up volume backups need their restic password to restore. The password is stored in a secret in the project (for example, `data-redis-0-backup`), which is deleted with the project. To restore those volumes later, save a copy before deleting:
+
+```sh
+kubectl -n shop get secret data-redis-0-backup -o jsonpath='{.data.RESTIC_PASSWORD}' | base64 -d
+```
+
+A cluster backup (Velero) holds the whole namespace, including secrets, so you don't need to save the password separately when restoring from a cluster backup.
+
+</Step>
+<Step>
+
+### Check for objects that may be recreated
+
+When Helm, Argo CD, or Flux manages objects in the project, the review warns that these tools may recreate them after deletion, depending on their settings. Remove the application from the tool first so the project doesn't come back.
+
+</Step>
+<Step>
+
+### Enter the project name and delete
+
+Enter the project name at the bottom, or click the name in the prompt to fill it in, then click **Delete project**.
+
+![Confirmation screen for deleting the blog project, showing services that will be deleted, backups that will remain, and the project name entered](https://oss.zeabur.com/shots/zeabur/en/light/project-delete-review.avif)
+
+</Step>
+</Steps>
+
+## What happens during deletion
+
+Zeabur deletes objects using your identity, in this order:
+
+1. The database objects, such as CloudNativePG's `Cluster`, so each operator has a chance to run its cleanup. Zeabur waits up to a minute for the databases to disappear. When an operator isn't running, its cleanup won't happen, and the project stays in deletion. The project page lists the remaining objects and their finalizers.
+2. The namespace. Kubernetes then deletes what's left in it.
+3. The tool replicas you opened for the project.
+
+During deletion, the project list shows **Deleting…**, and the top of the project page says what's left. The project usually disappears within a minute or two.
+
+## The project won't finish deleting
+
+A namespace waits until every object in it has had its finalizers removed. The controller that added a finalizer removes it after cleanup. If that controller isn't running, the object stays.
+
+The project page lists the objects that still have finalizers and the commands to inspect them. For a project `shop`:
+
+```sh
+kubectl get namespace shop -o yaml
+kubectl get clusters.postgresql.cnpg.io orders -n shop -o yaml
+```
+
+`status.conditions` says which resources remain and which finalizers are still pending. Usually, the fix is to get the corresponding operator running again. It removes its finalizer when cleanup is done. Zeabur doesn't remove finalizers for you: removing one directly skips cleanup and can leave resources outside the cluster, such as cloud disks or files in S3.
+
+## Create a project again with the same name
+
+If another team will use the name of a project you deleted, wait 70 minutes first.
+
+The registry token that Zeabur Builder uses to push images identifies the repository by name—the project name—not by the namespace UID. After a project is deleted and a project with the same name is created, a token issued for the old project can still push to the new project's repository until it expires. A build token lasts at most 70 minutes (the default build deadline of 60 minutes plus 10 minutes), and a token for uploading a source archive lasts 15 minutes. You don't need to wait if you're deleting and recreating your own project.
+
+## Restore a project from a backup
+
+In **Cluster** → **Backups**, select a backup from before the deletion under **Backups**, then click **Restore deleted project** (**New project from backup** while the original project still exists). See [Back up and restore a cluster](../cluster/backups.mdx#restore-from-a-backup) for the steps.
+
+Databases' and volumes' own S3 backups also remain. In a new project, you can [restore as a new database](../deploy/databases.mdx#restore-to-a-new-database-and-switch-services) or [restore files from a backup](./volumes.mdx#restore-files-from-a-backup).
+
+## Do the same with kubectl
+
+```sh
+kubectl delete clusters.postgresql.cnpg.io --all -n shop   # one line per database; delete the database first
+kubectl delete namespace shop
+```
+
+List the tool replicas for `shop` in `zeabur-terminals`, then delete them one by one:
+
+```sh
+kubectl get pods -n zeabur-terminals -l zeabur.com/project=shop
+```
+
+`kubectl delete namespace shop` alone also deletes everything. The difference is that databases are deleted at the same time as the other objects, and their operators may not have time to clean up.

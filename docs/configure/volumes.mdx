@@ -1,0 +1,382 @@
+---
+title: Store files and back up volumes
+description: Mount persistent volumes for a service, expand their capacity, and use K8up to back up files to S3-compatible storage.
+---
+
+To keep files uploaded to an application, open the service's **Settings** → **Storage**, add a volume, and specify the path the application writes to. After you apply the changes, files written to this path persist when replicas restart or move to another node. You can also configure K8up backups here to copy the volume's files to S3-compatible storage on a schedule.
+
+## Before you begin
+
+- Know the path the application writes data to, such as `/data`. Files in the container that aren't on a volume disappear when the replica is replaced.
+- The cluster must have an available storage class, and you must have permission to add volumes and modify the service.
+- If Helm, Argo CD, or Flux manages the service, make changes in the original values or Git repository.
+- For backups, the cluster must have K8up installed, and you'll need writable S3-compatible storage and access keys. An administrator can register an [S3 destination](../cluster/s3-destinations.mdx) so you can select it in the backup form.
+- When you upgrade the K8up Helm chart, Helm doesn't update the CRDs in `crds/`. After upgrading, run `kubectl apply` yourself to apply the new CRDs.
+
+![Storage and volume backup settings for the redis service](https://oss.zeabur.com/shots/zeabur/en/light/service-storage.avif)
+
+## Add a volume
+
+<Steps>
+<Step>
+
+### Set the mount path and size
+
+Open the service's **Settings** → **Storage**. If there are no volumes, click **Add volume**. If there are existing volumes, click **Edit**, then **Add volume**.
+
+Enter a **Mount path** (such as `/data`) and **Size** (such as `5Gi`; the default is `1Gi`). The mount path must be absolute and must not duplicate an existing mount in this service.
+
+![A new volume row in Storage with mount path /data, size 5Gi, and status Added](https://oss.zeabur.com/shots/zeabur/en/light/volume-add.avif)
+
+If the service has multiple containers, use **Mount in container** in the new volume's row to select a container. The review screen also shows the container name.
+
+</Step>
+<Step>
+
+### Choose a storage class
+
+Use **Storage class** to choose where to store the data. Each option shows whether it supports expansion and how the volume relates to nodes:
+
+- **Local disk** is the fastest option, but it's tied to one node. Replicas that use it can only run on that node.
+- **Replicated disk** replicates data across multiple nodes. The data moves with a replica when it changes nodes.
+- Other storage classes behave according to their drivers.
+
+Leave this unset to use the cluster's default storage class. If you choose a class that doesn't support expansion, allocate enough capacity up front.
+
+To customize names, expand **Advanced** and edit **Name**, **PVC name**, and **Access mode**. This form always creates a new disk. The cluster will reject a disk name that's already in use.
+
+</Step>
+<Step>
+
+### Review and apply
+
+Click **Review changes** at the bottom of the page. Check the volumes to create, their sizes, and their mount paths, then apply the changes. Zeabur creates the disk first, then mounts it at the path in the container.
+
+Adding or changing a mount updates the replica template. Continuously running services replace their replicas. A new volume starts empty; existing files at that path in the container aren't moved to it. To keep those files, copy them out first, mount the volume, then copy them back.
+
+</Step>
+<Step>
+
+### Verify the mount and data
+
+Wait for the volume's status to show **Ready** and for the service's replicas to be ready. Upload a file through the application, then **Restart** the service and check that the file is still there.
+
+Each volume row shows its storage class, which node holds the data, whether it supports expansion, and whether the data will remain after you delete the volume. Usage also appears if the cluster collects kubelet volume metrics. To find the disk's name, its backing PersistentVolume, and its access mode, open the project's **Objects** page or use kubectl.
+
+</Step>
+</Steps>
+
+A StatefulSet's volumes are fixed at creation (`volumeClaimTemplates` can't change after creation), so you can't add or remove its volumes here. You can only expand capacity or change mounts. A Job's replica template can't change after creation. To add a volume to a Job, edit its YAML.
+
+## Expand capacity or change mounts
+
+In **Storage**, click **Edit**, increase an existing volume's **Size**, then review and apply the changes at the bottom of the page. Only storage classes that support expansion can grow, and volumes can't shrink. If multiple services mount the same disk, they all share the expanded space.
+
+You can also change an existing mount's **Mount path** or **Read-only** setting. Changing the path only changes where the data appears in the container. Update the data path in the application's configuration too. If the path is set in an [environment variable](./variables.mdx), you can review the variable and mount changes together in the same draft.
+
+If the storage class doesn't support expansion, create a new volume with a class that does, copy the data to it, then switch the service to the new volume. You can't change an existing disk's storage class.
+
+## Set up volume backups
+
+<Steps>
+<Step>
+
+### Choose a volume to back up
+
+Under the service's **Settings** → **Storage**, find the volume in **Backups** and click **Back up this volume**. If the cluster doesn't have K8up installed, click **Open K8up** and ask an administrator to install it.
+
+</Step>
+<Step>
+
+### Set the S3 destination and retention rules
+
+The top of the form shows which user will run the backup. By default, it follows the service's user:
+
+- If the service specifies a non-root user, the backup uses the same user.
+- If the service specifies root, or doesn't specify a user and its security isn't **Strict**, the backup runs as root so it can read every file.
+- If the service doesn't specify a user and its security is **Strict**, the backup uses K8up's non-root user. It skips files that only the service's user can read. Specify a user in the service's security settings to include those files in backups.
+
+If the project only allows Strict services and the backup needs to run as root, the form explains why and prevents you from creating the backup. Click **Open security settings** to change the service to **Strict**, or ask an administrator to allow Compatible services in the project.
+
+Select a registered S3 destination, or enter the **Endpoint**, **Bucket**, **Access key ID**, and **Secret access key** yourself. Enter a **Region** if the storage provider requires one.
+
+If you leave **Folder** blank, it defaults to `<project>/<PVC name>`. For example, the disk `data-redis-0` in project `shop` uses `shop/data-redis-0`.
+
+For **Schedule**, choose **Daily at 03:00 UTC** or **Sundays at 03:00 UTC**. The default retention rules are **Keep the newest**: 3, **Keep daily, in days**: 7, and **Keep weekly, in weeks**: 4. K8up removes old backups according to these rules one hour after the backup, at 04:00 UTC.
+
+</Step>
+<Step>
+
+### Review backup objects and the run-as user
+
+Click **Review changes** in the panel. This panel has its own apply step; its changes aren't added to the storage settings draft above.
+
+The review screen lists the secret that stores the keys and repository password, the backup labels and annotations on the disk, and the K8up Schedule. If the backup doesn't run as root, it also includes a PodConfig. For the disk `data-redis-0`, for example, both the secret and Schedule are named `data-redis-0-backup`.
+
+Review and apply the changes. If you select a registered S3 destination, its keys are copied to a secret in the project. If the destination's keys change later, you must update this copy separately.
+
+</Step>
+<Step>
+
+### Run a backup and check the result
+
+Creating a schedule doesn't start a backup immediately. Click **Back up now** for the volume, then review and apply. K8up runs a backup immediately.
+
+In **Backups of these volumes**, check the run's status, completion time, and failure message. Only **Succeeded** confirms that the files have been copied to S3.
+
+If an existing K8up schedule already backs up this volume along with other volumes, **Back up now** uses that schedule's selection criteria. The other volumes are backed up too.
+
+</Step>
+</Steps>
+
+<Callout type="warn">
+Keep a separate copy of `RESTIC_PASSWORD` from the backup secret. This is the restic repository password Zeabur generates. Without it, you can't read the backups in S3. Save it elsewhere before deleting the project or backup secret.
+</Callout>
+
+## Restore files from a backup
+
+In **Backups**, click **New volume from a backup point** next to a volume with restore points. Choose a point in time, then review and apply. K8up restores the files from that point in time to a new volume, leaving the original volume unchanged. For StatefulSet volumes, use **Stop the service, clear the volume, restore in place** instead.
+
+If you don't have permission to restore and need an administrator to do it, gather the following:
+
+- The source S3 endpoint, bucket, and folder. Check `spec.backend` in the K8up Schedule.
+- The S3 access keys and `RESTIC_PASSWORD` from the backup secret.
+- Which backup to restore. Zeabur's run history doesn't include restic snapshot IDs; look them up in the backup repository.
+- The target disk and the service that will mount it.
+
+Anyone with permission to read secrets can retrieve the backup secret with `kubectl`. For example, for project `shop` and disk `data-redis-0`:
+
+```sh
+kubectl -n shop get secret data-redis-0-backup -o yaml
+```
+
+This secret contains the S3 keys and repository password. Store it in the team's password manager. Don't paste it into an issue or chat message.
+
+**K8up: Restore** in the backup section links to the [K8up restore documentation](https://docs.k8up.io/k8up/2.16/how-tos/restore.html). Restore to a separate new volume first and check the files. Then stop writes to the service and switch it to the new volume.
+
+### Download files from a specific backup
+
+1. Follow the steps above to restore that point in time to a new volume. Don't click **Switch the service to the new volume**; that would make the running service use the older files.
+2. No service mounts the new volume. Mount it in a temporary replica. This example uses project `shop` and the new volume `data-restored-1025`:
+
+   ```sh
+   kubectl -n shop apply -f - <<'EOF'
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: restore-view
+   spec:
+     securityContext:
+       runAsNonRoot: true
+       runAsUser: 65532
+       fsGroup: 65532
+       seccompProfile:
+         type: RuntimeDefault
+     containers:
+       - name: restore-view
+         image: busybox:1.37
+         command: ["sleep", "3600"]
+         securityContext:
+           allowPrivilegeEscalation: false
+           capabilities:
+             drop: ["ALL"]
+         volumeMounts:
+           - name: data
+             mountPath: /restored
+     volumes:
+       - name: data
+         persistentVolumeClaim:
+           claimName: data-restored-1025
+   EOF
+   kubectl -n shop wait --for=condition=Ready pod/restore-view
+   ```
+
+3. Archive the entire folder as `backup.tgz`, or copy only the files you need:
+
+   ```sh
+   kubectl -n shop exec restore-view -- tar czf - -C /restored . > backup.tgz
+   kubectl -n shop cp restore-view:/restored/path/to/file ./file
+   ```
+
+4. After downloading, delete the temporary replica and the new volume:
+
+   ```sh
+   kubectl -n shop delete pod restore-view
+   kubectl -n shop delete pvc data-restored-1025
+   ```
+
+For databases, use **More** → **Export** to download a dump. See [Download a database dump](../deploy/databases.mdx#download-a-database-dump). For data from an earlier point in time, first **Restore as a new database**, then export from the new database.
+
+K8up copies files directly from the volume while the application keeps running. If the volume holds a database that's being written to, the copied files may be inconsistent. Use the [database's own backups](../deploy/databases.mdx) instead. To back up objects across the entire cluster, see [Cluster backups](../cluster/backups.mdx).
+
+## Do the same with kubectl
+
+Volumes use standard disks, and backups use K8up Schedules and secrets. Mounts and backup schedules keep working after you remove Zeabur. The following examples use project `demo`, Deployment `web`, and volume name `uploads`.
+
+### Add a volume
+
+Zeabur names the disk `<service>-<volume-name>` and defaults the access mode to `ReadWriteOnce`. To specify a storage class, add `storageClassName`:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: web-uploads
+  namespace: demo
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+```
+
+Then mount it in the container: add an entry to `volumes` in the replica template and an entry to `volumeMounts` in the container. This is the same JSON Patch Zeabur writes:
+
+```sh
+kubectl -n demo patch deployment web --type=json -p='[
+  {"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"uploads","persistentVolumeClaim":{"claimName":"web-uploads"}}},
+  {"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"uploads","mountPath":"/srv/uploads"}}
+]'
+```
+
+If the replica template doesn't have `volumes` or the container doesn't have `volumeMounts`, `/-` fails. Use `kubectl edit deployment web` to add these two sections directly instead. When you add a volume while creating a service, Zeabur sets the Deployment to 1 replica and `strategy: Recreate` so old and new replicas don't compete for the same ReadWriteOnce disk. Adding a volume later doesn't change these two settings. The review screen warns about the restrictions on sharing a ReadWriteOnce disk across multiple replicas.
+
+### Expand capacity
+
+Increase the disk's `spec.resources.requests.storage`. The storage class must have `allowVolumeExpansion: true`, and you can't shrink the disk:
+
+```sh
+kubectl -n demo patch pvc web-uploads -p '{"spec":{"resources":{"requests":{"storage":"10Gi"}}}}'
+```
+
+### Set up backups
+
+Backups need three things: a secret containing the S3 keys and restic password, labels and annotations on the disk, and a K8up Schedule. Both the secret and Schedule are named `<PVC name>-backup`:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-uploads-backup
+  namespace: demo
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: AKIAEXAMPLE
+  AWS_SECRET_ACCESS_KEY: change-me
+  RESTIC_PASSWORD: a-long-random-password
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: web-uploads-backup
+  namespace: demo
+spec:
+  backend:
+    repoPasswordSecretRef:
+      name: web-uploads-backup
+      key: RESTIC_PASSWORD
+    s3:
+      endpoint: https://s3.example.com
+      bucket: backups/demo/web-uploads
+      accessKeyIDSecretRef:
+        name: web-uploads-backup
+        key: AWS_ACCESS_KEY_ID
+      secretAccessKeySecretRef:
+        name: web-uploads-backup
+        key: AWS_SECRET_ACCESS_KEY
+  podSecurityContext:
+    runAsUser: 0
+  backup:
+    schedule: "0 3 * * *"
+    labelSelectors:
+      - matchLabels:
+          zeabur.com/backup-volume: web-uploads
+  prune:
+    schedule: "0 4 * * *"
+    retention:
+      keepLast: 3
+      keepDaily: 7
+      keepWeekly: 4
+```
+
+`bucket` combines the bucket and folder. Zeabur's default folder is `<project>/<PVC name>`. If S3 requires a region, add `AWS_DEFAULT_REGION` to the secret and `envFrom: [{secretRef: {name: web-uploads-backup}}]` to `backend`. If the backup doesn't run as root, Zeabur writes a K8up PodConfig with the same name instead and replaces `podSecurityContext` with `podConfigRef`.
+
+Next, add the label the Schedule selects and the K8up annotation to the disk:
+
+```sh
+kubectl -n demo label pvc web-uploads zeabur.com/backup-volume=web-uploads
+kubectl -n demo annotate pvc web-uploads k8up.io/backup=true
+```
+
+**Back up now** creates a K8up Backup from the Schedule's `backup` section, with the same `backend` and `podSecurityContext`:
+
+```yaml
+apiVersion: k8up.io/v1
+kind: Backup
+metadata:
+  name: web-uploads-now
+  namespace: demo
+spec:
+  labelSelectors:
+    - matchLabels:
+        zeabur.com/backup-volume: web-uploads
+  backend:
+    repoPasswordSecretRef:
+      name: web-uploads-backup
+      key: RESTIC_PASSWORD
+    s3:
+      endpoint: https://s3.example.com
+      bucket: backups/demo/web-uploads
+      accessKeyIDSecretRef:
+        name: web-uploads-backup
+        key: AWS_ACCESS_KEY_ID
+      secretAccessKeySecretRef:
+        name: web-uploads-backup
+        key: AWS_SECRET_ACCESS_KEY
+  podSecurityContext:
+    runAsUser: 0
+```
+
+**Stop backups** deletes only the Schedule (and PodConfig), keeping the secret:
+
+```sh
+kubectl -n demo delete schedule.k8up.io web-uploads-backup
+```
+
+## Verify the results
+
+In the service's **Settings** → **Storage**, the volume's status should be **Ready**, and its row should show the storage class. Under **Backups**, **Backups of these volumes** lists each run. Only **Succeeded** confirms that the files have been copied to S3.
+
+Check with kubectl:
+
+```sh
+kubectl -n demo get pvc web-uploads
+kubectl -n demo get schedule.k8up.io,backup.k8up.io
+kubectl -n demo get snapshot.k8up.io
+```
+
+The disk's `STATUS` should be `Bound`, and `CAPACITY` shows its current size. Expansion is complete only when `CAPACITY` shows the new size. After a Backup finishes, `COMPLETION` shows `Succeeded`, and `kubectl get snapshot.k8up.io` lists a new snapshot for this run.
+
+## Troubleshooting
+
+| What you see | What to do next |
+| --- | --- |
+| The volume stays at **Waiting for storage** | Check the replica and disk events, and confirm that the storage class is available. If the volume's row says **Kept on the node its first replica runs on**, the volume won't be created until the replica is scheduled on a node. |
+| A replica can't start after moving to another node | Check whether the volume is tied to a specific node. Data on a local disk doesn't move to the new node with the replica. |
+| Multiple replicas can't mount the volume at the same time | The Deployment's replicas share one disk. With the ReadWriteOnce access mode, only replicas on the same node can mount it. Switch to a storage class and access mode that support multiple nodes. |
+| **This volume name exceeds 63 characters. K8up can't select it with a label.** | Zeabur uses the disk's name as a label value to select the volume. If the name is too long, you can't configure backups here. Ask an administrator to write a K8up Schedule separately. |
+| A backup shows **Failed** or **Partly failed** | Read the run's failure message. Check the S3 keys and whether the backup user can read the files. |
+| No run history after creation | Click **Back up now** to run a backup, then check the status of K8up and the backup replica. |
+| Backup settings or results aren't visible | The backup section explains whether the cluster is missing K8up or you don't have permission to read them. |
+
+## Remove mounts and stop backups
+
+To discard storage changes you haven't applied, click **Discard** at the bottom of the page. To remove an applied mount, click **Edit**, click the remove button in its row, then review and apply. Removing a mount only stops the container from mounting the volume. The disk and its data remain.
+
+To stop backups, click **Stop backups** next to the volume in **Backups**, review the changes, then click **Stop backups**. K8up stops backing up the volume, but completed backups in S3 remain. The backup secret also remains, with the password needed to restore those backups. This button is available only for schedules created specifically for this volume. Ask an administrator to adjust schedules that cover multiple volumes.
+
+To delete a volume entirely, click the delete button in its row in **Storage**, review the changes, then click **Delete volume**. The service stops mounting this path, and the disk is deleted too. This button isn't available for StatefulSet or Job volumes.
+
+<Callout type="warn">
+Before deleting a disk, check the volume's row. If it says **Data is deleted with it** (reclaim policy `Delete`), the data is deleted too. If it says **Data stays after deletion** (`Retain`), an administrator must handle the remaining PersistentVolume manually.
+</Callout>

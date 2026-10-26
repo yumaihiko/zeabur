@@ -1,0 +1,122 @@
+---
+title: Restrict inbound and outbound IPs
+description: Allow only specified IPs to access a service's domains, and restrict which IPs its replicas can connect to.
+---
+
+Open the service's **Networking** tab and configure two settings under **IP limits**: **Who can open its domains** allows only specified IPs or CIDR ranges to connect to the service's public domains, and **Where its replicas can connect** restricts which IPs the service's replicas can connect to. The settings are independent. Zeabur writes them to the cluster only after you review and apply the changes.
+
+## Before you start
+
+- Who can access domains: Domains must use an Ingress served by Traefik. Gateway domains (HTTPRoute) have no equivalent setting. If the service only has Gateway domains, the panel shows **Domains served through a Gateway can't be restricted here**.
+- Where it can connect: The cluster's network plugin must support NetworkPolicy. K3s's built-in controller supports it. If the plugin doesn't support it, Kubernetes can create the objects, but they won't block any connections.
+- You need permission to modify the project's domains and NetworkPolicy objects. If Helm, Argo CD, or Flux manages the service, make changes in the original values or Git repository.
+- These settings are separate from **Isolate** in the project settings. Isolation controls whether other projects can connect to the project. IP restrictions apply to a single service and don't change the project's `zeabur-project` rules.
+
+## Restrict who can access domains
+
+<Steps>
+<Step>
+
+### Enter the allowed IPs
+
+Under **IP limits**, click **Edit** next to **Who can open its domains**, turn on **Only allow these addresses**, and enter one IP or CIDR range per line, such as `203.0.113.0/24`. Both IPv4 and IPv6 are supported.
+
+![Editing who can access web, with Only allow these IPs turned on and two IP ranges entered](https://oss.zeabur.com/shots/zeabur/en/light/ip-limit-form.avif)
+
+</Step>
+<Step>
+
+### Review and apply
+
+Click **Review changes**, check the list, and apply the changes. Each Ingress served by Traefik for this service gets a restriction. It applies to every domain on that Ingress, including domains shared with other services.
+
+Other IPs receive a 403 when they access a domain. The restriction runs first in the Ingress middleware chain, before redirects and password protection.
+
+</Step>
+</Steps>
+
+To remove the restriction, return to the same panel and turn off the setting. Each change replaces the entire previous list.
+
+### The IP Traefik sees
+
+By default, Traefik checks the connection's source address. If the cluster's entry point changes that address, Traefik won't check the visitor's IP. The restriction may then block everyone or allow everyone.
+
+- For Traefik installed with the Zeabur installer, the Service's `externalTrafficPolicy` is `Local`. Requests sent to a node running Traefik retain the visitor's address. This setting comes from the Traefik template in Zeabur Catalog. Whether the address is preserved when ServiceLB forwards requests from other nodes hasn't been verified.
+- If a CDN, reverse proxy, or cloud load balancer sits in front of Traefik, Traefik sees its address. In that case, configure `ipStrategy` on the Middleware to read `X-Forwarded-For`, and configure Traefik's entry point to trust that proxy's addresses (`forwardedHeaders.trustedIPs`). Zeabur doesn't change these settings for you.
+- When you update the list later, Zeabur changes only `sourceRange`. It preserves any `ipStrategy` you've added to the Middleware.
+
+After applying the changes, connect once from an allowed IP and once from an IP that isn't allowed to verify the results.
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: api-ip-allow
+spec:
+  ipAllowList:
+    sourceRange: [203.0.113.0/24]
+    ipStrategy:
+      depth: 1
+```
+
+For configuration options, see the Traefik [ipAllowList](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ipallowlist/) documentation.
+
+## Restrict where a service can connect
+
+<Steps>
+<Step>
+
+### Enter the allowed destination IPs
+
+Click **Edit** next to **Where its replicas can connect**, turn on **Only allow connections to these addresses**, and enter one IP or CIDR range per line. Individual IPs are written as `/32` ranges (`/128` for IPv6).
+
+You can leave the list empty. With an empty list, the service can connect only to services in the same project and DNS.
+
+</Step>
+<Step>
+
+### Review and apply
+
+Click **Review changes**. The review marks the risk as high because connections outside the list—including package updates and external API calls—will fail after you apply the changes. Review and apply the changes.
+
+![Reviewing restrictions on where web can connect, with a warning that web can connect only to listed IPs, services in the same project, and DNS](https://oss.zeabur.com/shots/zeabur/en/light/ip-limit-out-review.avif)
+
+</Step>
+</Steps>
+
+After you apply the changes, the service's replicas can connect only to these destinations:
+
+- All replicas in the same project.
+- The cluster's DNS (`kube-dns` in `kube-system`, on port 53 over UDP and TCP).
+- IPs in the list.
+
+Services in other projects and other addresses outside the cluster are unreachable. Connections to databases in the same project aren't affected.
+
+The rules select replicas using the labels in the replica template, so they apply to every replica of the service, including new ones.
+
+## Configure and remove restrictions with kubectl
+
+Both restrictions use standard Kubernetes objects, with no finalizers or fields that depend on Zeabur. They remain in effect after you remove Zeabur.
+
+**Who can open its domains**: Each Ingress has a Middleware named `<Ingress name>-ip-allow`, with `ownerReferences` pointing to the Ingress. The Ingress lists it in the `traefik.ingress.kubernetes.io/router.middlewares` annotation. To remove the restriction, first remove `<project>-<Ingress name>-ip-allow@kubernetescrd` from the annotation, then delete the Middleware. If you delete the Middleware first, Traefik can't find it, and the domains return 404.
+
+```sh
+kubectl -n shop annotate ingress api traefik.ingress.kubernetes.io/router.middlewares-
+kubectl -n shop delete middleware api-ip-allow
+```
+
+The annotation command above removes the entire list. If the Ingress has other middleware, such as redirects or password protection, use `kubectl edit` instead and remove only this entry.
+
+**Where its replicas can connect**: The NetworkPolicy is named `<service-name>-egress-limit`, and its `policyTypes` contains only `Egress`. Delete it to remove the restriction:
+
+```sh
+kubectl -n shop delete networkpolicy api-egress-limit
+```
+
+To change the rules, edit this NetworkPolicy directly or create a separate NetworkPolicy. The allowed destinations from multiple policies add together; they don't override each other.
+
+## How restrictions interact with other Zeabur features
+
+- Maintenance mode uses a separate Ingress without this restriction. All IPs can access the maintenance page.
+- Before moving a domain to a separate Ingress, which happens when changing certificates, turn off the IP restriction on the current Ingress.
+- When you delete a service, the review lists the NetworkPolicy for deletion along with the service. Deleting an Ingress also deletes the Middleware it owns.

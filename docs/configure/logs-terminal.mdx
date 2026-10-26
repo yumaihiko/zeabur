@@ -1,0 +1,190 @@
+---
+title: View logs, events, and usage, and open a terminal
+description: View service logs and Kubernetes events, check CPU and memory usage, and open a terminal or browse files in a replica.
+---
+
+When a service has a problem, check the output in the **Logs** tab first. Then open the **Deployments** tab and switch to **Events** to see what Kubernetes did. Check the **Usage** tab to see whether the service needs more resources. To run commands in a replica, click **Terminal** at the top of the service page. To view or edit files in a volume, use the **Files** tab.
+
+## Before you begin
+
+- Viewing logs, events, and usage requires permission to read the project. Opening a terminal or using the **Files** tab requires permission to run commands in replicas (`pods/exec`). Developers in the project have this permission.
+- All of these features require a running replica. If the replica count is 0 or the replicas haven't started, the screen shows **No replica is running**.
+- Log **History** and usage **History** require additional storage services in the cluster. See the sections below.
+
+## View logs
+
+Open the service's **Logs** tab to see output from one replica.
+
+- If the service has multiple replicas or containers, use the **Replica** and **Container** selectors at the top to switch between them.
+- **Follow** keeps receiving new lines. It pauses when you scroll up. Click **Jump to latest** to return to the bottom.
+- Enter text in **Filter lines** to keep only matching lines. Start with `-` to exclude matching lines, such as `-healthz`.
+- Filter by log level: **Error**, **Warning**, or **Info**.
+- **Previous** shows output from before the container last crashed or restarted. Check here first when investigating a crash.
+- **Download** saves the current logs to a file.
+
+![The service's Logs tab, with a replica selector at the top, output from one replica, and filters for errors, warnings, and info](https://oss.zeabur.com/shots/zeabur/en/light/service-logs.avif)
+
+When a replica is replaced, its logs disappear from the cluster. Use **History** to read logs from replaced replicas.
+
+### History
+
+**History** lists logs from all replicas, including those that have been replaced. It reads from a log storage service and requires a cluster administrator to enable `proxy.enabled` in Zeabur's Helm chart. By default, it reads from VictoriaLogs at the address set in `proxy.logs.url`. Installing VictoriaLogs with the installer enables this automatically. If the cluster doesn't have VictoriaLogs, set `proxy.logs.enabled` to false. When log history isn't enabled, the screen shows **Log history isn't turned on**.
+
+## View events
+
+Open the service's **Deployments** tab and switch to **Events**. It lists Kubernetes events, such as which node a replica was scheduled on, image downloads, failed health checks, and memory limit violations (OOMKilled), with the newest events first. Click **Warnings** to show only warnings.
+
+Kubernetes keeps events for about an hour. For older problems, check log **History**.
+
+## View usage
+
+Open the service's **Usage** tab:
+
+- **Current usage**: CPU and memory usage for each replica, alongside its reserved resources and maximums. **Near memory max** appears when usage approaches the memory maximum. The container restarts if it exceeds that maximum. This requires metrics-server in the cluster. If it isn't installed, click **Install**.
+- **History**: A usage chart over time, with markers for OOMKilled events and restarts. This requires Prometheus-compatible metrics storage, such as VictoriaMetrics or Prometheus. If none is installed, click **Install VictoriaMetrics**. If you already have one, click **Choose another store** and specify its Kubernetes Service.
+
+Once a cluster administrator enables `proxy.enabled` in the Helm chart, Viewers and Developers can see **History** for their own projects. Zeabur Proxy checks that you're a member of the project and limits queries to that project's metrics. If the proxy isn't enabled, or you select another storage service in settings, Zeabur reads the storage service directly. Anyone who can read it this way can see metrics for all projects, so only administrators have access.
+
+![The service's Usage tab, with current CPU and memory usage for each replica at the top and a historical usage chart below](https://oss.zeabur.com/shots/zeabur/en/light/service-usage.avif)
+
+If usage consistently exceeds reserved resources or approaches the maximum, adjust **Compute** in [Adjust replicas, resources, and health checks](./service-settings.mdx).
+
+## Open a terminal
+
+<Steps>
+<Step>
+
+### Open the terminal
+
+Open the service and click **Terminal** at the top of the page. The terminal opens at the bottom of the page and connects to the selected replica. You can also open it from the service's **More** menu or search.
+
+</Step>
+<Step>
+
+### Run commands
+
+The terminal runs a shell inside the container. For example:
+
+```sh
+printenv DATABASE_URL
+wget -qO- http://localhost:8080/healthz
+```
+
+Files you change here stay only in this replica and disappear when it's replaced. Store data you need to keep in a [volume](./volumes.mdx).
+
+![A terminal at the bottom of the service page, with a Connected label and ls entered](https://oss.zeabur.com/shots/zeabur/en/light/terminal-connected.avif)
+
+</Step>
+</Steps>
+
+The terminal closes automatically after 15 minutes without input or output. Click **Reconnect** to open it again.
+
+### When the image has no shell
+
+Minimal images such as distroless don't have a shell. The terminal explains this and shows **Open debug terminal**. Clicking it adds a busybox debug container to the same replica, with a name starting with `zeabur-debug-`. It can see the application's running processes and mounts the same volumes.
+
+![The terminal explaining that the image has no shell, with a button to open a debug terminal](https://oss.zeabur.com/shots/zeabur/en/light/terminal-no-shell.avif)
+
+<Callout type="warn">
+Kubernetes can't remove a debug container before the replica is replaced. It stays in the replica until then, such as when you restart the service. Opening a terminal in the same replica again uses this debug container directly.
+</Callout>
+
+### When you don't have permission
+
+If you don't have `pods/exec` permission, the terminal shows a Role and RoleBinding for an administrator to apply. This configuration grants terminal access only for this project. See the kubectl section below.
+
+## Browse files
+
+Open the service's **Files** tab and select a **Replica** and **Container** to browse files in the container. You can use **Upload**, **Download**, **New folder**, **Rename**, or **Delete**. Each location is labeled with its type:
+
+| Type | After the replica is replaced |
+| --- | --- |
+| Disk | Kept |
+| Scratch space | Deleted |
+| Image | Changes stay only in this container and disappear when it restarts |
+| Config file, secret | Read-only. Edit them in [Environment variables](./variables.mdx). |
+
+File reads and writes use `tar`, just like `kubectl cp`. If the image doesn't have `tar`, click **Add a debug container** to read volumes through a debug container instead. It can't read files from the image itself.
+
+## Open a kubectl terminal
+
+To use kubectl or helm in the browser, select **Open kubectl terminal** from the terminal area at the bottom of the page or from search. Zeabur starts a temporary container for you in the `zeabur-terminals` namespace. The kubectl and helm commands inside run as you, with your permissions, and default to the current project.
+
+If you open it outside a project, such as on the **Cluster** page, it opens a cluster-wide kubectl terminal. Check that the dialog title is **Open a kubectl terminal for the cluster**. It defaults to the `default` namespace, and you can work in any namespace you have permission to access.
+
+This container runs for at most 30 minutes and is deleted 1 minute after the last terminal closes. Its credentials expire. Reopening the terminal replaces them with new ones.
+
+## Do the same with kubectl
+
+These examples use the project `demo` and Deployment `web`.
+
+| Zeabur action | kubectl |
+| --- | --- |
+| **Logs**, **Follow** | `kubectl -n demo logs deployment/web -f` |
+| Select a replica and container | `kubectl -n demo logs web-7c9d8b6f5-x2k4p -c web` |
+| **Previous** | `kubectl -n demo logs web-7c9d8b6f5-x2k4p --previous` |
+| **Events** | `kubectl -n demo events --for deployment/web` |
+| **Current usage** | `kubectl -n demo top pod -l app.kubernetes.io/name=web` |
+| **Terminal** | `kubectl -n demo exec -it deployment/web -- sh` |
+| **Open debug terminal** | `kubectl -n demo debug -it web-7c9d8b6f5-x2k4p --image=busybox:1.37.0 --target=web` |
+| Download from **Files** | `kubectl -n demo cp web-7c9d8b6f5-x2k4p:/data/report.csv ./report.csv` |
+
+`kubectl events --for` lists events for the Deployment itself. For replica events, use `kubectl -n demo events --for pod/<replica-name>`, or use `kubectl -n demo get events --sort-by=.lastTimestamp` to see events for the whole project.
+
+To let someone else open a terminal and use the **Files** tab, apply the same Role and RoleBinding shown in the interface:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: zeabur-terminal
+  namespace: demo
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: zeabur-terminal-alice-example.com
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: zeabur-terminal
+subjects:
+  - kind: User
+    apiGroup: rbac.authorization.k8s.io
+    name: "alice@example.com"
+```
+
+Set `name` under `subjects` to that person's Kubernetes username.
+
+## Verify the result
+
+**Logs** shows the replica's output. With **Follow** enabled, new lines keep appearing. When the terminal connects, its label shows **Connected**, or **Connected to the debug container** for a debug container.
+
+```sh
+kubectl -n demo get pod -l app.kubernetes.io/name=web -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.ephemeralContainers[*].name}{"\n"}{end}'
+kubectl -n zeabur-terminals get pods
+kubectl auth can-i create pods/exec -n demo --as=alice@example.com
+```
+
+The first command lists each replica and its debug containers. Replicas where you've opened a debug terminal have a container name starting with `zeabur-debug-`. The second command lists current kubectl terminals, with names starting with `zeabur-tools-`. Only administrators can see them. If the third command returns `yes`, that person can open a terminal.
+
+## Troubleshooting
+
+| Screen or result | What to do next |
+| --- | --- |
+| **No replica is running** | The service's replica count is 0, or the replicas haven't started. Check **Overview** for the cause. |
+| **No previous run: the container hasn't restarted yet.** | The container hasn't crashed. Check the logs for the current run instead. |
+| **Log history isn't turned on** | Ask an administrator to enable `proxy.enabled` in the Helm chart. |
+| **Live usage requires metrics-server.** | Click **Install**, or ask an administrator to install metrics-server. |
+| **Closed after 15 minutes without input or output.** | Click **Reconnect**. |
+| The terminal doesn't respond and says permission is required | Give the Role and RoleBinding shown on the screen to an administrator to apply. |
+| **This image doesn't have tar.** | Click **Add a debug container** to read volumes through a debug container. |
+| The debug container stays in the replica | Kubernetes can't remove it. Restart the service to replace the replica. |

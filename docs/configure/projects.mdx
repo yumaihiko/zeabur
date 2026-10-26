@@ -1,0 +1,202 @@
+---
+title: Create and manage projects
+description: Create projects, add existing namespaces to Zeabur, change project names and icons, and control access from other projects.
+---
+
+A project is a Kubernetes namespace with the `zeabur.com/project: "true"` label. On the **Projects** page, click **New project** to create one, or add an existing namespace from the cluster. Change a project's name, description, icon, and network isolation in its **Settings**.
+
+## Before you begin
+
+- To create a project, you need permission to create namespaces. To add an existing namespace to Zeabur or remove it, you need `zeabur-manage` permission on that namespace. Usually, only administrators have this permission. See [Project namespace protection](../reference/permissions.mdx#protecting-project-namespaces).
+- The project name is also the namespace name and can't be changed after creation. It can contain only lowercase letters, numbers, and hyphens, must start and end with a letter or number, and can't exceed 63 characters or start with `kube-`.
+
+## Create a project
+
+<Steps>
+<Step>
+
+### Enter a name
+
+On the **Projects** page, click **New project**. Enter `hello` in **Name**. **Display name** is optional. If you enter one, it appears in the interface instead of the name.
+
+![New project dialog with hello entered as the name](https://oss.zeabur.com/shots/zeabur/en/light/project-new.avif)
+
+If a namespace with the same name already exists, the form prompts you to use the existing namespace instead. See the [next section](#add-an-existing-namespace-to-zeabur).
+
+</Step>
+<Step>
+
+### Review and create
+
+After you submit the form, the review screen lists the objects to create:
+
+- Namespace `hello`, with the project label and three Pod Security labels, all set to `baseline`. Services can run as root but can't access the host.
+- The `default` ServiceAccount with `automountServiceAccountToken: false`. Replicas that don't specify a ServiceAccount won't receive a Kubernetes API token.
+- If the cluster has a namespace labeled `zeabur.com/platform: "true"` (all clusters installed with the Zeabur installer do), NetworkPolicy `zeabur-project` blocks connections from replicas in other projects.
+
+![Review screen before creating project hello, showing the namespace and security settings to create](https://oss.zeabur.com/shots/zeabur/en/light/project-new-review.avif)
+
+Apply the changes after reviewing them. The new project opens.
+
+</Step>
+</Steps>
+
+## Add an existing namespace to Zeabur
+
+On the **Projects** page, **Other namespaces** lists namespaces that aren't projects yet. Open the menu in the namespace's row, choose **Use this namespace**, review the changes, and apply them.
+
+Zeabur only adds the `zeabur.com/project: "true"` label to the namespace. Its objects, Pod Security labels, and NetworkPolicy objects stay unchanged.
+
+To stop showing it in Zeabur, go to **Danger zone** in the project's **Settings** and click **Remove from Zeabur**. This only removes the project label. The namespace and everything in it stay intact. To delete it along with its contents, see [Delete a project](./delete-project.mdx).
+
+## Change the name, description, and icon
+
+Go to **Basic information** in the project's **Settings**:
+
+- **Project name**: Appears instead of the namespace name. Maximum 64 characters.
+- **Description**: Describes the project's purpose and appears below its name. Maximum 500 characters.
+- **Icon**: Click **Change icon** to choose from 16 icons.
+
+Click **Save details**, review the changes, and apply them. These three values are stored in the namespace's annotations. Project developers can change them, but only administrators can change other labels and annotations.
+
+## Isolate the project from other projects
+
+Go to **Networking** in the project's **Settings**. The **Other projects** row shows the current state:
+
+- **Any replica in the cluster can reach this project's services.**: The project isn't isolated yet. Click **Isolate**, review the changes, and apply them. Zeabur creates NetworkPolicy `zeabur-project`.
+- **Can't reach this project's services. Services within the project and Zeabur components aren't affected.**: The project is isolated.
+
+After isolation, replicas within the project can still reach each other. Namespaces labeled `zeabur.com/platform: "true"` (such as those containing Traefik and database operators) and `kube-system` can also reach them.
+
+To allow connections from another project, click **Let a project in**, select a project, click **Allow**, review the changes, and apply them. Zeabur creates NetworkPolicy `zeabur-allow-from-<other-project>`. All replicas in the other project can reach all services in this project. To revoke access, click **Remove** in that row.
+
+There's no button in the interface to turn off isolation. Use kubectl to delete `zeabur-project`, as shown in the next section. Whether the rules take effect depends on whether the cluster's network plugin (CNI) supports NetworkPolicy.
+
+## Do the same with kubectl
+
+All project settings are namespace labels, annotations, and standard NetworkPolicy objects. Kubernetes continues to enforce these settings after you remove Zeabur.
+
+### Create a project
+
+This matches what Zeabur creates:
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+  labels:
+    zeabur.com/project: "true"
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+  annotations:
+    zeabur.com/display-name: Demo shop
+    zeabur.com/description: The shop's web and worker
+    zeabur.com/icon: storefront
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: demo
+automountServiceAccountToken: false
+```
+
+`zeabur.com/icon` can be `folder`, `globe`, `storefront`, `rocket`, `cube`, `database`, `cloud`, `code`, `terminal`, `chart`, `chat`, `book`, `flask`, `game`, `heart`, or `briefcase`.
+
+### Add or remove a project and change its details
+
+```sh
+kubectl label namespace demo zeabur.com/project=true
+kubectl label namespace demo zeabur.com/project-
+kubectl annotate namespace demo --overwrite zeabur.com/display-name='Demo shop'
+```
+
+### Change the Pod Security level
+
+Zeabur doesn't have an interface for changing a project's Pod Security level. An administrator must change it with kubectl. After changing it to `restricted`, only **Strict** services can start:
+
+```sh
+kubectl label namespace demo --overwrite \
+  pod-security.kubernetes.io/enforce=restricted \
+  pod-security.kubernetes.io/audit=restricted \
+  pod-security.kubernetes.io/warn=restricted
+```
+
+For service-level settings, see [Adjust service settings](./service-settings.mdx#security).
+
+### Isolate the project and allow other projects
+
+`zeabur-project` allows incoming connections from replicas in the same project, namespaces labeled `zeabur.com/platform: "true"`, and `kube-system`:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zeabur-project
+  namespace: demo
+  labels:
+    app.kubernetes.io/managed-by: zeabur
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              zeabur.com/platform: "true"
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+```
+
+Allow connections from project `shop`:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zeabur-allow-from-shop
+  namespace: demo
+  labels:
+    app.kubernetes.io/managed-by: zeabur
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shop
+```
+
+Turn off isolation:
+
+```sh
+kubectl -n demo delete networkpolicy zeabur-project
+```
+
+## Verify the result
+
+The **Projects** page lists the project with the name, description, and icon you set. **Networking** in the project's **Settings** shows whether it's isolated and which projects can connect to it.
+
+```sh
+kubectl get namespace demo --show-labels
+kubectl get namespace -l zeabur.com/project=true
+kubectl -n demo get networkpolicy
+kubectl -n demo get serviceaccount default -o jsonpath='{.automountServiceAccountToken}'
+```
+
+The first command's labels include `zeabur.com/project=true` and `pod-security.kubernetes.io/enforce=baseline`. The second command lists all projects. After isolation, the third command lists `zeabur-project`. The last command prints `false`.
+
+## Troubleshooting
+
+| Message or result | What to do next |
+| --- | --- |
+| **A namespace with this name already exists. You can use the existing namespace instead.** | Choose another name, or add it to Zeabur from **Other namespaces**. |
+| The cluster returns **Only an admin can change the namespace's labels** when adding or removing a project | Only administrators can change namespace labels. Ask an administrator to make the change. |
+| **Kubernetes reserves this namespace for its own components. It can't be used as a project.** | Namespaces that start with `kube-` and `zeabur-node-shell`, which the node terminal uses, can't be projects. |
+| `zeabur-project` isn't listed when creating a project | The cluster has no namespace labeled `zeabur.com/platform: "true"`. Zeabur can't identify the Ingress controller's namespace, so it doesn't create the policy. Ask an administrator to label those namespaces, then click **Isolate** in **Networking**. |
+| The public domain doesn't open after isolation | The Ingress controller's namespace doesn't have the `zeabur.com/platform: "true"` label. Add the label, or add a rule to `zeabur-project` to allow connections from it. |

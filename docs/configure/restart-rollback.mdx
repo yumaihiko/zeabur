@@ -1,0 +1,129 @@
+---
+title: Restart, roll back, and pause services
+description: Restart a service, roll back to an earlier version, or pause or restart all services in a project.
+---
+
+If a service is stuck, click **Restart** at the top of its page to replace its replicas. If a new version has problems, open **Deployments**, choose an earlier version, and click **Roll back**. To act on an entire project, go to **Settings** → **Batch actions** in the project. Each action opens a review screen before you confirm and apply it.
+
+## Before you start
+
+- You need permission to modify services in the project.
+- Restart also works for services managed by Helm, Argo CD, or Flux because it only adds an annotation. Rollback replaces the entire pod template, so you can't roll back services managed by these tools here.
+
+## Restart a service
+
+<Steps>
+<Step>
+
+### Click Restart
+
+Open the service and click **Restart** at the top of the page. The review screen is titled **Restart web** and states whether the service will be interrupted.
+
+![Restart web review screen showing that 2 replicas will be replaced one at a time without interrupting the service, with enough resources available](https://oss.zeabur.com/shots/zeabur/en/light/restart-review.avif)
+
+</Step>
+<Step>
+
+### Apply and wait for new replicas
+
+After you apply the change, Kubernetes replaces the replicas according to the service's update strategy. By default, a Deployment starts new replicas and waits for them to be ready before stopping the old ones. Services with only one replica or the `Recreate` strategy will have a brief interruption.
+
+Check **Rollout** in **Overview** for the number of new replicas that are ready. The restart is complete when all new replicas are ready and the old ones are gone.
+
+</Step>
+</Steps>
+
+Jobs and scheduled jobs don't have a **Restart** action. To run a scheduled job again, use the run-now action described in [Scheduled jobs](../deploy/cron-jobs.mdx).
+
+## Roll back to an earlier version
+
+Each time you change the image or a setting in the pod template, **Deployments** adds a revision, such as `#3`. The revision marked **Running** is the current version.
+
+<Steps>
+<Step>
+
+### Compare two versions
+
+Open the service's **Deployments** tab and click **Compare** on the version you want to return to. Review the differences between its pod template and the current one. If it says **The two templates are identical.**, rolling back won't change anything.
+
+![Comparison for revision #2 in Deployments, with red and green showing the image change from 1.4.1 to 1.4.2](https://oss.zeabur.com/shots/zeabur/en/light/release-compare.avif)
+
+</Step>
+<Step>
+
+### Roll back
+
+Click **Roll back** on that version. The review screen is titled **Roll back web to #2**. Confirm and apply the change.
+
+Rollback restores only the pod template: settings such as the image, environment variables, resources, and health checks. It doesn't restore the previous contents of config files and secrets that the containers read. The review screen also notes this.
+
+![Roll back web to #2 review screen noting that rollback won't change the contents of config files and secrets](https://oss.zeabur.com/shots/zeabur/en/light/rollback-review.avif)
+
+</Step>
+<Step>
+
+### Confirm the version
+
+A rollback counts as a deployment. **Deployments** gives the restored revision a new number and marks it as **Running**. Wait until all replicas in **Overview** are ready, then check the application itself.
+
+</Step>
+</Steps>
+
+When a deployment is stuck, **Rollout** in **Overview** also shows a **Roll back** button to return to the last working version.
+
+How far back you can roll back depends on the workload's `revisionHistoryLimit`, which keeps 10 revisions by default. Jobs and CronJobs don't keep releases.
+
+## Auto-deploy new builds
+
+For services built from Git or an uploaded folder, turn on **Auto-deploy new builds** in the **Builds** tab to deploy each build as soon as it finishes. When it's off, click **Deploy newest** after a successful build to deploy it manually. This requires Keel in the cluster. For the steps and their kubectl equivalents, see [Build and deploy a service from Git](../deploy/git.mdx).
+
+## Pause or restart an entire project
+
+Go to **Settings** → **Batch actions** in the project:
+
+- **Pause all services**: Click **Pause** to set the replica count to 0 for all running Deployments and StatefulSets in the project. Services, configuration, and data on volumes are preserved. Services managed by Helm, Argo CD, or Flux are skipped because those tools would revert the change on their next sync. The review screen lists the services that will be skipped.
+- **Restart all services**: Click **Restart** to replace replicas in batches for every Deployment, StatefulSet, and DaemonSet in the project.
+
+After you apply the pause, click **Undo** in the notification to restore each service's original replica count. If you miss the notification, open **Settings** → **Compute** for each service and restore its **Replicas** value. Zeabur doesn't otherwise save the original counts.
+
+## Do the same with kubectl
+
+These actions write to the same fields as kubectl's built-in commands. They don't use Zeabur-specific objects. The examples below use the project `demo` and Deployment `web`.
+
+| Zeabur action | kubectl |
+| --- | --- |
+| **Restart** | `kubectl -n demo rollout restart deployment/web` |
+| **Roll back** to `#2` | `kubectl -n demo rollout undo deployment/web --to-revision=2` |
+| **Pause all services** | `kubectl -n demo scale deployment,statefulset --all --replicas=0` |
+| **Restart all services** | `kubectl -n demo rollout restart deployment,statefulset,daemonset` |
+| Turn on **Auto-deploy new builds** | `kubectl -n demo annotate deployment web keel.sh/policy=force` |
+
+**Restart** sets the pod template annotation `kubectl.kubernetes.io/restartedAt` to the current time, just like `kubectl rollout restart`. **Roll back** replaces `spec.template` with the contents of that revision.
+
+`kubectl scale --all` doesn't skip services managed by tools such as Helm. To exclude them, list the service names individually instead. Record each service's replica count before pausing so you can restore it later:
+
+```sh
+kubectl -n demo get deployment,statefulset -o custom-columns=NAME:.metadata.name,REPLICAS:.spec.replicas
+```
+
+## Check the results
+
+The revision marked **Running** in **Deployments** is the current version. The replica count and readiness status in **Overview** reflect the restart or pause. Paused services show 0 replicas.
+
+```sh
+kubectl -n demo rollout status deployment/web
+kubectl -n demo rollout history deployment/web
+kubectl -n demo get pods -l app.kubernetes.io/name=web
+```
+
+When `rollout status` prints `successfully rolled out`, all new replicas are ready. `rollout history` lists all revisions, with the current version last. The `AGE` shown by `get pods` reflects when you restarted the service.
+
+## Troubleshooting
+
+| What you see | What to do next |
+| --- | --- |
+| No **Restart** button | You don't have permission to modify the service, or the service is a Job or scheduled job. |
+| The rollback screen says Helm, Argo CD, or Flux manages the service | Use that tool to roll back to an earlier version, for example with `helm rollback`. |
+| **Deployments** has only one revision | The service's pod template hasn't changed yet, or older ReplicaSets exceeded `revisionHistoryLimit` and Kubernetes removed them. |
+| The application still has errors after rollback | The contents of config files and secrets weren't rolled back. Restore the values in [Environment variables](./variables.mdx). |
+| The service stays at **Rollout stuck** after a restart | Check the cause shown in **Overview** and the replica's events. Common causes include image pull failures and failed health checks. |

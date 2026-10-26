@@ -1,0 +1,204 @@
+---
+title: Adjust replicas, resources, and health checks
+description: Set a service's replica count, CPU and memory, health checks, startup command, and whether containers can run as root.
+---
+
+If a service is slow, runs out of memory, or needs to restart unhealthy replicas automatically, open the service's **Settings** and adjust **Compute** and **Health checks**. Then select **Review changes** at the bottom of the page and apply the changes. **Security** controls whether containers can run as root. Selecting an option opens the review screen directly.
+
+## Before you start
+
+- You need permission to edit the service. If Helm, Argo CD, or Flux manages the service, these fields are read-only. Make changes in the original values or Git repository.
+- All settings except the replica count are part of the Pod template. Changing them replaces replicas. Services with only one replica may be unavailable for a few seconds during replacement.
+
+## Compute resources
+
+<Steps>
+<Step>
+
+### Adjust the replica count
+
+Open the service's **Settings** → **Compute** and change **Replicas** (0 to 1000). Setting the count to 0 stops the service without deleting any configuration or data.
+
+</Step>
+<Step>
+
+### Adjust CPU and memory
+
+Enter **Reserved CPU**, **Maximum CPU**, **Reserved memory**, and **Maximum memory**. For example, reserve 0.25 CPU cores and 256 MiB of memory, with a memory maximum of 512 MiB.
+
+- Reserved: The node sets aside this amount for each replica. The scheduler also uses this amount to find a node. Leave it blank to reserve nothing.
+- Maximum: Containers restart when memory usage exceeds the maximum. CPU usage is throttled at the maximum. Leave it blank to set no maximum.
+
+Below the fields, the form shows the CPU cores and memory of the **largest node** in the cluster. If the reserved amount exceeds that node's resources, no node can schedule the replica.
+
+The **Size** you choose when creating a service from an image or Git sets the initial values for these fields:
+
+| Size | CPU reserved | Memory reserved | Memory maximum |
+| --- | --- | --- | --- |
+| Small | 0.1 cores | 128 MiB | 256 MiB |
+| Medium | 0.25 cores | 256 MiB | 512 MiB |
+| Large | 0.5 cores | 512 MiB | 1 GiB |
+
+![Compute resources in service settings, showing the replica count, reserved and maximum CPU and memory, and the largest node's resources below](https://oss.zeabur.com/shots/zeabur/en/light/service-compute.avif)
+
+</Step>
+<Step>
+
+### Review and apply
+
+Select **Review changes** at the bottom of the page. The review screen shows changes to the replica count, whether each service will be interrupted, and whether the nodes have enough capacity. Review the changes, then apply them.
+
+</Step>
+</Steps>
+
+A Job runs once. You can't change its resources under **Compute**; use YAML instead.
+
+Below **Compute**, there's also **Restart when its config files or secrets change**. See [Get new values into running services](./variables.mdx#let-running-services-read-the-new-values). This toggle is set on the workload itself and doesn't replace replicas.
+
+## Health checks
+
+Open the service's **Settings** → **Health checks** and configure each of the three checks separately:
+
+| Check | Purpose |
+| --- | --- |
+| **Traffic check** | Only replicas that pass receive traffic. |
+| **Restart check** | The cluster restarts a container if it keeps failing the check. |
+| **Startup check** | Delays the other checks until the app starts. |
+
+For each check, set **Check** to **None**, **HTTP GET**, **TCP**, or **Command**:
+
+- **HTTP GET**: Enter a **Path** and **Port**, such as `/healthz` and `8080`. Responses from 200 to 399 pass.
+- **TCP**: Enter a **Port**. The check passes if it can connect.
+- **Command**: Enter the **Commands** to run inside the container. An exit code of 0 passes.
+
+**Every (s)** sets how often the check runs. **Failures** sets how many consecutive failures count as a failed check. If the service declares ports, the form shows buttons such as **HTTP, port 8080**. Select one to fill in the path `/` and that port. The port must be declared by the container, or you won't be able to save.
+
+![Health checks in service settings, with HTTP GET selected for the traffic check, the path set to /healthz, and separate restart and startup checks](https://oss.zeabur.com/shots/zeabur/en/light/service-health.avif)
+
+After making changes, select **Review changes** at the bottom of the page and apply them. Only scheduled jobs and Jobs have no health checks.
+
+<Callout type="warn">
+A failed restart check restarts the container. If the app takes a long time to start, configure a startup check first or increase the restart check's failure threshold. Otherwise, the cluster may keep restarting the container before the app finishes starting.
+</Callout>
+
+## Startup command
+
+Zeabur doesn't have a startup command field. To change the command a container runs at startup, open the service's **Settings**, switch from **Set up** to **YAML** at the top, and select **Edit**. Change the container's `command` (which replaces the image's `ENTRYPOINT`) and `args` (which replaces `CMD`), then review and apply:
+
+```yaml
+containers:
+  - name: web
+    image: nginxinc/nginx-unprivileged:1.29
+    command: ["nginx"]
+    args: ["-g", "daemon off;"]
+```
+
+## Security
+
+Open the service's **Settings** → **Security** and choose what containers can do:
+
+- **Strict**: Runs as a non-root user with no privilege escalation. Images that run as root, such as `nginx:latest`, won't start. Use a version that doesn't need root, such as `nginxinc/nginx-unprivileged`. Images built with Railpack run as user 1000 and can use Strict. In a Dockerfile, specify a non-root user with a numeric ID, such as `USER 1000`.
+- **Compatible**: Allows containers to run as root, but they still can't access the host or escalate privileges.
+
+![Security in service settings, with Compatible selected and a description stating that containers can run as root but can't access the host](https://oss.zeabur.com/shots/zeabur/en/light/service-security.avif)
+
+Selecting an option opens the review screen directly. Review and apply the change to replace the replicas. When you create a service from an image, Zeabur selects an option based on the image's configured user: Strict for a numeric non-root user, or Compatible otherwise.
+
+If a service has settings beyond what Compatible permits, such as host access, this section shows **Unrestricted**. Use YAML to change those settings. If the project's Pod Security level is `restricted`, only Strict services can start. See [Adjust the Pod Security level](./projects.mdx#change-the-pod-security-level).
+
+## Do the same with kubectl
+
+These settings are standard Deployment or StatefulSet fields. They remain in effect after you remove Zeabur. The examples below use project `demo` and service `web`.
+
+Replica count and resources:
+
+```sh
+kubectl -n demo scale deployment/web --replicas=2
+kubectl -n demo set resources deployment/web -c web --requests=cpu=250m,memory=256Mi --limits=memory=512Mi
+```
+
+`set resources` changes only the values listed in the command. It keeps any values you leave out, such as an existing `cpu` maximum.
+
+Health checks, the startup command, and security settings are all part of the Pod template:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: demo
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.29
+          command: ["nginx"]
+          args: ["-g", "daemon off;"]
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+```
+
+The example above uses **Strict** settings. For **Compatible**, remove `runAsNonRoot: true` from the Pod and `capabilities.drop: [ALL]` from the container. Keep `seccompProfile` and `allowPrivilegeEscalation: false`.
+
+## Verify the result
+
+**Compute** and **Health checks** show the current values in the cluster. **Security** shows whether Strict or Compatible is selected. **Overview** shows whether replicas are ready. **Usage** charts reserved and maximum resources alongside actual usage.
+
+```sh
+kubectl -n demo get deployment web
+kubectl -n demo get deployment web -o jsonpath='{.spec.template.spec.containers[0].resources}'
+kubectl -n demo describe pod -l app.kubernetes.io/name=web
+```
+
+The `READY` column in `get deployment` shows a value such as `2/2`. Matching numbers mean all replicas have passed their traffic checks. `describe pod` lists the `Readiness`, `Liveness`, and `Startup` settings. When a check fails, `Events` shows `Unhealthy`.
+
+## Troubleshooting
+
+| What you see | What to do next |
+| --- | --- |
+| Replicas keep waiting to be scheduled after a resource change | The reserved amount exceeds the available capacity on every node. Lower the reserved amount or add nodes. |
+| Replicas keep restarting, and events show `OOMKilled` | Memory usage exceeds the maximum. Increase **Maximum memory**. |
+| Replicas keep restarting, and events show `Liveness probe failed` | Check the restart check's path and port, or add a startup check to give the app more time to start. |
+| Replicas never become ready | The traffic check hasn't passed. Check **Logs** and confirm that the app responds on the check's port. |
+| Replicas won't start after switching to Strict, and events show `container has runAsNonRoot and image will run as root` | The image runs as root. Switch back to Compatible or use an image that runs as a non-root user. |

@@ -1,0 +1,250 @@
+---
+title: Show maintenance and error pages
+description: Show a 503 page on a domain during maintenance, and set custom HTML for a service’s 502, 503, and 504 responses.
+---
+
+In the service’s **Networking** tab, open **Maintenance and error pages** from the domain row, turn on **Maintenance mode**, add the changes, then review and apply them. Visitors to that domain will see the maintenance page with HTTP 503. The original service keeps running. When maintenance is complete, turn it off in the same panel to send traffic back to the original backend.
+
+## Before you begin
+
+- The service has a [public domain](./domains.mdx). Domains served by either Ingress or HTTPRoute support maintenance mode.
+- You have permission to modify routes. If the project doesn’t have a [page server](#page-server) yet, you also need permission to create a Deployment, Service, config file, and NetworkPolicy.
+- Custom error pages require an Ingress served by Traefik. Domains served by HTTPRoute or other Ingress controllers support maintenance mode, but their panels don’t have **Show error pages**.
+
+Maintenance mode changes the forwarding target for this domain only. The service keeps running. The service’s other domains, private addresses, and public ports can still reach the application, and scheduled jobs keep running.
+
+<Callout type="warn">
+If you’re moving data or changing a database schema, separately stop any programs that write data through the private network, other domains, or scheduled jobs. For example, set the worker’s replica count to 0.
+</Callout>
+
+## Turn on maintenance mode
+
+<Steps>
+<Step>
+
+### Choose the domain to maintain
+
+Open the service’s **Networking** tab. In the target domain’s row, click **Maintenance and error pages for app.example.com**.
+
+![The service’s Networking tab, with the Maintenance and error pages button in the domain row](https://oss.zeabur.com/shots/zeabur/en/light/domain-pages-open.avif)
+
+</Step>
+<Step>
+
+### Set the page visitors see
+
+Turn on **Maintenance mode**. Keep the default HTML, or select **Maintenance** under **Page to edit** and edit the **HTML**.
+
+![The Maintenance and error pages panel for shop.example.com, with maintenance mode on and the maintenance page’s HTML displayed](https://oss.zeabur.com/shots/zeabur/en/light/domain-pages-maintenance.avif)
+
+Each page must be smaller than 64 KiB. Every domain in the project uses the same set of pages. If you edit the maintenance page here, other domains in maintenance mode in the project will also show the new content.
+
+If the project doesn’t have a page server yet, the top of the panel says **This project has no page server yet**. Continue as usual. When you review the changes, they’ll also include deploying the **Error pages** template from Zeabur Catalog to the project, with four default pages: maintenance, 502, 503, and 504. If you edit only the maintenance page, the other three keep their default content.
+
+</Step>
+<Step>
+
+### Review and apply
+
+Click **Add to changes** in the side panel. The domain row will show **Changed**. Then click **Review changes** at the bottom of the page, confirm the target domain and HTML, and apply. If the page server needs to be deployed, the list also includes its Deployment, Service, config file, and NetworkPolicy.
+
+![The review changes dialog, showing that shop.example.com will display a maintenance page](https://oss.zeabur.com/shots/zeabur/en/light/domain-pages-review.avif)
+
+All paths under this domain will route to the maintenance page. Other domains on the same Ingress aren’t affected. For an Ingress domain, Zeabur creates an additional Ingress with a name ending in `-maintenance`. Traefik gives it priority, and the original Ingress stays unchanged. For an HTTPRoute domain, Zeabur sets the original backends’ weights to 0 and adds the page server. Maintenance applies to the entire HTTPRoute. If the same HTTPRoute has other domains, Zeabur first moves this domain to its own route.
+
+</Step>
+<Step>
+
+### Check what visitors see
+
+Open the target domain’s home page and a subpath that previously worked. Confirm that both show the maintenance page. You can also check the response from your terminal:
+
+```sh
+curl -i https://app.example.com/
+```
+
+Replace `app.example.com` with your domain. The response status code is `503`, and the body is the maintenance page’s HTML. Back in the service’s **Networking** tab, the domain row shows **In maintenance**, and the service’s replicas are still running.
+
+![The domain row for shop.example.com marked Under maintenance](https://oss.zeabur.com/shots/zeabur/en/light/domain-maintenance-on.avif)
+
+</Step>
+</Steps>
+
+If an Ingress domain has a [redirect or password](./domains.mdx), neither applies during maintenance. Visitors see the maintenance page directly, without entering a password. The maintenance page contains only the HTML you wrote; requests don’t pass through the application. You can’t turn on maintenance mode for an HTTPRoute domain that’s redirecting traffic. Turn it on for the destination domain, or remove the redirect first.
+
+## Restore traffic after maintenance
+
+1. Confirm that the application is ready to receive traffic and that its [environment variables](./variables.mdx) and [volumes](./volumes.mdx) are correct.
+2. Open **Maintenance and error pages** for the same domain and turn off **Maintenance mode**.
+3. Click **Add to changes** in the panel, then **Review changes** at the bottom of the page. Confirm that the domain will route back to the original service, then apply.
+4. Reopen the domain and subpath. Confirm that the application responds normally and the domain row no longer shows **In maintenance**.
+
+When you turn maintenance mode off, Zeabur deletes the `-maintenance` Ingress for an Ingress domain. For an HTTPRoute domain, it removes the page server and changes backends with a weight of 0 back to 1. The original rules stay on the object throughout maintenance. Routing is restored even if you edited those rules during maintenance. If you delete the original Ingress, Kubernetes also deletes its maintenance Ingress.
+
+## Show custom error pages
+
+Open **Maintenance and error pages** for a Traefik Ingress domain and turn on **Show error pages**. Select each of the following pages to edit its **HTML**:
+
+| Page | File that provides the content |
+| --- | --- |
+| **502 Bad gateway** | `502.html` |
+| **503 Service unavailable** | `503.html` |
+| **504 Gateway timeout** | `504.html` |
+
+Click **Add to changes** in the panel, then review and apply from the bottom of the page. When the service returns 502, 503, or 504, Traefik will send the project’s error page instead. To check the result, use a test service that returns these status codes. You don’t need to stop the production service.
+
+This setting applies to the entire Ingress. The panel lists the other domains it affects. The page HTML is shared across the project. If you edit the 502 page from `app.example.com`, other domains with error pages turned on will also show the new content.
+
+If one domain on an Ingress is under maintenance, the other domains still show the custom 502, 503, and 504 pages.
+
+The HTML is stored in a config file. The page server reads the mounted files on every request. After you edit the HTML, it takes effect when kubelet next syncs and updates the mounted files. No restart is needed.
+
+## Page server
+
+The project’s page server serves maintenance and error pages. It comes from the **Error pages** template in Zeabur Catalog: a small nginx server with HTML stored in the `error-pages` config file. Zeabur finds it by the label `zeabur.com/page-server: "true"`, not by its name:
+
+| Object | Requirements |
+| --- | --- |
+| Service | Has this label; the `pages` port serves pages by filename, and the `maintenance` port returns the maintenance page with 503 for every request |
+| Config file | Has this label and the keys `502.html`, `503.html`, `504.html`, and `maintenance.html` |
+
+A project can have only one Service with this label. You can also deploy the template with `kubectl` or use another server that meets the requirements above. Zeabur will recognize it. These are standard Kubernetes objects and work without Zeabur.
+
+## Do the same with kubectl
+
+Maintenance mode and error pages use only Ingress, HTTPRoute, Traefik Middleware, and the page server. They keep working after you remove Zeabur. The following examples use the project `demo`, Ingress `web-app-example-com`, and domain `app.example.com`. They assume the project already has a page server named `error-pages`.
+
+### Turn on maintenance mode (Ingress)
+
+Create an Ingress named `<service>-<domain-with-dashes>-maintenance` that sends all paths for the domain to the page server’s `maintenance` port. Set `router.priority` higher than every other route for this domain so Traefik gives it priority. The `ownerReferences` points to the original Ingress. Zeabur uses it to recognize the maintenance Ingress, so first get the original Ingress’s `uid`:
+
+```sh
+kubectl -n demo get ingress web-app-example-com -o jsonpath='{.metadata.uid}'
+```
+
+Enter the returned value in `uid`:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-app-example-com-maintenance
+  namespace: demo
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "1000"
+  ownerReferences:
+    - apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      name: web-app-example-com
+      uid: 0b8f9a52-5d6e-4c1a-9f3e-2a7b1c4d5e6f
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [app.example.com]
+      secretName: web-app-example-com-tls
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: error-pages
+                port:
+                  name: maintenance
+```
+
+The version Zeabur creates also:
+
+- Sets `router.priority` to the highest priority among the domain’s existing routes plus 1. When no priority is specified, Traefik uses the rule’s length as its priority, so this number is usually small. The `1000` above only needs to be higher than the original routes’ priorities.
+- Copies the original Ingress’s `traefik.ingress.kubernetes.io/router.*` annotations, except `router.middlewares` and `router.priority`, along with `ingressClassName` and this domain’s `tls`.
+
+With `ownerReferences` set, Kubernetes deletes the maintenance Ingress when you delete the original Ingress.
+
+To turn off maintenance mode, delete this Ingress:
+
+```sh
+kubectl -n demo delete ingress web-app-example-com-maintenance
+```
+
+### Turn on maintenance mode (HTTPRoute)
+
+HTTPRoute doesn’t use a separate object. Zeabur changes each rule’s original backend `weight` to `0`, then adds the page server’s `maintenance` port with a weight of `1`. Use `kubectl edit httproute <name>` to make these changes. For example:
+
+```yaml
+rules:
+  - backendRefs:
+      - name: web
+        port: 8080
+        weight: 0
+      - name: error-pages
+        port: 8081
+        weight: 1
+```
+
+Replace `8081` with the number of the `maintenance` port on the page server’s Service. To restore traffic, change `web`’s weight back to `1` and remove the `error-pages` entry.
+
+### Show error pages
+
+Error pages use a Middleware named `<Ingress name>-error-pages`, with `ownerReferences` pointing to the Ingress. When Traefik receives a response from 502 through 504, it requests `/<status-code>.html` from the page server’s `pages` port instead:
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: web-app-example-com-error-pages
+  namespace: demo
+spec:
+  errors:
+    status: ["502-504"]
+    service:
+      name: error-pages
+      port: 8080
+    query: /{status}.html
+```
+
+Replace `8080` with the number of the `pages` port on the page server’s Service. Then add it to the Ingress’s `traefik.ingress.kubernetes.io/router.middlewares` as `demo-web-app-example-com-error-pages@kubernetescrd`. If other Middleware entries already exist, use `kubectl edit` to add it to the list. The redirect must stay first.
+
+To edit the page content, edit the `error-pages` config file directly:
+
+```sh
+kubectl -n demo edit configmap error-pages
+```
+
+## Verify the result
+
+In the service’s **Networking** tab, domains under maintenance show **In maintenance** in their rows. The **Maintenance mode** and **Show error pages** switches in the panel reflect the cluster’s settings, including changes made with kubectl.
+
+Check the objects with kubectl, then check the response from outside the cluster:
+
+```sh
+kubectl -n demo get ingress
+kubectl -n demo get middleware.traefik.io
+kubectl -n demo get svc,configmap -l zeabur.com/page-server=true
+curl -sI https://app.example.com/
+```
+
+During maintenance, `kubectl get ingress` shows an additional Ingress ending in `-maintenance`, and `curl` returns status code `503`. After you turn maintenance mode off, that Ingress disappears, and `curl` returns the service’s original response.
+
+## Troubleshooting
+
+| What you see | What to do next |
+| --- | --- |
+| The Maintenance and error pages button is disabled | Confirm that you have permission to modify routes and that the route isn’t marked as managed by another tool. |
+| The application still appears after you apply the changes | Confirm that the URL you opened uses the domain you put into maintenance mode, and check for a CDN or proxy cache in front of it. Return to **Networking** and check whether the domain row shows **In maintenance**. |
+| The maintenance page won’t load | Check the project’s `error-pages` replicas and events, and confirm that the `error-pages` NetworkPolicy allows connections from the cluster’s Ingress controller. |
+| Review changes reports multiple page servers in the project | Keep the `zeabur.com/page-server` label on only one Service. Remove it from the others. |
+| The page still shows the old HTML | Wait for the mounted files to update, then refresh. |
+| Maintenance mode can’t be turned on for an HTTPRoute domain because the route splits traffic by weight | The route’s backend weights aren’t all 1. Use kubectl to send traffic to the page server, or first change the weights back to 1. |
+| **Show error pages** is missing | Traefik doesn’t serve this domain. Use the Ingress controller’s own error page settings. |
+
+## Disable and remove the page server
+
+Turning off **Maintenance mode** routes the domain back to the original service. Turning off **Show error pages** removes the error page rules from that Ingress. The page server and HTML stay in place for reuse.
+
+When the project no longer needs these pages, first turn off maintenance mode and error pages for every domain and confirm that traffic is restored. Then open the project’s **Objects** page and delete the `error-pages` Deployment, Service, and NetworkPolicy, along with the `error-pages` and `error-pages-nginx` config files. For each object, click **Delete** under **YAML**, then review and apply.
+
+<Callout type="warn">
+If you delete the page server while any domains are still under maintenance or have error pages turned on, visitors to those domains will see errors instead of your pages.
+</Callout>

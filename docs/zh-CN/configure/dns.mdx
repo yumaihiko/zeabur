@@ -1,0 +1,167 @@
+---
+title: 配置 DNS 记录
+description: 用一条通配符记录让所有生成的网址指向集群，并在 Cloudflare、Route 53 或注册商的 DNS 中添加记录。
+source: "320eed08f87d"
+---
+
+应用域名是生成的网址共用的域名，只需为它配置一次通配符记录，之后每个新服务的网址都会解析到集群。例如，应用域名是 `apps.example.com`，就添加一条 `*.apps.example.com` 的 A 记录，指向服务器的 IPv4 地址。如果服务器有 IPv6 地址，再添加一条 AAAA 记录。之后，`web-shop.apps.example.com` 这类新网址就不需要再添加记录。
+
+Let's Encrypt 通过 HTTP-01 验证签发 HTTPS 证书，每个网址单独签发一张，因此互联网必须能访问服务器的 TCP 80 端口。Zeabur 不会替你修改 DNS，需要到自己的 DNS 提供商处添加记录。
+
+## 选择应用域名
+
+应用域名可以是任何子域名，例如 `apps.example.com`，也可以是域名本身 `example.com`。
+
+| 应用域名 | 要添加的通配符记录 | 服务网址示例 |
+| --- | --- | --- |
+| `apps.example.com` | `*.apps.example.com` | `web-shop.apps.example.com` |
+| `example.com` | `*.example.com` | `web-shop.example.com` |
+
+通配符只匹配一层名称。`*.example.com` 匹配 `web-shop.example.com`，不匹配 `example.com` 本身，也不匹配 `a.b.example.com`。
+
+## 在 Zeabur 查看要添加的记录
+
+打开 **集群** 页的 **域名** 区域，每个应用域名下都列出了要添加的记录，包括类型、名称和值，旁边有复制按钮，也会显示当前是否已解析到集群。到 DNS 提供商处添加记录后，回来点击 **重新检查**。
+
+刚开始配置时，TTL 使用 300 秒，填错后修改能更快生效。确认无误后可以再延长。
+
+![集群页的域名区域，列出应用域名 apps.example.com，标明已指向此集群，并有重新检查和编辑按钮](https://oss.zeabur.com/shots/zeabur/zh-CN/light/cluster-domains.avif)
+
+## 在 DNS 提供商处添加记录
+
+以下以域名 `example.com`、应用域名 `apps.example.com` 为例。A 记录的值填写服务器的 IPv4 地址，如果有 IPv6 地址，再用相同的名称添加 AAAA 记录。
+
+### Cloudflare
+
+<Steps>
+<Step>
+
+#### 打开记录页
+
+在 Cloudflare 中选择这个域名，进入 **DNS** 下的 **Records**，点击 **Add record**。
+
+</Step>
+<Step>
+
+#### 填写记录
+
+| 字段 | 填写方式 |
+| --- | --- |
+| Type | `A` |
+| Name | `*.apps`，如果应用域名就是域名本身，填写 `*` |
+| IPv4 address | 服务器的 IPv4 地址 |
+| Proxy status | 关闭，切换为 **DNS only**（灰色云朵） |
+| TTL | Auto |
+
+</Step>
+<Step>
+
+#### 保存并检查
+
+点击 **Save**，再回到 Zeabur 的 **域名** 区域，点击 **重新检查**。
+
+</Step>
+</Steps>
+
+使用灰色云朵时，Let's Encrypt 会直接连接服务器完成 HTTP-01 验证，Zeabur 检查时也会查到服务器的地址。
+
+如果想开启橙色云朵（**Proxied**），让流量经过 Cloudflare，就将 Cloudflare 的 SSL/TLS 模式设为 **Full (strict)**。此时 DNS 返回 Cloudflare 地址，Zeabur 会将域名显示为 **指向别处**。
+
+### Route 53
+
+<Steps>
+<Step>
+
+#### 打开 hosted zone
+
+在 Route 53 控制台选择 **Hosted zones**，点击这个域名的 hosted zone，再点击 **Create record**。
+
+</Step>
+<Step>
+
+#### 填写记录
+
+| 字段 | 填写方式 |
+| --- | --- |
+| Record name | `*.apps`，如果应用域名就是域名本身，填写 `*` |
+| Record type | `A` |
+| Value | 服务器的 IPv4 地址 |
+| TTL (seconds) | `300` |
+| Routing policy | Simple routing |
+
+</Step>
+<Step>
+
+#### 保存并检查
+
+点击 **Create records**，再回到 Zeabur 的 **域名** 区域，点击 **重新检查**。Route 53 通常会在一分钟内生效。
+
+</Step>
+</Steps>
+
+### 注册商的 DNS
+
+Gandi、Namecheap、HiNet 等注册商的 DNS 管理页面使用的字段名称各不相同，大致按以下方式填写：
+
+| 字段 | 填写方式 |
+| --- | --- |
+| 类型 | `A`，如果有 IPv6 地址，再添加 `AAAA` |
+| 主机或名称 | 应用域名是 `apps.example.com` 时填写 `*.apps`，是 `example.com` 时填写 `*` |
+| 值 | 服务器的 IP 地址 |
+| TTL | `300` 到 `3600` 秒，刚开始配置时使用 `300` |
+
+域名本身 `example.com` 的记录，名称通常填写 `@`。
+
+有些面板要求填写完整名称，有些会自动在后面加上域名。保存前检查面板显示的完整名称，避免出现 `*.apps.example.com.example.com`。
+
+## 自定义域名
+
+每个自定义域名分别添加一条 A 或 AAAA 记录，指向服务器 IP。也可以添加 CNAME，指向应用域名下的名称，例如 `web-shop.apps.example.com`。服务的 **网络** 选项卡会列出这个域名需要添加的记录，添加域名的步骤见[添加公开域名与 HTTPS](./domains.mdx)。
+
+域名本身（例如 `example.com`）只能使用 A 或 AAAA 记录，大多数 DNS 提供商不允许在这里使用 CNAME。Cloudflare 是个例外，它会将域名本身的 CNAME 展平为 A 记录（CNAME flattening）。在 Route 53 中为域名本身添加记录时，将 **Record name** 留空，不要填写 `@`。
+
+## 没有自己的域名
+
+如果安装时没有填写应用域名，且服务器有公网 IP，生成的网址会使用 `<IP 连字符>.sslip.io`，不需要配置 DNS。服务器 IP 是 `203.0.113.7` 时，网址如下：
+
+```text
+web-shop.203-0-113-7.sslip.io
+```
+
+这种网址包含服务器 IP，签发的证书也会出现在公开的证书透明度（CT）记录中。所有用户共用 Let's Encrypt 为 `sslip.io` 提供的证书签发额度，遇到限流时，证书会延迟签发，cert-manager 会自动重试。正式上线的服务应改用自己的域名。
+
+## 用 kubectl 查询应用域名和入口地址
+
+DNS 记录位于集群外，Zeabur 不会写入任何对象，只读取两项信息来列出需要添加的记录。
+
+应用域名：安装时填写的值是 Helm chart 的 `domains.suffixes`。如果在 **集群** 页修改过，新的列表会保存在 Zeabur Namespace 的配置文件 `zeabur-settings` 中，键为 `domain-suffixes`，每行一个域名：
+
+```sh
+kubectl -n zeabur get configmap zeabur-settings -o jsonpath='{.data.domain-suffixes}'
+```
+
+没有输出时，使用的是安装时的值。
+
+记录要指向的地址：Zeabur 读取 Ingress 的 `status.loadBalancer`，也就是入口对外的地址：
+
+```sh
+kubectl get ingress -A
+```
+
+`ADDRESS` 列就是 A 或 AAAA 记录要填写的值。如果这一列为空，说明入口还没有获取到对外地址，需要向集群管理员确认服务器的公网 IP。
+
+## 确认结果
+
+**集群** 页的 **域名** 区域会显示每个应用域名当前是否已解析到集群，修改记录后点击 **重新检查**。在自己的电脑上用 `dig` 查询应用域名下的任意名称：
+
+```sh
+dig +short anything.apps.example.com
+```
+
+| 结果 | 含义 |
+| --- | --- |
+| 返回服务器 IP | 已解析到服务器 |
+| 没有输出，或查到 `NXDOMAIN` | 记录尚未生效，或名称填写错误 |
+| 返回其他 IP | 记录指向其他位置，或使用了 Cloudflare 橙色云朵这类代理 |
+
+修改记录后，其他 DNS 服务器需要等缓存中的旧答案过期，才会查到新值，最长需要等待旧记录的 TTL。如果新增的名称之前已经查询过，得到的结果是“不存在”，也需要等这个答案过期。
