@@ -319,6 +319,11 @@ function RemovalRow({
       {stays.length ? (
         <span className="text-xs text-secondary">{t("review.stays", stays)}</span>
       ) : null}
+      {removal.deletedCrds.length ? (
+        <span className="text-xs text-secondary">
+          {t("review.deletesCrds", removal.deletedCrds)}
+        </span>
+      ) : null}
       {removal.usedBy.length ? (
         <span className="text-xs text-fail-strong">{t("review.inUse", removal.usedBy)}</span>
       ) : removal.losesData ? (

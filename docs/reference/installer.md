@@ -196,9 +196,9 @@ Only the installer installs and removes components; Zeabur shows them and the co
 remove one, untick it under Components in `gui`, or take it out of `enable` (for a component the
 preset brings, add it to `disable`), and run `apply`. A personal install works the same way.
 
-`plan` lists the removal under "Removed", with what stays. `apply` removes components once the
-cluster runs, before it sets up namespaces, storage and the components that stay. A component is
-removed before the components it needs. For each one, `apply` deletes the `HelmChart` objects in
+`plan` lists the removal under "Removed", with what stays and the CRDs that go. `apply` removes
+components once the cluster runs, before it sets up namespaces, storage and the components that
+stay. A component is removed before the components it needs. For each one, `apply` deletes the `HelmChart` objects in
 `kube-system` that carry the label `app.kubernetes.io/managed-by: zeabur-installer` and the
 annotation `installer.zeabur.com/component: <capability>/<id>`, and waits until
 helm-controller's `helm-delete-<chart>` job has uninstalled the chart. The installer removes
@@ -206,11 +206,18 @@ only what it installed: a component installed by Helm, Flux or Argo CD has no su
 and stays. A component the catalog no longer lists stays too; `plan` warns and gives the
 `kubectl delete` command.
 
+The uninstall deletes the CRDs that the chart puts in its templates, and every object of them in
+the cluster. Helm marks these CRDs with the annotations `meta.helm.sh/release-name` and
+`meta.helm.sh/release-namespace`. Before it removes anything, the installer reads these
+annotations from the cluster, so `plan`, the GUI and `apply` name the CRDs that go. A CRD from the
+chart's `crds/` folder has no such annotations and stays. So does a CRD with the annotation
+`helm.sh/resource-policy: keep`.
+
 `apply` changes nothing while a component is still in use, and names what uses it:
 
 | Component | In use while |
 |---|---|
-| One with custom resources | objects of its CRDs, or of any CRD in the same API group, exist outside the namespaces of the components removed with it |
+| One with custom resources | objects of the CRDs that the catalog lists for it, or of the CRDs that the uninstall deletes, exist outside the namespaces of the components removed with it. For a CRD that the uninstall deletes, cluster-scoped objects count too |
 | Longhorn | a PersistentVolume of the driver `driver.longhorn.io` exists |
 | zot | a Pod outside zot's namespace runs an image from `zot.zot.svc:5000` |
 
@@ -225,8 +232,9 @@ What stays, and how to delete it by hand once nothing needs it:
 
 - The component's namespace, with its Secrets and the volumes (PersistentVolumeClaims) of its
   workloads: `kubectl delete namespace <namespace>`. Back the volumes up first.
-- Its CRDs, which Helm never deletes: `kubectl get crd -o name | grep <group>`, then
-  `kubectl delete` those. That deletes every object of them in the cluster.
+- The CRDs that the uninstall does not delete (those not named under "deletes these CRDs"):
+  `kubectl get crd -o name | grep <group>`, then `kubectl delete` those. That deletes every
+  object of them in the cluster.
 - Manifests the installer applied for it (Gateway API CRDs, cert-manager issuers): `plan` names
   them; delete them with `kubectl delete -f` on the same URL or by name.
 - Other leftovers the catalog lists, such as Longhorn's `longhorn-static` storage class:

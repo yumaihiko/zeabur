@@ -145,6 +145,15 @@ pub(crate) fn removals(removals: &[Removal]) -> String {
         if !stays.is_empty() {
             push(&mut s, &format!("      stays: {}", stays.join(", ")));
         }
+        if !removal.deleted_crds.is_empty() {
+            push(
+                &mut s,
+                &format!(
+                    "      deletes these CRDs and all their objects: {}",
+                    removal.deleted_crds.join(", ")
+                ),
+            );
+        }
         if let Some(why) = removal.refusal() {
             push(&mut s, &format!("      refused: {why}"));
         } else if removal.loses_data {

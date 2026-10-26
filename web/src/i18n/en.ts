@@ -1142,7 +1142,7 @@ export const en = {
   "installer.configRemove": (path: string) =>
     `Or take it out of enable in ${path} (for a component the preset installs, add it to disable), then apply:`,
   "installer.stays":
-    "Its namespace, CRDs and volumes stay. The installer docs say how to delete them.",
+    "Its namespace and volumes stay. Some charts also delete their CRDs and all their objects; the installer's review lists them. The installer docs say how to delete what stays.",
   "installer.elsewhere": "If Helm, K3s or a GitOps tool installed it, remove it with that tool.",
   "installer.otherCluster":
     "For a cluster that zeabur-installer didn't install, print the manifests. Apply them with kubectl, or commit them to your GitOps repository. Add --format helm for Helm commands.",

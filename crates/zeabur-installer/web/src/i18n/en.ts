@@ -300,6 +300,7 @@ export const en = {
   "review.stays.crds": "its CRDs and their objects",
   "review.stays.volumes": "its disks",
   "review.stays.manifests": (name: string) => `the objects of ${name}`,
+  "review.deletesCrds": (crds: string[]) => `Deletes these CRDs and all their objects: ${list(crds)}`,
   "review.inUse": (items: string[]) =>
     `Still in use by ${list(items)}. Remove those first, or keep the component.`,
   "review.losesData": (name: string) => `Remove ${name} and delete the data it keeps`,

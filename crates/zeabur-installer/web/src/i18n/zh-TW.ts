@@ -276,6 +276,7 @@ export const zhTW: Messages = {
   "review.stays.crds": "CRD 和它們的物件",
   "review.stays.volumes": "磁碟",
   "review.stays.manifests": (name) => `${name} 建立的物件`,
+  "review.deletesCrds": (crds) => `會刪除這些 CRD 和它們的所有物件：${listZh("zh-TW", crds)}`,
   "review.inUse": (items) =>
     `還有東西在用：${listZh("zh-TW", items)}。先移除它們，或保留這個元件。`,
   "review.losesData": (name) => `移除 ${name}，連同它保存的資料一起刪除`,

@@ -276,6 +276,7 @@ export const zhCN: Messages = {
   "review.stays.crds": "CRD 和它们的对象",
   "review.stays.volumes": "磁盘",
   "review.stays.manifests": (name) => `${name} 创建的对象`,
+  "review.deletesCrds": (crds) => `会删除这些 CRD 和它们的所有对象：${listZh("zh-CN", crds)}`,
   "review.inUse": (items) =>
     `还有东西在用：${listZh("zh-CN", items)}。先移除它们，或保留这个组件。`,
   "review.losesData": (name) => `移除 ${name}，连同它保存的数据一起删除`,

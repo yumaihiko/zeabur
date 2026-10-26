@@ -86,12 +86,12 @@ sudo zeabur-installer apply
 
 已安裝的元件卡片上有 **移除**，視窗會列出指令。在安裝程式的頁面取消勾選，或從設定檔的 `enable` 拿掉它，預設就會裝的元件則加到 `disable`，再執行 `apply`。
 
-`plan` 和安裝程式的 **確認** 會列出要移除的元件，以及會留下什麼。遇到下面兩種情況，`apply` 會停下，什麼都不改：
+`plan` 和安裝程式的 **確認** 會列出要移除的元件、會留下什麼，以及會一起刪掉的 CRD。遇到下面兩種情況，`apply` 會停下，什麼都不改：
 
-- 還有東西在用這個元件，例如還有它的自訂資源、還有 Longhorn 的磁碟區，或還有副本從 zot 拉映像檔。畫面會列出是哪些，先刪掉或搬走。
+- 還有東西在用這個元件，例如還有它的自訂資源（包括會一起刪掉的 CRD 的物件）、還有 Longhorn 的磁碟區，或還有副本從 zot 拉映像檔。畫面會列出是哪些，先刪掉或搬走。
 - 移除會連同元件保存的資料一起刪掉，例如 Longhorn。先備份，再把元件 ID 寫進設定檔的 `allowDataLoss`，或在 **確認** 勾選同意。
 
-移除後，元件的 Namespace、CRD 和磁碟區會留著。確定用不到之後怎麼手動刪除，見 [Installer 指令](../reference/installer.mdx#移除元件)。
+移除後，元件的 Namespace 和磁碟區會留著。有些 Chart 會連 CRD 和它們的所有物件一起刪掉，其他 CRD 會留著。留下的東西確定用不到之後怎麼手動刪除，見 [Installer 指令](../reference/installer.mdx#移除元件)。
 
 zeabur-installer 只移除自己裝的元件。用 Helm、Flux 或 Argo CD 裝的，從原本的工具移除。
 

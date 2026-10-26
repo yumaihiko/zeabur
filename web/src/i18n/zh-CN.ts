@@ -1059,7 +1059,7 @@ export const zhCN: Messages = {
   "installer.config": (path) => `或在 ${path} 的 enable 加上它，再运行 apply：`,
   "installer.configRemove": (path) =>
     `或从 ${path} 的 enable 去掉它，预设就会装的组件则加到 disable，再运行 apply：`,
-  "installer.stays": "它的 Namespace、CRD 和存储卷会保留，要删掉的话，安装程序文档有写怎么做。",
+  "installer.stays": "它的 Namespace 和存储卷会保留。有些 Chart 会连 CRD 和它们的所有对象一起删掉，安装程序的确认页面会列出来。保留的东西要删掉的话，安装程序文档有写怎么做。",
   "installer.elsewhere": "如果是用 Helm、K3s 或 GitOps 工具装的，就用同一个工具移除。",
   "installer.otherCluster":
     "集群不是用 zeabur-installer 装的话，可以打印 manifests，用 kubectl 应用，或提交到 GitOps 仓库。加上 --format helm 会改为打印 Helm 命令。",

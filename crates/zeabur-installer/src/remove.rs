@@ -33,12 +33,20 @@ pub(crate) fn plan(
     let (mut removals, more) =
         remove::removals(index, planned, &installed, profile, allow_data_loss);
     warnings.extend(more);
+    if removals.is_empty() {
+        return Ok(removals);
+    }
+    let crds = list_cluster(kubectl, "customresourcedefinitions")?;
+    for removal in &mut removals {
+        removal.delete_crds(remove::release_crds(&crds, &installed, &removal.id));
+    }
+    let served: BTreeSet<&str> = crds.iter().map(name).collect();
     let together: BTreeSet<String> = removals
         .iter()
         .flat_map(|r| r.namespaces.iter().cloned())
         .collect();
     for removal in &mut removals {
-        removal.used_by = used_by(kubectl, removal, &together)?;
+        removal.used_by = used_by(kubectl, removal, &together, &served)?;
     }
     Ok(removals)
 }
@@ -122,24 +130,27 @@ fn used_by(
     kubectl: &Kubectl,
     removal: &Removal,
     together: &BTreeSet<String>,
+    served: &BTreeSet<&str>,
 ) -> Result<Vec<String>, InstallError> {
     let elsewhere = |object: &Value| namespace(object).is_some_and(|ns| !together.contains(ns));
     let mut found = Vec::new();
     for check in &removal.in_use {
         match check {
-            InUse::Objects { resource } => {
-                let crds = list_cluster(kubectl, "customresourcedefinitions")?;
-                for resource in group_resources(&crds, resource) {
-                    for object in list(kubectl, &resource)?.iter().filter(|o| elsewhere(o)) {
-                        found.push(format!(
-                            "{} {}/{}",
-                            object["kind"].as_str().unwrap_or(&resource),
-                            namespace(object).unwrap_or_default(),
-                            name(object)
-                        ));
-                    }
+            InUse::Objects { resource } if served.contains(resource.as_str()) => {
+                // A cluster-scoped object goes only when its CRD goes.
+                let deleted = removal.deleted_crds.contains(resource);
+                for object in list(kubectl, resource)?
+                    .iter()
+                    .filter(|o| elsewhere(o) || (deleted && namespace(o).is_none()))
+                {
+                    let kind = object["kind"].as_str().unwrap_or(resource);
+                    found.push(namespace(object).map_or_else(
+                        || format!("{kind} {}", name(object)),
+                        |ns| format!("{kind} {ns}/{}", name(object)),
+                    ));
                 }
             }
+            InUse::Objects { .. } => {}
             InUse::Volumes { driver } => {
                 for volume in list(kubectl, "persistentvolumes")?.iter().filter(|v| {
                     v.pointer("/spec/csi/driver").and_then(Value::as_str) == Some(driver)
@@ -183,19 +194,6 @@ fn used_by(
     Ok(found)
 }
 
-/// The CRDs of `crd`'s API group, by name: a component's other kinds (External Secrets'
-/// SecretStore beside its ExternalSecret) go with its CRDs, so their objects count too. Empty when
-/// the cluster has none of the group.
-fn group_resources(crds: &[Value], crd: &str) -> Vec<String> {
-    let Some((_, group)) = crd.split_once('.') else {
-        return Vec::new();
-    };
-    crds.iter()
-        .filter(|c| c.pointer("/spec/group").and_then(Value::as_str) == Some(group))
-        .map(|c| name(c).to_owned())
-        .collect()
-}
-
 fn list_cluster(kubectl: &Kubectl, resource: &str) -> Result<Vec<Value>, InstallError> {
     let text = kubectl.run(&["get", resource, "--output=json"], None)?;
     items(&text)
@@ -230,28 +228,4 @@ fn name(object: &Value) -> &str {
         .pointer("/metadata/name")
         .and_then(Value::as_str)
         .unwrap_or_default()
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::group_resources;
-
-    #[test]
-    fn a_components_other_kinds_in_its_group_count() {
-        let crds = [
-            json!({"metadata": {"name": "externalsecrets.external-secrets.io"}, "spec": {"group": "external-secrets.io"}}),
-            json!({"metadata": {"name": "secretstores.external-secrets.io"}, "spec": {"group": "external-secrets.io"}}),
-            json!({"metadata": {"name": "scaledobjects.keda.sh"}, "spec": {"group": "keda.sh"}}),
-        ];
-        assert_eq!(
-            group_resources(&crds, "externalsecrets.external-secrets.io"),
-            [
-                "externalsecrets.external-secrets.io",
-                "secretstores.external-secrets.io"
-            ]
-        );
-        assert!(group_resources(&crds, "widgets.example.com").is_empty());
-    }
 }

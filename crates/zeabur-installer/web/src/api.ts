@@ -120,8 +120,10 @@ export interface Removal {
   helmCharts: string[]
   /** Namespaces that stay, with what is left in them. */
   namespaces: string[]
-  /** What the catalog says stays after `helm uninstall`. */
+  /** What stays after `helm uninstall`; no CRDs when the release owns them. */
   leftovers: string[]
+  /** CRDs that `helm uninstall` deletes, with all their objects. */
+  deletedCrds: string[]
   /** Manifest releases, whose objects stay. */
   manifests: string[]
   /** What still uses it; apply stops while there is any. */

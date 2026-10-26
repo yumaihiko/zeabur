@@ -2,9 +2,10 @@
 //!
 //! The installer removes only what it installed: the `HelmChart` objects in `kube-system` with
 //! its `app.kubernetes.io/managed-by` label and the [`COMPONENT_ANNOTATION`]. Deleting one makes
-//! helm-controller run `helm uninstall`. What Helm leaves stays: the CRDs and volumes the catalog
-//! lists in `leftovers`, the objects of manifest releases, and the component's namespaces with
-//! their Secrets.
+//! helm-controller run `helm uninstall`. `helm uninstall` deletes the CRDs that the release owns
+//! ([`release_crds`]), and with them all their objects. What Helm leaves stays: the other CRDs and
+//! the volumes the catalog lists in `leftovers`, the objects of manifest releases, and the
+//! component's namespaces with their Secrets.
 //!
 //! `apply` refuses to remove a component that something still uses ([`InUse`]), and one that
 //! keeps data without volumes that stay, unless `allowDataLoss` names it.
@@ -20,6 +21,13 @@ use crate::storage::LONGHORN;
 
 /// The leftover that means the chart's volumes stay.
 const VOLUMES: &str = "persistentvolumeclaims";
+/// The leftover that means the chart's CRDs stay.
+const CRDS: &str = "customresourcedefinitions";
+/// The annotations with which Helm marks the objects of a release.
+const RELEASE_NAME: &str = "meta.helm.sh/release-name";
+const RELEASE_NAMESPACE: &str = "meta.helm.sh/release-namespace";
+/// The annotation with which `helm uninstall` keeps an object.
+const RESOURCE_POLICY: &str = "helm.sh/resource-policy";
 /// Components whose custom resources are their own output, not something that uses them.
 const OUTPUT_ONLY: &[&str] = &["vulnerability-scanning/trivy-operator"];
 /// Longhorn's CSI driver.
@@ -32,8 +40,10 @@ const LONGHORN_CONFIRMATION: &str = "deleting-confirmation-flag";
 pub struct Installed {
     /// The component in its [`COMPONENT_ANNOTATION`].
     pub component: String,
-    /// The `HelmChart`'s name.
+    /// The `HelmChart`'s name, which is also the Helm release's name.
     pub chart: String,
+    /// The release's namespace.
+    pub namespace: String,
 }
 
 /// One component to remove.
@@ -48,8 +58,11 @@ pub struct Removal {
     pub helm_charts: Vec<String>,
     /// Namespaces that stay, with what is left in them.
     pub namespaces: Vec<String>,
-    /// What the catalog says `helm uninstall` leaves.
+    /// What `helm uninstall` leaves, as the catalog says. It does not have
+    /// `customresourcedefinitions` when the cluster shows that the release owns its CRDs.
     pub leftovers: Vec<String>,
+    /// The CRDs that `helm uninstall` deletes, with all their objects.
+    pub deleted_crds: Vec<String>,
     /// Manifest releases, whose objects stay.
     pub manifests: Vec<String>,
     /// What `apply` looks for before it removes the component.
@@ -65,6 +78,26 @@ pub struct Removal {
 }
 
 impl Removal {
+    /// Records the CRDs that `helm uninstall` deletes ([`release_crds`]). The objects of these
+    /// CRDs outside the namespaces removed together then count as use.
+    pub fn delete_crds(&mut self, crds: Vec<String>) {
+        if crds.is_empty() {
+            return;
+        }
+        self.leftovers.retain(|l| l != CRDS);
+        if !OUTPUT_ONLY.contains(&self.id.as_str()) {
+            for crd in &crds {
+                let check = InUse::Objects {
+                    resource: crd.clone(),
+                };
+                if !self.in_use.contains(&check) {
+                    self.in_use.push(check);
+                }
+            }
+        }
+        self.deleted_crds = crds;
+    }
+
     /// Why `apply` does not remove it, if it does not.
     #[must_use]
     pub fn refusal(&self) -> Option<String> {
@@ -90,8 +123,8 @@ impl Removal {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum InUse {
-    /// Namespaced objects of a CRD (`<plural>.<group>`), outside the namespaces of the components
-    /// removed together.
+    /// Objects of a CRD (`<plural>.<group>`), outside the namespaces of the components removed
+    /// together. Cluster-scoped objects count when the CRD is in `deleted_crds`.
     Objects {
         /// The resource.
         resource: String,
@@ -129,7 +162,39 @@ pub fn installed(object: &serde_json::Value) -> Option<Installed> {
             .as_str()?
             .to_owned(),
         chart: metadata.get("name")?.as_str()?.to_owned(),
+        namespace: object
+            .pointer("/spec/targetNamespace")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| metadata.get("namespace")?.as_str())
+            .unwrap_or("kube-system")
+            .to_owned(),
     })
+}
+
+/// The names of the CRDs in `crds` that `helm uninstall` of the component's charts deletes.
+///
+/// Helm marks the CRDs of a chart's templates with the release, and does not mark those of its
+/// `crds/` folder. A CRD with `helm.sh/resource-policy: keep` stays.
+#[must_use]
+pub fn release_crds(crds: &[serde_json::Value], installed: &[Installed], id: &str) -> Vec<String> {
+    let annotation = |crd: &serde_json::Value, key: &str| {
+        crd.pointer(&format!("/metadata/annotations/{}", key.replace('/', "~1")))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    crds.iter()
+        .filter(|crd| {
+            let name = annotation(crd, RELEASE_NAME);
+            let namespace = annotation(crd, RELEASE_NAMESPACE);
+            installed.iter().any(|i| {
+                i.component == id
+                    && name.as_deref() == Some(&i.chart)
+                    && namespace.as_deref() == Some(&i.namespace)
+            }) && annotation(crd, RESOURCE_POLICY).as_deref() != Some("keep")
+        })
+        .filter_map(|crd| crd.pointer("/metadata/name")?.as_str())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// The components installed but no longer planned, in the order to remove them: a component
@@ -248,6 +313,7 @@ fn removal(component: &Component, installed: &[Installed], allow_data_loss: &[St
             .collect(),
         namespaces,
         leftovers: component.leftovers.clone(),
+        deleted_crds: Vec::new(),
         manifests: component
             .releases
             .iter()
@@ -298,10 +364,7 @@ mod tests {
             .iter()
             .flat_map(|c| {
                 c.releases.iter().filter_map(|r| match r {
-                    crate::plan::ReleasePlan::HelmChart { name, .. } => Some(Installed {
-                        component: c.id.clone(),
-                        chart: name.clone(),
-                    }),
+                    crate::plan::ReleasePlan::HelmChart { object, .. } => super::installed(object),
                     crate::plan::ReleasePlan::Manifests { .. }
                     | crate::plan::ReleasePlan::Urls { .. } => None,
                 })
@@ -323,6 +386,10 @@ mod tests {
                         Some(Installed {
                             component: component.id.clone(),
                             chart: name.clone(),
+                            namespace: object["spec"]["targetNamespace"]
+                                .as_str()
+                                .unwrap()
+                                .to_owned(),
                         })
                     );
                 }
@@ -413,6 +480,79 @@ mod tests {
         assert!(!keda.loses_data);
     }
 
+    fn crd(name: &str, annotations: &serde_json::Value) -> serde_json::Value {
+        json!({"metadata": {"name": name, "annotations": annotations}})
+    }
+
+    #[test]
+    fn the_crds_of_a_charts_templates_are_deleted_and_their_objects_count_as_use() {
+        let before = planned("enable: [event-autoscaling/keda]\n");
+        let after = planned("");
+        let installed = installed(&before);
+        let mut keda = removals(&index(), &after, &installed, "single-node", &[])
+            .0
+            .into_iter()
+            .find(|r| r.id == "event-autoscaling/keda")
+            .unwrap();
+        let release = installed.iter().find(|i| i.component == keda.id).unwrap();
+        let owned = json!({RELEASE_NAME: release.chart, RELEASE_NAMESPACE: release.namespace});
+        let other = json!({RELEASE_NAME: release.chart, RELEASE_NAMESPACE: "elsewhere"});
+        let crds = [
+            crd("scaledobjects.keda.sh", &owned),
+            crd("cloudeventsources.eventing.keda.sh", &owned),
+            crd(
+                "kept.keda.sh",
+                &json!({RELEASE_NAME: release.chart, RELEASE_NAMESPACE: release.namespace, RESOURCE_POLICY: "keep"}),
+            ),
+            crd("fromcrdsfolder.keda.sh", &json!({})),
+            crd("widgets.example.com", &other),
+        ];
+        let deleted = release_crds(&crds, &installed, &keda.id);
+        assert_eq!(
+            deleted,
+            [
+                "scaledobjects.keda.sh",
+                "cloudeventsources.eventing.keda.sh"
+            ]
+        );
+        assert!(keda.leftovers.iter().any(|l| l == CRDS));
+
+        keda.delete_crds(deleted);
+        assert!(!keda.leftovers.iter().any(|l| l == CRDS));
+        assert_eq!(
+            keda.deleted_crds,
+            [
+                "scaledobjects.keda.sh",
+                "cloudeventsources.eventing.keda.sh"
+            ]
+        );
+        assert!(keda.in_use.contains(&InUse::Objects {
+            resource: "cloudeventsources.eventing.keda.sh".to_owned()
+        }));
+    }
+
+    #[test]
+    fn crds_that_helm_leaves_stay_as_the_catalog_says() {
+        let before = planned("enable: [event-autoscaling/keda]\n");
+        let after = planned("");
+        let installed = installed(&before);
+        let mut keda = removals(&index(), &after, &installed, "single-node", &[])
+            .0
+            .into_iter()
+            .find(|r| r.id == "event-autoscaling/keda")
+            .unwrap();
+        let in_use = keda.in_use.clone();
+        let deleted = release_crds(
+            &[crd("scaledobjects.keda.sh", &json!({}))],
+            &installed,
+            &keda.id,
+        );
+        keda.delete_crds(deleted);
+        assert!(keda.leftovers.iter().any(|l| l == CRDS));
+        assert_eq!(keda.deleted_crds, Vec::<String>::new());
+        assert_eq!(keda.in_use, in_use);
+    }
+
     #[test]
     fn a_component_not_in_the_catalog_stays_with_a_warning() {
         let now = planned("");
@@ -420,6 +560,7 @@ mod tests {
         charts.push(Installed {
             component: "old/thing".to_owned(),
             chart: "thing".to_owned(),
+            namespace: "thing".to_owned(),
         });
         let (removals, warnings) = removals(&index(), &now, &charts, "single-node", &[]);
         assert_eq!(removals, []);
