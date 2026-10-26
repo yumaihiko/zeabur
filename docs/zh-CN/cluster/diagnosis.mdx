@@ -1,0 +1,161 @@
+---
+title: 看懂状态、警告与诊断
+description: 服务停机或集群出问题时，到哪里查看原因，各个页面读取哪些 Kubernetes 数据，以及如何用 kubectl 查询相同内容。
+source: "c883614d7f71"
+---
+
+服务出问题时，先看 **主页** 的 **需要你处理**，再进入服务的 **概览** 查看 **出了什么问题**。这些页面只读取集群，不会修改任何内容。每一项都附有 **修复** 或 **怎么处理**，只有修改配置时才会进入检查变更的步骤。
+
+下面按页面说明这些信息在哪里、读取什么数据，以及如何用 kubectl 查询相同内容。Zeabur 使用你的权限读取数据，无法读取的部分会在页面上说明，例如 **部分检查需要你没有的权限。**
+
+## 首页：哪些服务停机
+
+**主页** 的 **需要你处理** 列出当前有问题的服务。同一原因造成的问题会合并为一组，例如 25 个服务都因无法拉取同一个镜像而卡住。
+
+![首页的需要你处理，按原因分为节点、集群外部、配置、应用出错等组，每项附有日志或事件按钮](https://oss.zeabur.com/shots/zeabur/zh-CN/light/home-problems.avif)
+
+如果原因在集群这一侧，页面会标为 **集群**，列出 **起因** 和 **影响** 的服务、域名及项目数量。解决这个原因后，这些服务就会一起恢复。Zeabur 会将以下情况视为集群问题：
+
+| 起因 | 判断方式 | 影响范围 |
+| --- | --- | --- |
+| Ingress 控制器（Traefik 或 ingress-nginx）没有就绪的副本 | 带有 `app.kubernetes.io/name: traefik` 等 label 的工作负载需要副本，但没有任何副本就绪 | 这个 IngressClass 的所有域名 |
+| cert-manager 没有就绪的副本 | cert-manager 的控制器或 webhook 没有就绪的副本 | 向它申请证书的 Ingress，证书无法签发或续期 |
+| 集群 DNS 没有就绪的副本 | 带有 `k8s-app: kube-dns` 的工作负载 | 通过名称调用其他服务的服务 |
+| metrics-server 没有就绪的副本 | 带有 `app.kubernetes.io/name: metrics-server` 的工作负载 | 用量数据和自动扩缩停止 |
+| 节点未就绪或不再上报状态 | 节点的 `Ready` 状态为 `False` 或 `Unknown` | 在该节点上运行副本的服务 |
+
+用 kubectl 查询相同数据：
+
+```sh
+kubectl get nodes
+kubectl get deploy,daemonset -A -l app.kubernetes.io/name=traefik
+kubectl get deploy -A -l k8s-app=kube-dns
+```
+
+“哪些服务受到影响”由 Zeabur 关联 Ingress、节点和服务后计算得出，kubectl 没有直接对应的命令。
+
+## 服务的“出了什么问题”
+
+服务有问题时，**概览** 顶部会出现 **出了什么问题**：一句话说明原因，一句话说明 **怎么处理**，旁边的 **打开日志**、**调整内存**、**健康检查** 等按钮可直接跳转到相应位置处理。展开 **依据** 可以查看判断所用的值，展开 **原始错误** 可以查看具体的 **副本**、**退出码**、重启次数和容器消息。报告问题时，点击 **复制诊断** 并粘贴完整内容。
+
+![服务概览的出了什么问题，说明 worker 反复崩溃，并附有怎么处理以及打开日志、终端按钮](https://oss.zeabur.com/shots/zeabur/zh-CN/light/service-problem.avif)
+
+Zeabur 读取 kubelet 上报的容器状态、副本调度状态、工作负载的状况和事件，判断以下情况：
+
+- 容器不断崩溃重启，或因内存耗尽而终止（退出码 137）。
+- 健康检查持续失败，或定时任务的某次运行以错误结束。
+- 无法拉取镜像。
+- 缺少机密变量或配置文件，或缺少其中的某个键，导致无法创建容器。
+- 没有节点具备足够资源，副本无法调度。
+- ResourceQuota 或 Pod Security 拒绝创建副本。
+- 有人通过名称连接此服务，但没有 Service 选中它的副本；Service 的 `targetPort` 与容器端口不符；Service 没有就绪的副本。
+
+只统计最近的失败：容器正常运行超过 10 分钟后，就不再列出此前的重启，与 kubelet 重置退避时间的规则一致。找不到已知原因时，页面会显示第一个未就绪的副本卡在哪里、最新一条事件，以及还有多少个副本正在提供服务。
+
+用 kubectl 查询相同数据：
+
+```sh
+kubectl -n shop get pods -l app.kubernetes.io/name=web
+kubectl -n shop describe pod <副本名称>
+kubectl -n shop logs <副本名称> --previous
+kubectl -n shop get events --field-selector involvedObject.name=<副本名称>
+```
+
+`describe` 的 `Last State` 包含上一次退出的原因和退出码，`Events` 包含调度和镜像拉取消息。
+
+## 缺少的配置
+
+项目页和 **集群** → **概览** 的 **缺少的设置** 列出尚未引发问题、但存在隐患的配置。每一项标为 **警告**（可能造成停机或数据丢失）或 **建议**，附上作为依据的文档链接，以及 **修复**、**安装** 或 **设置备份** 按钮。例如：
+
+- 容器没有配置 CPU 和内存预留量，或没有内存上限。
+- 服务没有就绪检查，“运行中”只代表容器已启动。
+- 数据写在容器内，没有挂载磁盘，重新部署后就会消失。
+- 磁盘没有备份。
+- 项目没有连接规则，所有服务都能互相连接。
+- 路由指向不存在的 Service，或集群仍在使用已停止维护的 Ingress 控制器。
+
+这些规则是 Zeabur 自身的检查，kubectl 没有对应的命令。可以自行查询具体项目，例如查看哪些容器没有内存上限：
+
+```sh
+kubectl -n shop get deploy -o custom-columns=NAME:.metadata.name,MEMORY:.spec.template.spec.containers[*].resources.limits.memory
+```
+
+## 集群的“需要处理”
+
+**集群** → **概览** 的 **需要处理** 列出影响整个集群的事项，例如 Kubernetes 版本已停止支持、kubelet 版本差距超出支持范围、节点内存或磁盘即将用满、节点未就绪，以及已安装的组件有新版本。没有问题时显示 **没有需要处理的项目。**
+
+![集群概览的需要处理，列出 Kubernetes 版本即将停止支持，以及节点内存和磁盘即将用满](https://oss.zeabur.com/shots/zeabur/zh-CN/light/cluster-attention.avif)
+
+用 kubectl 查询相同数据：
+
+```sh
+kubectl version
+kubectl get nodes -o wide
+kubectl describe node <节点名称>
+```
+
+`describe node` 的 `Conditions` 包含 `MemoryPressure`、`DiskPressure` 和 `Ready`。版本支持期限和组件新版本由 Zeabur 对照 Zeabur Catalog 得出，kubectl 没有对应的命令。
+
+## 最近一小时的警告
+
+**集群** → **概览** 的 **最近一小时的警告** 列出集群本身的 `Warning` 事件：不属于任何 Namespace 的事件、节点相关事件，以及 `kube-system` 等名称以 `kube-` 开头的 Namespace 中的事件。项目事件不在这里，而在服务 **概览** 的 **警告** 和 **事件** 选项卡中。事件过多时只读取最新的 5,000 条，页面会显示 **只读取了最新的 5,000 条事件。**
+
+```sh
+kubectl get events -A --field-selector type=Warning,involvedObject.kind=Node
+kubectl -n kube-system get events --field-selector type=Warning --sort-by=.lastTimestamp
+```
+
+Kubernetes 默认只保留一小时的事件，更早的事件用 kubectl 也查不到。
+
+## 运行时告警（Falco）
+
+安装 Falco 后，Falco 检测到可疑行为，例如在容器内启动 shell、读取敏感文件，就会记录一条告警。服务 **概览** 的 **运行时告警** 列出该服务副本的告警，项目页也能查看。不属于任何 Namespace 的告警，例如节点自身进程的告警，会出现在 **集群** → **概览** 的 **节点告警** 中。没有告警时，这个区域不会显示。
+
+告警保存在 falcosidekick 写入的 `PolicyReport` 中：属于某个 Namespace 的告警保存在该 Namespace 的 `falco-policy-report` 中，其余告警保存在 `ClusterPolicyReport` `falco-cluster-policy-report` 中。从 Zeabur Catalog 安装的 Falco 每份报告只保留最新的 100 条，因此这里展示的是近期告警，而非全部告警。
+
+```sh
+kubectl -n shop get policyreport falco-policy-report -o yaml
+kubectl get clusterpolicyreport falco-cluster-policy-report -o yaml
+```
+
+每条告警都在 `results` 中，`policy` 是 Falco 规则名称，`severity` 是严重程度，`properties` 包含副本名称和 Falco 原始消息。谁能读取 `policyreports`，由 Kubernetes 的 RBAC 决定。
+
+要将告警发送到 Slack 或邮箱，参见[将集群告警发送到通知渠道](./notifications.mdx)。
+
+## 连接检查
+
+服务 **概览** 的 **网络** 卡片为每个域名和私有地址各显示一行，标明 **可访问**、**无法访问** 或 **无法从集群内确认**。展开后可查看请求经过的每一步，每一步都列出 **预期** 和 **实际**，有问题的步骤附有 **修复**：
+
+| 步骤 | Zeabur 检查什么 | 用 kubectl 或其他命令查询 |
+| --- | --- | --- |
+| **DNS** | 从 Zeabur 所在的位置能够解析此域名 | `dig +short shop.example.com` |
+| **入口地址** | 解析得到的地址中，有一个是 Ingress `status.loadBalancer` 的地址 | `kubectl -n shop get ingress -o wide` |
+| **Ingress 控制器** | 这个 IngressClass 的控制器有就绪的副本 | `kubectl get ingressclass`，再查询控制器的 Deployment |
+| **证书** | `spec.tls` 下的主机对应的 cert-manager `Certificate` 为 `Ready` | `kubectl -n shop get certificate` |
+| **路由** | 控制器已在 Ingress 中写入地址；HTTPRoute 有 `Accepted` | `kubectl -n shop describe httproute <名称>` |
+| **私有地址** | 路由指向的 Service 存在、有对应端口，并且选中了此服务的副本 | `kubectl -n shop get endpointslices -l kubernetes.io/service-name=web` |
+| **端口** | Service 的 `targetPort` 与容器端口一致 | `kubectl -n shop get svc web -o yaml` |
+| **就绪副本** | 至少有一个副本已就绪 | `kubectl -n shop get pods -l app.kubernetes.io/name=web` |
+
+私有地址 `<服务>.<项目>.svc.cluster.local` 只检查最后三步。程序是否监听 `0.0.0.0` 而非 `127.0.0.1`，需要进入容器才能确认，这里不检查。DNS 无法解析或解析到其他地址时，会显示 **无法从集群内确认**：前面有 CDN 或 Proxy，或集群内外的 DNS 解析结果不同，都可能出现这种情况。
+
+![服务概览的网络卡片，私有地址可访问，展开连接检查后，每一步都通过并列出预期和实际](https://oss.zeabur.com/shots/zeabur/zh-CN/light/service-connectivity.avif)
+
+## 连接规则
+
+服务 **网络** 选项卡的 **连接规则** 根据 NetworkPolicy 计算哪些服务 **允许**、部分允许或禁止连接此服务，以及由哪条 **规则** 决定。没有规则选中此服务时，页面显示 **没有规则应用到此服务，因此允许所有连接。** 添加和移除规则参见[私有网络与连接规则](../configure/networking.mdx)。
+
+```sh
+kubectl -n shop get networkpolicy
+kubectl -n shop describe networkpolicy <名称>
+```
+
+`describe` 列出每条规则选中的副本和允许的来源。合并多条规则并换算成“哪个服务能连接哪个服务”，由 Zeabur 计算完成，kubectl 没有对应的命令。
+
+## 确认结果
+
+修复后：
+
+- 服务 **概览** 的 **出了什么问题** 消失，**网络** 卡片每一行都显示 **可访问**。
+- **集群** → **概览** 显示 **没有需要处理的项目。**
+- `kubectl -n shop get pods` 的副本都是 `Running`，`READY` 列显示全部就绪。

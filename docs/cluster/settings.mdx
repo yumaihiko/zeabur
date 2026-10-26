@@ -1,0 +1,106 @@
+---
+title: Change the cluster name, domains, and usage history
+description: Change the cluster name, usage history source, and sign-in settings in Settings, and domains for new services on the Cluster page. Each setting is stored in a config file.
+---
+
+**Settings** in the sidebar holds settings shared across the cluster: **Cluster name**, **Usage history**, and **Sign-in**. The domains used for new service addresses are under **Cluster** → **Overview** → **Domains**. These settings are stored in config files. Anyone who can edit those config files can change the settings—usually a cluster administrator.
+
+The language and theme under **Preferences** are stored only in your browser and don't affect anyone else.
+
+![Settings page showing Preferences, Cluster name, Sign-in settings, and Usage history from top to bottom](https://oss.zeabur.com/shots/zeabur/en/light/cluster-settings.avif)
+
+## Before you begin
+
+- Zeabur must be installed in the cluster. When you run `zeaburctl ui` on your computer, Zeabur doesn't save settings. It uses the cluster name from kubeconfig, and you must specify the usage history source with `--metrics-service`.
+- You must be able to update the `zeabur-settings` config file in the namespace where Zeabur is installed (`zeabur` by default). You also need permission to create it when saving settings for the first time.
+
+## Change the cluster name
+
+The cluster name appears in the sidebar and on every page to help distinguish between clusters. Changing it doesn't change the cluster itself.
+
+<Steps>
+<Step>
+
+### Enter a name
+
+Go to **Settings** → **Cluster name** and enter a new **Name**. It must be a single line with at most 63 characters. Click **Save**.
+
+</Step>
+<Step>
+
+### Restore the default
+
+Click **Use the default name** to restore the `clusterName` set during installation. If none was set, Zeabur uses the hostname from its URL.
+
+</Step>
+</Steps>
+
+## Choose a usage history source
+
+Service and node **Usage** charts, along with disk usage, read data from a storage service that supports the Prometheus HTTP API. Zeabur reads it through the Kubernetes API using each person's own permissions. When Zeabur Proxy is enabled, the Proxy reads service usage history from the default storage service, and project members can see only their project's metrics.
+
+Go to **Settings** → **Usage history** and enter the storage service's Kubernetes Service in **History source**, using the format `namespace/name:port`. The default is VictoriaMetrics, which Zeabur recommends: `observability/vmsingle-vm-victoria-metrics-k8s-stack:8428`. After you click **Save**, **Status** shows:
+
+| Status | Meaning |
+| --- | --- |
+| **Responding** | Data is readable. |
+| **Not found** | The Service doesn't exist, or the metrics component isn't installed yet. |
+| **No access** | You don't have permission to read this Service through the Kubernetes API. |
+| **Not responding** | The Service exists but doesn't respond to Prometheus API queries. |
+
+Anyone who can read the storage service directly can see metrics for all projects, so grant access only to people who can view the entire cluster. If you switch to another storage service, Zeabur Proxy won't read it. Project members will no longer see usage history; only people with direct read access will. Click **Use the default** to restore the installation setting.
+
+## Set domains for new services
+
+Zeabur suggests addresses for new services in the format `<service>-<project>.<domain>`. Go to **Cluster** → **Overview** → **Domains**, click **Edit**, use **Add domain** to add domains, and click **Save**. The first domain is the default. You can add up to 20 domains. Click **Go back to the install's domains** to restore the installation settings.
+
+Each domain shows whether its DNS points to this cluster. For the wildcard records to add, see [Configure DNS records](../configure/dns.mdx).
+
+![Domains section on the Cluster page listing the application domain apps.example.com, marked as pointing to this cluster](https://oss.zeabur.com/shots/zeabur/en/light/cluster-domains.avif)
+
+## Sign-in settings
+
+**Settings** → **Sign-in** controls how long admin accounts can remain idle before they're signed out and whether they must use device-bound passkeys to sign in. These two settings are stored in the Zeabur Identity config file. For details and kubectl instructions, see [Permissions](../reference/permissions.mdx).
+
+## Your account and passkeys
+
+**Account** in the sidebar lists your username, groups, role in each project, passkeys, and linked accounts. Zeabur Identity manages passkeys, linked accounts, and sessions. Click **Manage sign-in methods** to open Zeabur Identity, where you can add or remove passkeys and sign out other devices.
+
+Add a backup passkey on your phone so you can still sign in if you lose a device.
+
+## Make the same changes with kubectl
+
+The cluster name, usage history source, and domains are stored in the `zeabur-settings` ConfigMap in the `zeabur` namespace. Missing keys use the installation values. In `domain-suffixes`, put each domain on its own line or separate them with commas. The first domain is the default:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zeabur-settings
+  namespace: zeabur
+data:
+  cluster-name: tokyo-prod
+  metrics-store: observability/vmsingle-vm-victoria-metrics-k8s-stack:8428
+  domain-suffixes: |
+    apps.example.com
+    example.net
+```
+
+To restore a default, delete its key:
+
+```sh
+kubectl -n zeabur patch configmap zeabur-settings --type json -p '[{"op":"remove","path":"/data/cluster-name"}]'
+```
+
+The installation values come from the Chart's `clusterName`, `metricsStore.service`, and `domains.suffixes`. When you install with Installer, the domains come from `suffixes` in the config file. See [Installer configuration](../reference/installer-configuration.mdx).
+
+## Verify the changes
+
+- The sidebar shows the new cluster name.
+- **Status** under **Usage history** is **Responding**, and the service's **Usage** tab shows charts.
+- New service addresses use the first domain by default.
+- `kubectl -n zeabur get configmap zeabur-settings -o yaml` shows the values you set.
+
+## After removing Zeabur
+
+Only Zeabur reads these settings. Deleting `zeabur-settings` doesn't affect any services.

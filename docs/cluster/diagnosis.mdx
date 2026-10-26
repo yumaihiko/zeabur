@@ -1,0 +1,162 @@
+---
+title: Understand status, warnings, and diagnoses
+description: When a service is down or the cluster has a problem, where to look for the cause, which Kubernetes data each screen reads, and how to query the same content with kubectl.
+---
+
+When a service has a problem, start with **What needs you** on **Home**, then open the service's **Overview** and read **What's wrong**. These screens only read the cluster. They don't change anything. Each item includes **Fix** or **What to do**. The step to review changes appears only when you change a setting.
+
+The sections below say where each screen is, what it reads, and how to query the same data with kubectl. Zeabur reads with your rights. Anything it can't read is explained on the screen, for example **Some checks need rights you don't have.**
+
+## Home: which services are down
+
+**What needs you** on **Home** lists the services that currently have a problem. Problems with the same cause are grouped together, for example 25 services all stuck because the same image can't be pulled.
+
+![Needs you on Home, grouped by cause into node, outside the cluster, settings, errors in the app, and similar groups, with a logs or events button on each item](https://oss.zeabur.com/shots/zeabur/en/light/home-problems.avif)
+
+If the cause is on the cluster side, the screen labels it **Cluster** and shows **Caused by** and **Affects**: how many services, domains, and projects are affected. Fix that cause and those services recover together. Zeabur treats these situations as cluster problems:
+
+| Cause | How Zeabur decides | What it affects |
+| --- | --- | --- |
+| The Ingress controller (Traefik or ingress-nginx) has no ready replica | A workload with a label such as `app.kubernetes.io/name: traefik` requests replicas, but none are ready | Every domain on this IngressClass |
+| cert-manager has no ready replica | The cert-manager controller or webhook has no ready replica | Ingresses that request a certificate from it don't get a certificate issued or renewed |
+| Cluster DNS has no ready replica | A workload with `k8s-app: kube-dns` | Services that call other services by name |
+| metrics-server has no ready replica | A workload with `app.kubernetes.io/name: metrics-server` | Usage numbers and autoscaling stop |
+| A node isn't ready or has stopped reporting | The node's `Ready` status is `False` or `Unknown` | Services with a replica on this node |
+
+Query the same data with kubectl:
+
+```sh
+kubectl get nodes
+kubectl get deploy,daemonset -A -l app.kubernetes.io/name=traefik
+kubectl get deploy -A -l k8s-app=kube-dns
+```
+
+Which services are affected is computed by Zeabur matching Ingresses, nodes, and services. kubectl has no command that returns it directly.
+
+## What's wrong on a service
+
+When a service has a problem, **What's wrong** appears at the top of **Overview**: one sentence for the cause, one sentence for **What to do**, and buttons such as **Open logs**, **Change memory**, and **Health checks** that take you straight to the change. Expand **Evidence** to see the values used for the decision. Expand **Raw error** to see which **Replica**, the **Exit code**, the restart count, and the container's message. When you report a problem, choose **Copy diagnosis** and paste the full text.
+
+![What's wrong on the service Overview, explaining that worker keeps crashing, with What to do and Open logs and Terminal buttons](https://oss.zeabur.com/shots/zeabur/en/light/service-problem.avif)
+
+Zeabur reads the container status kubelet reports, the replica's scheduling status, and the workload's conditions and events. It recognizes these cases:
+
+- The container keeps crashing and restarting, or it is terminated after running out of memory (exit code 137).
+- A health check keeps failing, or one run of a scheduled job ends with an error.
+- The image can't be pulled.
+- A secret or config file is missing, or a key inside it is missing, so the container can't be created.
+- No node has enough resources, so the replica can't be scheduled.
+- ResourceQuota or Pod Security refuses to create the replica.
+- A caller reaches this service by name, but no Service selects its replicas; the Service's `targetPort` isn't the container's port; the Service has no ready replica.
+
+Only recent failures count: once a container has been running normally for 10 minutes or longer, earlier restarts are no longer listed, the same rule kubelet uses when it resets backoff.
+
+When Zeabur finds no known cause, the screen states where the first not-ready replica is stuck, the latest event, and how many replicas are still in service.
+
+Query the same data with kubectl:
+
+```sh
+kubectl -n shop get pods -l app.kubernetes.io/name=web
+kubectl -n shop describe pod <replica-name>
+kubectl -n shop logs <replica-name> --previous
+kubectl -n shop get events --field-selector involvedObject.name=<replica-name>
+```
+
+In `describe`, `Last State` has the reason and exit code from the previous termination, and `Events` has the scheduling and image-pull messages.
+
+## Missing settings
+
+**Missing setup**, on the project page and on **Cluster** → **Overview**, lists settings that haven't failed yet but are likely to. Each item is marked **Warning** (it can cause downtime or data loss) or **Advice**, with a link to the docs it is based on, and a **Fix**, **Install**, or **Set up backups** button. For example:
+
+- A container has no reserved CPU and memory, or no memory maximum.
+- The service has no traffic check. "Running" only means the container has started.
+- Data is written inside the container, with no disk mounted, so a redeploy deletes it.
+- A disk has no backup.
+- The project has no connection rules, so every service can connect to every other service.
+- A route points to a Service that doesn't exist, or the cluster still uses an Ingress controller that is no longer maintained.
+
+These rules are Zeabur's own checks. kubectl has no matching command. You can check individual items yourself, for example which containers have no memory maximum:
+
+```sh
+kubectl -n shop get deploy -o custom-columns=NAME:.metadata.name,MEMORY:.spec.template.spec.containers[*].resources.limits.memory
+```
+
+## Needs attention on the cluster
+
+**Needs attention** on **Cluster** → **Overview** lists things that affect the whole cluster, such as a Kubernetes version that is out of support, a kubelet version outside the supported skew, a node whose memory or disk is almost full, a node that isn't ready, and an installed component that has a new version. When nothing is wrong, it shows **Nothing needs attention.**
+
+![Needs attention on the cluster Overview, listing that the Kubernetes version is nearing end of support, and that node memory and disk are almost full](https://oss.zeabur.com/shots/zeabur/en/light/cluster-attention.avif)
+
+Query the same data with kubectl:
+
+```sh
+kubectl version
+kubectl get nodes -o wide
+kubectl describe node <node-name>
+```
+
+`describe node`'s `Conditions` includes `MemoryPressure`, `DiskPressure`, and `Ready`. Version support windows and new component versions come from Zeabur comparing against Zeabur Catalog. kubectl has no matching command.
+
+## Warnings in the last hour
+
+**Warnings in the last hour** on **Cluster** → **Overview** lists the cluster's own `Warning` events: events with no Namespace, events about nodes, and events in Namespaces that start with `kube-`, such as `kube-system`. Project events aren't here. They're on the **Warnings** and **Events** tabs of the service **Overview**. When there are too many events, Zeabur reads only the latest 5,000, and the screen says **Only the latest 5,000 events were read.**
+
+```sh
+kubectl get events -A --field-selector type=Warning,involvedObject.kind=Node
+kubectl -n kube-system get events --field-selector type=Warning --sort-by=.lastTimestamp
+```
+
+Kubernetes keeps events for one hour by default. kubectl can't retrieve earlier events either.
+
+## Runtime alerts (Falco)
+
+After Falco is installed, Falco writes an alert when it sees suspicious behavior, such as a shell opened in a container or a sensitive file read. **Runtime alerts** on the service **Overview** lists alerts for this service's replicas. The project page shows them too. Alerts that belong to no Namespace, such as a process on the node itself, appear under **Node alerts** on **Cluster** → **Overview**. When there are no alerts, that section doesn't appear.
+
+Alerts are stored in the `PolicyReport` falcosidekick writes: alerts that have a Namespace go in that Namespace's `falco-policy-report`, and the rest go in the `ClusterPolicyReport` `falco-cluster-policy-report`. Falco installed from Zeabur Catalog keeps only the latest 100 alerts in each report, so this list is recent alerts, not every alert.
+
+```sh
+kubectl -n shop get policyreport falco-policy-report -o yaml
+kubectl get clusterpolicyreport falco-cluster-policy-report -o yaml
+```
+
+Each alert is in `results`. `policy` is the Falco rule name, `severity` is the severity, and `properties` has the replica name and Falco's original message. Kubernetes RBAC decides who can read `policyreports`.
+
+To send alerts to Slack or email, see [Send cluster alerts to a notification channel](./notifications.mdx).
+
+## Connection checks
+
+The **Networking** card on the service **Overview** has one row for each domain and private address, marked **Reachable**, **Not reachable**, or **Not verified from inside the cluster**. Expand a row to see each hop the request takes. Each hop lists **Expected** and **Found**. The hop with a problem includes **Fix**:
+
+| Hop | What Zeabur checks | Check with kubectl or another command |
+| --- | --- | --- |
+| **DNS** | The domain resolves from where Zeabur runs | `dig +short shop.example.com` |
+| **Entry address** | One of the resolved addresses is the Ingress `status.loadBalancer` address | `kubectl -n shop get ingress -o wide` |
+| **Ingress controller** | The controller for this IngressClass has a ready replica | `kubectl get ingressclass`, then check the controller's Deployment |
+| **Certificate** | For a host under `spec.tls`, the cert-manager `Certificate` is `Ready` | `kubectl -n shop get certificate` |
+| **Route** | The controller has written an address on the Ingress; the HTTPRoute has `Accepted` | `kubectl -n shop describe httproute <name>` |
+| **Private address** | The Service the route points to exists, has that port, and selects this service's replicas | `kubectl -n shop get endpointslices -l kubernetes.io/service-name=web` |
+| **Port** | The Service's `targetPort` is the container's port | `kubectl -n shop get svc web -o yaml` |
+| **Ready replicas** | At least one replica is ready | `kubectl -n shop get pods -l app.kubernetes.io/name=web` |
+
+A private address `<service>.<project>.svc.cluster.local` checks only the last three hops. Whether the program listens on `0.0.0.0` instead of `127.0.0.1` is visible only from inside the container, and this check doesn't cover it. When DNS finds nothing, or finds a different address, the row says **Not verified from inside the cluster**. A CDN or proxy in front, or DNS inside the cluster that differs from what is seen outside, both produce that result.
+
+![The Networking card on the service Overview, with the private address reachable. The connection check is expanded, every hop passes, and each hop lists expected and actual](https://oss.zeabur.com/shots/zeabur/en/light/service-connectivity.avif)
+
+## Connection rules
+
+**Connection rules** on the service **Networking** tab uses NetworkPolicy to determine which services are **Allowed**, partially allowed, or blocked from connecting to this service, and which **Rule** decides that. When no rule selects this service, the screen says **No rule applies to this service, so all connections are allowed.** To add or remove rules, see [Private network and connection rules](../configure/networking.mdx).
+
+```sh
+kubectl -n shop get networkpolicy
+kubectl -n shop describe networkpolicy <name>
+```
+
+`describe` lists the replicas each rule selects and the sources it allows. Combining the rules into which service can connect to which service is computed by Zeabur. kubectl has no matching command.
+
+## Confirm the result
+
+After the fix:
+
+- **What's wrong** on the service **Overview** is gone, and every row on the **Networking** card is **Reachable**.
+- **Cluster** → **Overview** shows **Nothing needs attention.**
+- Every replica from `kubectl -n shop get pods` is `Running`, and the `READY` column is full.

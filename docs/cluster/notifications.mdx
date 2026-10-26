@@ -1,0 +1,203 @@
+---
+title: Send cluster alerts to notification channels
+description: Add notification channels, choose events, and send a test so node and cluster alerts reach administrators.
+---
+
+Open **Cluster** → **Notifications**, click **Add channel**, and choose a destination and events. After applying the changes, click **Send test** and check Slack, email, or the other destination for the message.
+
+Cluster channels receive node alerts, Falco runtime security events, and alerts from system namespaces. For build, deployment, or database events in a specific project, add a separate channel under that project's **Settings** → **Notifications**.
+
+## Before you begin
+
+- Install the metrics component (VictoriaMetrics) in the cluster. If the page shows **Notifications need alerting**, click **Install metrics**, then return when installation finishes.
+- Have the destination service's webhook URL, token, or SMTP settings ready.
+- Adding a channel requires permission to create `VMAlertmanagerConfig` objects and secrets in the namespace where notifications are configured. Sending a test also requires permission to create Jobs. Admin accounts have all of these permissions.
+
+## Add and test a channel
+
+<Steps>
+<Step>
+
+### Choose a destination
+
+Under **Cluster** → **Notifications**, click **Add channel**. The **Name** must start with a letter, contain only lowercase letters, numbers, and hyphens, and be no more than 30 characters long.
+
+Choose a type under **Send to** and enter its settings:
+
+| Type | What you need |
+| --- | --- |
+| **Slack**, **Discord** | **Webhook URL**. |
+| **Telegram** | **Bot token** and a numeric **Chat ID**. |
+| **Email** | **To**, **From**, and an **SMTP server** with a port, such as `smtp.example.com:587`. The SMTP server must support TLS. **SMTP user** and **SMTP password** are optional. |
+| **Webhook** | **URL**. **Bearer token** is optional. |
+| **ntfy** | **Topic**. Leave **Server** blank to use `ntfy.sh`. **Access token** is optional. |
+
+</Step>
+<Step>
+
+### Choose events and apply changes
+
+Under **Events**, select at least one event, such as **Node not ready** or **Runtime security (Falco)**.
+
+Click **Review changes** and check the channel and the secret that will store the URL and token (its contents won't be shown). Then click **Add channel**.
+
+![Add notification channel dialog with a Slack webhook URL and three event types selected](https://oss.zeabur.com/shots/zeabur/en/light/notify-channel-add.avif)
+
+</Step>
+<Step>
+
+### Send a test
+
+Wait until the channel no longer shows **Waiting**. In the channel row, click **Send test**, review the test Job that will be created, and click **Send test** again.
+
+The test is a Job that runs for up to two minutes. When the alerting rules detect it, they send a test alert to this channel. After the page shows that the test was sent, check the destination for the message within about a minute or two.
+
+![Channel row showing the destination and events, with Edit and Send test actions](https://oss.zeabur.com/shots/zeabur/en/light/notify-channels.avif)
+
+</Step>
+</Steps>
+
+## Edit a channel
+
+Click **Edit** in the channel row to change its events and destination settings. Then click **Review changes** and **Save channel**.
+
+The form fills in settings that aren't secret. URL, token, and password fields stay blank and show **Unchanged**. Leave a field blank to keep its saved value, or enter a value to replace it. Zeabur doesn't read stored secrets.
+
+You can't change the channel type. To switch from Slack to email, for example, add another channel, send a test, and confirm that it arrives before removing the old channel.
+
+## Do the same with kubectl
+
+A channel consists of two objects named `zeabur-notify-<name>`, both with the label `zeabur.com/notification-channel: <name>`: a secret stores URLs, tokens, and passwords, and a `VMAlertmanagerConfig` stores routing and receiver settings. Cluster channels live in the `observability` namespace. Project channels live in the project's own namespace.
+
+The following Slack channel for the `shop` project receives crash loop and deployment failure alerts:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zeabur-notify-ops
+  namespace: shop
+  labels:
+    zeabur.com/notification-channel: ops
+type: Opaque
+stringData:
+  url: https://hooks.slack.com/services/T000/B000/XXXX
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlertmanagerConfig
+metadata:
+  name: zeabur-notify-ops
+  namespace: shop
+  labels:
+    zeabur.com/notification-channel: ops
+  annotations:
+    zeabur.com/notification-kind: slack
+spec:
+  route:
+    receiver: events
+    matchers:
+      - zeabur_event=~"crash-loop|deploy-failed|test"
+      - zeabur_channel=~"|ops"
+    group_by: ["..."]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 12h
+    routes:
+      - receiver: states
+        matchers:
+          - zeabur_kind="state"
+        group_by: [alertname]
+  receivers:
+    - name: events
+      slack_configs:
+        - api_url: {name: zeabur-notify-ops, key: url}
+          title: '{{ if eq .Status "resolved" }}Resolved: {{ end }}{{ (index .Alerts 0).Annotations.summary }}'
+          text: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
+          send_resolved: false
+    - name: states
+      slack_configs:
+        - api_url: {name: zeabur-notify-ops, key: url}
+          title: '{{ if eq .Status "resolved" }}Resolved: {{ end }}{{ (index .Alerts 0).Annotations.summary }}'
+          text: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
+          send_resolved: true
+```
+
+Keep these details in the configuration:
+
+- The first matcher lists the events to receive. Add `test` at the end so **Send test** can deliver a message. Project channels support `build-failed`, `build-succeeded`, `deploy-failed`, `deploy-succeeded`, `crash-loop`, `out-of-memory`, `database-unhealthy`, `backup-failed`, `volume-almost-full`, and `certificate`. Cluster channels support `node-not-ready`, `runtime-security`, `crash-loop`, `volume-almost-full`, `certificate`, and `backup-failed`.
+- The second matcher's `|ops` lets this channel receive regular alerts and tests addressed to `ops`.
+- The `events` and `states` receiver settings are identical except for `send_resolved`. State alerts send another notification when the condition resolves.
+
+Secret keys and receiver settings for other types:
+
+| Type | Secret keys | Receiver settings |
+| --- | --- | --- |
+| Discord | `url` | `discord_configs`, with `webhook_url_secret` pointing to `url` |
+| Telegram | `token` | `telegram_configs`, with `bot_token` pointing to `token` and a numeric `chat_id` |
+| Email | `password` (only if provided) | `email_configs`, with `to`, `from`, and `smarthost`, plus `require_tls: true`; `auth_username` and `auth_password` are optional |
+| Webhook | `url`; `token` is optional | `webhook_configs`, with `url_secret` pointing to `url`; if a token is set, add `http_config.authorization` with `type: Bearer` and `credentials` pointing to `token` |
+| ntfy | `url`; `token` is optional | Same as Webhook. Set `url` to `https://ntfy.sh/<topic>?template=alertmanager`. For a self-hosted server, replace the domain |
+
+Sending a test creates a Job with the label `zeabur.com/notification-test: <name>`. When the metrics component's alerting rules detect it, they send a test alert addressed to this channel:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: zeabur-notify-test-ops-1761456000
+  namespace: shop
+  labels:
+    zeabur.com/notification-test: ops
+spec:
+  activeDeadlineSeconds: 120
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        zeabur.com/notification-test: ops
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65535
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: wait
+          image: registry.k8s.io/pause:3.10
+          resources:
+            requests: {cpu: 1m, memory: 4Mi}
+            limits: {cpu: 10m, memory: 8Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+```
+
+To remove the channel, delete its two objects:
+
+```sh
+kubectl -n shop delete vmalertmanagerconfig,secret zeabur-notify-ops
+```
+
+## Verify the result
+
+- The channel row no longer shows **Waiting** or **Rejected**.
+- `kubectl -n shop get vmalertmanagerconfig zeabur-notify-ops -o jsonpath='{.status.updateStatus}'` prints `operational`. If it prints `failed`, replace the path with `{.status.reason}` to see the reason.
+- A test message arrives at the destination within a minute or two of sending the test.
+
+## Common failures
+
+- **Waiting**: Alertmanager hasn't loaded the channel yet. Check again later.
+- **Rejected**: The row shows the reason, such as an incomplete URL, a missing stored URL or token, or an SMTP server without a port. Click **Edit**, fix the settings, and save.
+- No test message arrives: Check the destination service's URL and token. If the page says Zeabur's alerting rules aren't installed, reinstall the metrics component.
+- You can add a channel but can't test it: Sending a test requires permission to create Jobs. Ask an administrator to check this permission.
+- **This wasn't created in Zeabur. Edit it where it was originally created**: Make the change in the original Helm or GitOps configuration.
+
+## Remove a channel
+
+Choose **Remove** from the channel's actions menu. Review the channel and secret to be deleted, then click **Remove channel**. Future alerts will go only to other channels that have the event selected.
+
+Kubernetes automatically deletes the test Job five minutes after it finishes. No manual cleanup is needed.

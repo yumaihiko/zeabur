@@ -1,0 +1,251 @@
+---
+title: Back up a cluster and restore from a backup
+description: Set up an S3 backup location and schedule for Velero, check backup results, and restore projects from backups.
+---
+
+Open **Cluster** → **Backups**, set up **Where backups go**, then set a **Schedule**. Click **Back up now** to run a backup. Once it shows **Succeeded** in **Backups**, the backup is ready to use.
+
+Velero runs cluster backups, saving Kubernetes objects and volume files from selected namespaces to S3-compatible storage. Databases such as PostgreSQL and MongoDB have their own backups. Configure them in each database's **Backups** tab. See [Deploy databases](../deploy/databases.mdx). To back up only a single service's volumes, use [K8up volume backups](../configure/volumes.mdx).
+
+## Before you begin
+
+- Install Velero in the cluster. If the page shows **Backups need Velero**, click **Install Velero** and follow [Install components](./components.mdx).
+- Have an S3-compatible bucket, endpoint, and keys ready, or register them under **S3 destinations** at the top of the same page first. See [S3 destinations](./s3-destinations.mdx).
+- You must be able to read and create backup locations, schedules, backups, restores, and secrets in Velero's namespace. Member roles in the Zeabur Chart don't include Velero permissions, so you'll usually need an admin account.
+
+<Callout type="warn">
+Store backups outside the cluster, such as in Cloudflare R2, Backblaze B2, or AWS S3. If you store them in the same cluster, losing the cluster also means losing the backups. The form warns you if the endpoint appears to be inside the cluster.
+</Callout>
+
+## Set up a backup location
+
+<Steps>
+<Step>
+
+### Choose a bucket
+
+Under **Where backups go**, click **Set up** or **Edit**. If you've registered S3 destinations, the **S3 destination** menu selects the first one by default and fills in its location and keys. To enter them yourself, select **Enter manually**.
+
+For manual entry, fill in **Bucket**, **Access key ID**, and **Secret access key**. Leave **Endpoint** blank for AWS S3. For R2, B2, or MinIO, enter the provider's S3 address. **Region** defaults to `us-east-1` when left blank. **Folder** is optional and keeps these backups separate from other files.
+
+![Backup location form with the r2-backups S3 destination selected and its endpoint and bucket filled in](https://oss.zeabur.com/shots/zeabur/en/light/backup-location-form.avif)
+
+When editing an existing configuration, leave both key fields blank to keep the current keys. To replace them, fill in both fields.
+
+</Step>
+<Step>
+
+### Review changes and wait for the connection result
+
+Click **Review changes**, confirm the bucket, endpoint, and backup location and stored keys to create or update, then apply.
+
+Return to **Where backups go** and wait for **Status** to change from **Not checked yet** to **Reachable**. If it shows **Not reachable**, check the bucket, endpoint, and keys before setting a schedule.
+
+![Backup location showing the bucket, endpoint, and Reachable status](https://oss.zeabur.com/shots/zeabur/en/light/backup-location.avif)
+
+</Step>
+</Steps>
+
+## Set a schedule and run a backup
+
+1. Under **Schedule**, choose the daily **Time** (on the hour, in UTC) and **Keep, in days**. New schedules default to 03:00 UTC daily with 7 days of retention. Retention can be 1 to 365 days.
+2. Under **Covers**, select **Whole cluster**, or select **Chosen projects** and choose at least one project. **Whole cluster** also includes projects and namespaces added later.
+
+   ![Schedule form set to 03:00 UTC daily, 7 days of retention, and the entire cluster](https://oss.zeabur.com/shots/zeabur/en/light/backup-schedule-form.avif)
+
+3. Click **Review changes**, confirm the time and scope, then apply. Zeabur creates or updates a Velero Schedule named `zeabur` and enables volume file backups.
+4. Click **Back up now**, review the changes, then apply. This backup uses the scope and retention you just set without waiting for the schedule.
+5. Find the backup in **Backups**. Wait for its status to change from **Running** to **Succeeded**, then check the item count and **Retain until** date.
+
+   ![Backup history showing each backup's status, item count, and retention date](https://oss.zeabur.com/shots/zeabur/en/light/backup-list.avif)
+
+Schedules created outside Zeabur are labeled **Configured outside Zeabur**. Edit them where they were originally created.
+
+## Restore from a backup
+
+Restoring takes three steps: restore the project, check its services and data, then reconnect its domains. If the original project still exists, the backup restores to a new project while the original keeps running. If the original project has been deleted, the backup restores under its original name. Neither option restores domains. Reconnect them after you've checked the project.
+
+<Steps>
+<Step>
+
+### Choose a project and review changes
+
+1. Find the backup in **Backups** and click its restore button. The button's label depends on the projects in the backup:
+   - **New project from backup**: All projects selected for the backup still exist.
+   - **Restore deleted project**: All projects selected for the backup have been deleted.
+   - **Restore a project**: The backup covers the entire cluster, or some selected projects still exist and others have been deleted.
+2. Select a project under **Project to restore**. The options are the projects selected for this backup. For an entire-cluster backup, the options include current projects and deleted projects found in the backup, labeled **(Deleted)**. Zeabur must download the backup to find deleted projects, so the form first shows “Looking for deleted projects in the backup…”.
+   - If the original project still exists, **New project name** is filled in with a new name that you can change.
+   - If the original project has been deleted, the form explains that it will restore under its original name.
+
+   ![Restore form with a project from the backup selected and a new project name filled in](https://oss.zeabur.com/shots/zeabur/en/light/backup-restore.avif)
+
+   ![Restore form with the deleted wiki project selected, explaining that it will restore under its original name](https://oss.zeabur.com/shots/zeabur/en/light/backup-restore-deleted.avif)
+
+3. Click **Review changes** and check the details. The list comes from the backup itself, not the current project:
+   - Domains in the backup won't be restored. Ingress, HTTPRoute, and cert-manager certificates are excluded. You'll reconnect domains in the last step, when cert-manager requests new certificates.
+   - When restoring to a new project, scheduled jobs from the backup start paused so the same job doesn't run in both projects. When restoring under the original name, scheduled jobs run as usual.
+   - When restoring to a new project, the page lists services and secrets from the backup. Values containing `<service>.<source-project>.svc` still point to the original project. Use **Rewrite addresses** after restoring to update them.
+   - When restoring to a new project, the page shows whether the nodes have enough resources to run both projects at once. Auto-deployments and Git webhooks still target the original project.
+
+   ![Review showing the new project, service addresses to rewrite, and node resources](https://oss.zeabur.com/shots/zeabur/en/light/backup-restore-plan.avif)
+
+   If the original project still exists, click **New project from backup**. If it has been deleted, click **Restore**.
+
+4. Velero starts as soon as you apply the changes. Check **Restores** for the restore's status, source backup, and error and warning counts.
+
+</Step>
+<Step>
+
+### Check the project
+
+Once the restore finishes, **Open project** and **Bring domains back** appear below the entry. If you restored to a new project, **Rewrite addresses** also appears.
+
+1. Click **Open project**. Check that the service replicas are ready, volumes are mounted, and data is correct. For data backed up by the database itself, follow [the database's restore steps](../deploy/databases.mdx).
+2. If you restored to a new project, click **Rewrite addresses** to update service addresses that point to the original project.
+3. Once you've checked the new project, click **Resume** for each [scheduled job](../deploy/cron-jobs.mdx).
+
+Velero skips objects that already exist with the same name. When you restore to a new project, the original project stays in place. Delete it when you no longer need it.
+
+</Step>
+<Step>
+
+### Reconnect domains
+
+Click **Bring domains back**. Zeabur reads the project's domains from the backup and checks whether another project in the cluster is using them.
+
+- If no other project is using them, applying the changes makes Velero restore only those routes. A “Domains reconnected” entry appears in **Restores**. cert-manager requests new certificates.
+
+  ![Review for reconnecting domains, restoring blog.example.com to blog from the backup](https://oss.zeabur.com/shots/zeabur/en/light/backup-attach.avif)
+
+- If the original project is still using them, you can't apply these changes. The page identifies the project using them. For example, if the original project is `blog`, click **Move domains from blog** to move the domains from `blog` to the new project.
+
+</Step>
+</Steps>
+
+### Do the same with kubectl
+
+To restore `blog` from backup `zeabur-20261020030000` as `blog-restored`, first create a ConfigMap to pause scheduled jobs (a Velero resource modifier), then create a Restore. Create both in the `velero` namespace. Set the ConfigMap's `namespaces` to `blog`, the original namespace in the backup.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blog-restored
+  namespace: velero
+data:
+  cronjobs.yaml: |
+    version: v1
+    resourceModifierRules:
+    - conditions:
+        groupResource: cronjobs.batch
+        namespaces:
+        - blog
+      patches:
+      - operation: add
+        path: /spec/suspend
+        value: "true"
+---
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: blog-restored
+  namespace: velero
+spec:
+  backupName: zeabur-20261020030000
+  includedNamespaces:
+  - blog
+  namespaceMapping:
+    blog: blog-restored
+  excludedResources:
+  - ingresses.networking.k8s.io
+  - httproutes.gateway.networking.k8s.io
+  - certificates.cert-manager.io
+  - certificaterequests.cert-manager.io
+  - orders.acme.cert-manager.io
+  - challenges.acme.cert-manager.io
+  resourceModifier:
+    kind: ConfigMap
+    name: blog-restored
+```
+
+To restore under the original name, omit `namespaceMapping` and `resourceModifier`. You don't need to create the ConfigMap either. ConfigMaps created by Zeabur have the Restore set as their owner and are deleted with it. If you create one yourself, delete it after the restore finishes with `kubectl -n velero delete configmap blog-restored`.
+
+After checking the project, run `kubectl get ingress -A` to confirm that no other project uses the same domain, then create a Restore that restores only routes:
+
+```yaml
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: blog-restored-domains
+  namespace: velero
+spec:
+  backupName: zeabur-20261020030000
+  includedNamespaces:
+  - blog
+  namespaceMapping:
+    blog: blog-restored
+  includedResources:
+  - ingresses.networking.k8s.io
+  - httproutes.gateway.networking.k8s.io
+```
+
+Resume scheduled jobs:
+
+```sh
+kubectl -n blog-restored patch cronjob <name> -p '{"spec":{"suspend":false}}'
+```
+
+## Backup encryption
+
+Velero includes Kubernetes objects as they are in backups, including secrets. Their values are only base64-encoded, which anyone can decode. Installing Velero from Zeabur Catalog generates two random keys in the `velero` namespace:
+
+| Secret and field | Purpose |
+|---|---|
+| `repository-password` in `velero-repo-credentials` | Kopia uses it to encrypt volume files before uploading them. |
+| `key` in `velero-backup-key` (32 characters) | The backup location sets `customerKeyEncryptionSecret: velero-backup-key/key`. The storage service uses this key to encrypt every object, including object lists and secrets (SSE-C). |
+
+When you add a backup location under **Cluster** → **Backups**, Zeabur also sets `customerKeyEncryptionSecret`. If `velero-backup-key` doesn't exist, Zeabur creates it. Existing keys stay unchanged. Existing backup locations also stay unchanged, and older backups that didn't use a key remain readable.
+
+SSE-C sends the key to the storage service with every request. The service encrypts the data before storing it, so the endpoint must use HTTPS. SeaweedFS, AWS S3, Cloudflare R2, and Backblaze B2 support SSE-C. MinIO accepts it only over HTTPS. Storage services that don't support SSE-C reject the upload, causing the backup to fail.
+
+### Save the keys outside the cluster
+
+<Callout type="warn">
+These two keys are also inside the backups they encrypt. If the cluster fails and you lose the keys, no one can read the backups. After installing Velero, save a copy in a password manager or an external secret store.
+</Callout>
+
+```sh
+kubectl -n velero get secret velero-repo-credentials velero-backup-key -o yaml > velero-keys.yaml
+```
+
+When restoring to a new cluster, create these two secrets first, then install Velero and point it to the same bucket.
+
+### Verify that the storage service requires the key
+
+After the first backup finishes, try downloading `backups/<backup-name>/velero-backup.json` using only the bucket's access keys, without the SSE-C key. The storage service should reject the request. For example, SeaweedFS returns `InvalidArgument` and asks for a customer key. If you can download the contents, the storage service hasn't encrypted them.
+
+### If Velero is already installed
+
+If Velero wasn't installed from the Catalog, the cluster may not have `velero-repo-credentials`. In that case, Velero creates it using the public default password `static-passw0rd`. Kopia repositories keep using the password they were created with. For these clusters, change the backup location's **Folder** to a new one so Kopia creates a repository with the new password. Backups made before SSE-C was enabled remain unencrypted. Once they expire and are deleted, those plaintext copies are gone.
+
+### Other backups
+
+[Volume backups](../configure/volumes.mdx) use restic to encrypt data before uploading it, using `RESTIC_PASSWORD` (24 random characters) from the `<claim>-backup` secret generated by Zeabur. CloudNativePG database backups are compressed but not encrypted. Data rows are readable in the bucket, though secret values aren't included. Store database backups in a bucket with server-side encryption, and give only the cluster access to its access keys.
+
+## Common failures
+
+- **Not reachable**: Check the bucket, endpoint, region, and keys, and read Velero's message below the backup location.
+- The connection succeeds, but the backup fails because the storage service rejects the upload: Confirm that the service supports SSE-C and the endpoint uses HTTPS. See [Backup encryption](#backup-encryption).
+- **Back up now** is missing: You need a schedule created by Zeabur first, and the schedule needs a backup location.
+- The restore button (**New project from backup**, **Restore deleted project**, or **Restore a project**) is unavailable: You don't have permission to create a Restore in Velero's namespace. Velero writes objects using its own permissions during a restore, so only administrators can restore backups. See [Permissions](../reference/permissions.mdx). Ask an administrator to restore the backup with an admin account.
+- **Partly failed**: Some objects or volume files weren't copied. The rest were saved. Run `velero backup describe <backup> --details` to see which items failed, fix the issue, then run another backup.
+- The page says Velero restarted during the backup: The next backup will run on schedule. You can also click **Back up now** to run a replacement.
+- **Volumes** shows **Objects only; files in volumes aren't copied**: The schedule was created outside Zeabur. Enable `defaultVolumesToFsBackup` in its original configuration.
+- The changes have expired: Click **Review changes** again.
+
+## Pause and clean up
+
+Under **Schedule**, click **Pause**, review the changes, then apply to stop future backups. Click **Resume** to start them again. Existing backups and the backup location stay in place. Each backup expires on its **Retain until** date.
+
+Zeabur doesn't have an action to delete backups or schedules. To delete them immediately, use `velero backup delete` or `velero schedule delete`. Removing an [S3 destination](./s3-destinations.mdx) deletes only the destination itself. Keys already copied to Velero, schedules, and backups in S3 stay in place.
