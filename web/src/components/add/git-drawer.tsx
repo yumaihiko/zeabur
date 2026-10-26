@@ -14,6 +14,7 @@ import {
   useBuiltForm,
 } from "@/components/add/built-service"
 import {
+  appRepository,
   GitHubAccess,
   RepositoryField,
   repositoryUrl,
@@ -71,14 +72,20 @@ export function GitDrawer({ project, onClose }: { project: string; onClose: () =
   const repo = parseRepository(url)
   const keyHost = deployKeyHost(url)
   const secrets = options.secrets
-  const access = accessOf(form.access, { fromGitHub, secrets, keyHost })
+  const readByApp = appRepository(github, form.url)
+  const access = accessOf(form.access, {
+    fromGitHub,
+    readByApp: readByApp !== undefined,
+    secrets,
+    keyHost,
+  })
   const username = userSet ? form.username : tokenUser(repo?.host)
   const key = deployKey && deployKey.host === keyHost ? deployKey : undefined
   const resolved: GitService = {
     ...built.resolved,
     url,
     access,
-    installationId: github.picked?.installationId,
+    installationId: readByApp?.installationId,
     username,
     sealedKey: key?.key,
   }
@@ -131,7 +138,7 @@ export function GitDrawer({ project, onClose }: { project: string; onClose: () =
               size="sm"
               mono
               value={form.branch}
-              placeholder={github.picked?.defaultBranch ?? t("add.branchDefault")}
+              placeholder={readByApp?.defaultBranch ?? t("add.branchDefault")}
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => set({ branch: event.target.value })}
@@ -146,7 +153,7 @@ export function GitDrawer({ project, onClose }: { project: string; onClose: () =
         <BuiltPublicUrl built={built} problems={problems} />
         <fieldset className="flex min-w-0 flex-col gap-2">
           <legend className="mb-1.5 text-sm font-medium">{t("add.access")}</legend>
-          {fromGitHub ? (
+          {access === "githubApp" ? (
             <GitHubAccess listedAt={github.listedAt} />
           ) : secrets ? (
             <RadioGroup value={access} onValueChange={(value) => set({ access: value as Access })}>
@@ -212,13 +219,18 @@ export function GitDrawer({ project, onClose }: { project: string; onClose: () =
   )
 }
 
-/** The access the form builds with: the App for a picked repository; otherwise what the person
- * chose, as far as their rights and the host allow. */
+/** The access the form builds with: the App for a GitHub repository it can read; otherwise what
+ * the person chose, as far as their rights and the host allow. */
 function accessOf(
   chosen: Access,
-  { fromGitHub, secrets, keyHost }: { fromGitHub: boolean; secrets: boolean; keyHost?: string },
+  {
+    fromGitHub,
+    readByApp,
+    secrets,
+    keyHost,
+  }: { fromGitHub: boolean; readByApp: boolean; secrets: boolean; keyHost?: string },
 ): Access {
-  if (fromGitHub) return "githubApp"
+  if (fromGitHub || readByApp) return "githubApp"
   if (!secrets || chosen === "githubApp") return "public"
   return chosen === "deployKey" && !keyHost ? "public" : chosen
 }

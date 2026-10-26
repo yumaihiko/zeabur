@@ -20,7 +20,6 @@ import { ClusterFrame } from "@/routes/cluster/frame"
 import { Forbidden, overviewRole } from "@/routes/cluster/forbidden"
 import { AttentionRow, useAttention } from "@/routes/cluster/attention"
 import { DomainsSection } from "@/routes/cluster/domains"
-import { GitHubAppSection } from "@/routes/cluster/github-app"
 import { HealthSection } from "@/routes/cluster/health"
 import { IssuersSection } from "@/routes/cluster/issuers"
 import { NodesSection } from "@/routes/cluster/nodes"
@@ -38,7 +37,6 @@ export function ClusterPage() {
       <WarningsSection />
       <DomainsSection />
       <IssuersSection />
-      <GitHubAppSection />
       <NodeAlerts />
     </ClusterFrame>
   )

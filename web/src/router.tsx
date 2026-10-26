@@ -57,8 +57,9 @@ import {
 //                                              run
 //   /cluster/notifications                     where node and runtime-security alerts go
 //   /cluster/components                        installed components and the catalogue
-//   /cluster/github-app                        where GitHub sends the browser back after it
-//                                              makes the cluster's GitHub App
+//   /cluster/github-app                        the cluster's GitHub App, and where GitHub sends the
+//                                              browser back after making it (?project=… offers
+//                                              the way back to that project's Git form)
 //   /projects                                  every project and namespace
 //   /projects/$project                         the project: its problems, then its services as a
 //                                              map or a list (?view=map|list, ?service=… quick look)

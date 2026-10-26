@@ -155,10 +155,12 @@ export const componentsSearch = z.object({
   profile: choice(profiles),
 })
 
-/** What GitHub sends back at the end of its manifest flow. */
+/** Cluster → GitHub: what GitHub sends back at the end of its manifest flow, and the project
+ * whose Git form led here. */
 export const gitHubAppSearch = z.object({
   code: text,
   state: text,
+  project: text,
 })
 
 const projectSortKeys = ["health", "name"] as const

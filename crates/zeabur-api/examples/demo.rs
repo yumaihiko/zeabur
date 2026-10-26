@@ -49,6 +49,7 @@
 //! `ZEABUR_DEMO_GITHUB=1` starts a fake GitHub on 127.0.0.1, so Cluster → GitHub App goes through
 //! the manifest flow without leaving the demo. `ZEABUR_DEMO_GITHUB=installed` also makes the App
 //! at the start: it is installed on `acme` and `bob`, and `acme` is granted to `shop`.
+//! `ZEABUR_DEMO_GITHUB=uninstalled` makes the App at the start, installed nowhere.
 //!
 //! The Error pages template has a made-up idle use of 9 MiB, so turning on a domain's error pages
 //! says the cluster has room; `ZEABUR_DEMO_TEMPLATE_IDLE=large` makes it 24 GiB, to see it tight.
@@ -4346,6 +4347,8 @@ fn template_idle(id: &str) -> Option<zeabur_catalog::IdleUse> {
 /// The demo's GitHub App: its key, and the installations of `ZEABUR_DEMO_GITHUB`.
 struct FakeGitHub {
     pem: String,
+    /// GitHub lists the installations; otherwise the App is installed nowhere.
+    installed: bool,
 }
 
 const DEMO_CLIENT_ID: &str = "Iv23lidemo";
@@ -4387,7 +4390,7 @@ fn demo_repositories(installation: &str) -> Value {
 
 /// GitHub's web pages and REST API as far as Zeabur uses them, at `http://127.0.0.1:<port>`.
 /// Nothing checks the App's JWT.
-async fn fake_github() -> std::io::Result<(String, Arc<FakeGitHub>)> {
+async fn fake_github(installed: bool) -> std::io::Result<(String, Arc<FakeGitHub>)> {
     use aws_lc_rs::encoding::AsDer as _;
     use aws_lc_rs::rsa::{KeyPair, KeySize};
     use axum::extract::{Path, RawQuery, State as Shared};
@@ -4402,6 +4405,7 @@ async fn fake_github() -> std::io::Result<(String, Arc<FakeGitHub>)> {
         .encode(key.as_der().map_err(std::io::Error::other)?.as_ref());
     let fake = Arc::new(FakeGitHub {
         pem: format!("-----BEGIN PRIVATE KEY-----\n{der}\n-----END PRIVATE KEY-----\n"),
+        installed,
     });
     let router = Router::new()
         // GitHub's confirmation page: a link back with a code. A redirect would break the form's
@@ -4456,7 +4460,13 @@ async fn fake_github() -> std::io::Result<(String, Arc<FakeGitHub>)> {
         )
         .route(
             "/app/installations",
-            get(async || Json(demo_installations())),
+            get(async |Shared(fake): Shared<Arc<FakeGitHub>>| {
+                Json(if fake.installed {
+                    demo_installations()
+                } else {
+                    json!([])
+                })
+            }),
         )
         .route(
             "/app/installations/{id}",
@@ -4504,20 +4514,25 @@ fn builder_system(s: &mut State) {
         .push(from(json!({"metadata": {"name": "builder-system"}})));
 }
 
-/// Zeabur Builder's namespace with the App of [`fake_github`] in it, installed on `acme` and
-/// `bob`; `acme` granted to `shop`.
+/// Zeabur Builder's namespace with the App of [`fake_github`] in it and, when GitHub lists its
+/// installations, `acme` granted to `shop`.
 fn github_app(s: &mut State, fake: &FakeGitHub) {
     let namespace = "builder-system";
     builder_system(s);
+    let grants = from(json!({
+        "metadata": {"name": "github-app-installations", "namespace": namespace,
+                     "resourceVersion": "3"},
+        "data": {"4242": "shop"}
+    }));
     s.objects.insert(
         namespace.to_owned(),
         NamespaceObjects {
             namespace: namespace.to_owned(),
-            config_maps: vec![from(json!({
-                "metadata": {"name": "github-app-installations", "namespace": namespace,
-                             "resourceVersion": "3"},
-                "data": {"4242": "shop"}
-            }))],
+            config_maps: if fake.installed {
+                vec![grants]
+            } else {
+                Vec::new()
+            },
             secrets: vec![SecretSummary {
                 secret: from(json!({
                     "metadata": {"name": "github-app", "namespace": namespace,
@@ -4543,6 +4558,9 @@ fn github_app(s: &mut State, fake: &FakeGitHub) {
         .map(|(k, v)| (k.to_owned(), v.as_bytes().to_vec()))
         .collect(),
     );
+    if !fake.installed {
+        return;
+    }
     let repositories: Vec<Value> = demo_repositories("4242")
         .get("repositories")
         .and_then(Value::as_array)
@@ -4622,8 +4640,8 @@ async fn main() -> std::io::Result<()> {
     }
     let github = match std::env::var("ZEABUR_DEMO_GITHUB") {
         Ok(mode) => {
-            let (url, fake) = fake_github().await?;
-            if mode == "installed" {
+            let (url, fake) = fake_github(mode != "uninstalled").await?;
+            if mode == "installed" || mode == "uninstalled" {
                 cluster.update(|s| github_app(s, &fake));
             } else {
                 cluster.update(builder_system);

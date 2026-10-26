@@ -226,6 +226,7 @@ export const en = {
   "cluster.title": "Cluster",
   "cluster.tabs": "Cluster pages",
   "cluster.overview": "Overview",
+  "cluster.github": "GitHub",
   "cluster.catalogue": "Catalog",
   "cluster.endOfLife": "End of life",
   "cluster.endOfLifeOn": (date: string) => `End of life ${date}`,
@@ -2676,6 +2677,16 @@ export const en = {
   "add.githubListed": (date: string) =>
     `List from ${date}. Missing a repository? Ask a cluster admin to open it to this project again.`,
   "add.githubAccess": "Read through the cluster's GitHub App. Nothing else to set up.",
+  "add.githubConnect.body":
+    "Connect GitHub to pick a repository here. Private ones need no key or token.",
+  "add.githubConnect.grant": (accounts: string) =>
+    `The GitHub App is installed on ${accounts}. Connect it to this project to pick a repository.`,
+  "add.githubConnect.ask":
+    "To pick GitHub repositories here, ask a cluster admin to connect GitHub to this project.",
+  "add.githubConnect.problem": "Couldn't read from GitHub where the App is installed.",
+  "add.githubConnect.action": "Connect GitHub",
+  "add.githubConnect.look": "Check GitHub setup",
+  "add.githubGrant": (account: string, project: string) => `Let ${project} use ${account}`,
   "add.problem.githubRepository": "Pick a repository.",
   "add.access.noSecrets":
     "Your role can't add secrets in this project, so only public repositories work.",
@@ -3008,10 +3019,10 @@ export const en = {
     "Every project could use this account before. After this, only the projects you chose can.",
   "githubApp.warning.removesNamespaces":
     "Projects you unchecked can no longer build from this account's repositories.",
-  "githubApp.callback.title": "Finishing the GitHub App",
-  "githubApp.callback.missing":
-    "GitHub didn't send back a code. Go back to the cluster page and start again.",
-  "githubApp.callback.back": "Back to the cluster",
+  "githubApp.callback.missing": "GitHub didn't send back a code. Create the App again below.",
+  "githubApp.return.body": (project: string) =>
+    `When GitHub is set up, go back to ${project} and pick a repository in Deploy from Git.`,
+  "githubApp.return.action": "Back to Deploy from Git",
   "s3d.title": "S3 destinations",
   "s3d.body":
     "Backup forms offer these. Choosing one copies its keys into the project. New keys saved here go to the copies you may change.",

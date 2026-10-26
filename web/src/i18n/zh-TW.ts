@@ -222,6 +222,7 @@ export const zhTW: Messages = {
   "cluster.title": "叢集",
   "cluster.tabs": "叢集頁面",
   "cluster.overview": "概覽",
+  "cluster.github": "GitHub",
   "cluster.catalogue": "目錄",
   "cluster.endOfLife": "已終止支援",
   "cluster.endOfLifeOn": (date) => `${date} 終止支援`,
@@ -2458,6 +2459,14 @@ export const zhTW: Messages = {
   "add.githubListed": (date) =>
     `清單更新於 ${date}。找不到儲存庫的話，找叢集管理員再開放一次給這個專案。`,
   "add.githubAccess": "透過叢集的 GitHub App 讀取，不用另外設定。",
+  "add.githubConnect.body": "連結 GitHub 後就能直接挑儲存庫，私有的也不用另外設金鑰或權杖。",
+  "add.githubConnect.grant": (accounts) =>
+    `GitHub App 已經裝在 ${accounts}，開放給這個專案就能直接挑儲存庫。`,
+  "add.githubConnect.ask": "想直接挑 GitHub 儲存庫的話，請叢集管理員把 GitHub 開放給這個專案。",
+  "add.githubConnect.problem": "現在讀不到 GitHub 上的安裝狀態。",
+  "add.githubConnect.action": "連結 GitHub",
+  "add.githubConnect.look": "打開 GitHub 設定",
+  "add.githubGrant": (account, project) => `把 ${account} 開放給 ${project}`,
   "add.problem.githubRepository": "選一個儲存庫。",
   "add.access.noSecrets": "你的角色不能在這個專案新增機密變數，所以只能用公開儲存庫。",
   "add.deployKeyMake": "建立部署金鑰",
@@ -2763,9 +2772,10 @@ export const zhTW: Messages = {
     "沒有 Webhook 的話，Zeabur Builder 每分鐘會去 GitHub 看一次有沒有新提交。",
   "githubApp.warning.wasEveryNamespace": "原本所有專案都能用這個帳號，套用後只剩你勾選的專案能用。",
   "githubApp.warning.removesNamespaces": "取消勾選的專案，之後就不能再從這個帳號的儲存庫建置。",
-  "githubApp.callback.title": "完成 GitHub App 設定",
-  "githubApp.callback.missing": "GitHub 沒有帶回驗證碼。回到叢集頁面重新開始。",
-  "githubApp.callback.back": "回到叢集",
+  "githubApp.callback.missing": "GitHub 沒有帶回驗證碼。在下面重新建立一次 App。",
+  "githubApp.return.body": (project) =>
+    `設定好以後，回到 ${project} 的「從 Git 部署」就能挑儲存庫。`,
+  "githubApp.return.action": "回到從 Git 部署",
   "s3d.title": "S3 目的地",
   "s3d.body":
     "整個叢集的備份表單都能選用這些儲存空間。選用時會把金鑰複製到專案，所以備份不依賴這份清單。在這裡更換金鑰時，會一起更新你有權限修改的複本。",

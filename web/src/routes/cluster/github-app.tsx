@@ -1,28 +1,21 @@
-// Cluster → Overview → GitHub App: the App Zeabur Builder builds private GitHub repositories
-// with, made through GitHub's manifest flow, and which projects may use each installation.
+// Cluster → GitHub: the App Zeabur Builder builds private GitHub repositories with, made through
+// GitHub's manifest flow, and which projects may use each installation.
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { getRouteApi, Link, useNavigate } from "@tanstack/react-router"
+import { getRouteApi, useNavigate } from "@tanstack/react-router"
 import { useId, useState } from "react"
 import ArrowSquareOutIcon from "~icons/ph/arrow-square-out"
 import GithubLogoIcon from "~icons/ph/github-logo"
 import WarningIcon from "~icons/ph/warning"
 
 import type { Schemas } from "@/api/client"
-import {
-  applyGitHubApp,
-  convertCode,
-  gitHubAppQuery,
-  planGrant,
-  refreshGitHubApp,
-  startManifest,
-  type GitHubAppPlan,
-} from "@/api/github-app"
+import { convertCode, gitHubAppQuery, planGrant, startManifest } from "@/api/github-app"
 import { clusterQuery, projectsQuery } from "@/api/queries"
-import { PlanDiffs, PlanFrame } from "@/components/cluster-plan"
 import { FormField } from "@/components/form-field"
 import { GateTip, useHintGate } from "@/components/gate"
+import { GitHubAppPlanDialog } from "@/components/github-app-plan"
 import { permission, Refused } from "@/components/refused"
 import { useT } from "@/i18n"
+import { openAdd } from "@/lib/adding"
 import {
   CALLBACK_PATH,
   appName,
@@ -57,9 +50,10 @@ function External({ href, children }: { href: string; children: string }) {
   )
 }
 
-export function GitHubAppSection() {
+function GitHubAppSection({ project }: { project?: string }) {
   const t = useT()
-  const data = useQuery(gitHubAppQuery).data
+  // Back from installing on GitHub in another tab, the installation shows at once.
+  const data = useQuery({ ...gitHubAppQuery, refetchOnWindowFocus: true }).data
   const gate = useHintGate("changeGitHubApp", data?.canChange)
   if (!data) return null
   return (
@@ -73,14 +67,26 @@ export function GitHubAppSection() {
       }
     >
       <p className="type-meta text-muted-foreground">{t("githubApp.body")}</p>
-      {data.app ? <AppDetails data={data} gate={gate} /> : <NoApp data={data} gate={gate} />}
+      {data.app ? (
+        <AppDetails data={data} gate={gate} />
+      ) : (
+        <NoApp data={data} gate={gate} project={project} />
+      )}
     </Section>
   )
 }
 
-function NoApp({ data, gate }: { data: Schemas["GitHubApp"]; gate: Gate }) {
+function NoApp({
+  data,
+  gate,
+  project,
+}: {
+  data: Schemas["GitHubApp"]
+  gate: Gate
+  project?: string
+}) {
   const t = useT()
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState(gate.open && project !== undefined)
   if (data.unreadable.some((u) => u.resource === "secrets"))
     return (
       <Refused
@@ -90,7 +96,8 @@ function NoApp({ data, gate }: { data: Schemas["GitHubApp"]; gate: Gate }) {
         line
       />
     )
-  if (creating) return <CreateForm gate={gate} onCancel={() => setCreating(false)} />
+  if (creating)
+    return <CreateForm gate={gate} project={project} onCancel={() => setCreating(false)} />
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="type-body">{t("githubApp.none")}</p>
@@ -104,7 +111,15 @@ function NoApp({ data, gate }: { data: Schemas["GitHubApp"]; gate: Gate }) {
   )
 }
 
-function CreateForm({ gate, onCancel }: { gate: Gate; onCancel: () => void }) {
+function CreateForm({
+  gate,
+  project,
+  onCancel,
+}: {
+  gate: Gate
+  project?: string
+  onCancel: () => void
+}) {
   const t = useT()
   const cluster = useQuery(clusterQuery).data
   const [name, setName] = useState(() => appName(cluster?.name ?? "cluster"))
@@ -119,7 +134,10 @@ function CreateForm({ gate, onCancel }: { gate: Gate; onCancel: () => void }) {
         webhookUrl: webhook.trim(),
         redirectUrl: `${window.location.origin}${CALLBACK_PATH}`,
       }),
-    onSuccess: (formUrl) => window.location.assign(formUrl),
+    onSuccess: (formUrl) => {
+      rememberProject(project)
+      window.location.assign(formUrl)
+    },
   })
   const naming = nameProblem(name)
   const hook = webhookProblem(webhook)
@@ -384,127 +402,85 @@ function GrantForm({
   )
 }
 
-const warningText = {
-  replacesApp: "githubApp.warning.replacesApp",
-  noWebhook: "githubApp.warning.noWebhook",
-  wasEveryNamespace: "githubApp.warning.wasEveryNamespace",
-  removesNamespaces: "githubApp.warning.removesNamespaces",
-} as const
-
-function writeLine(write: Schemas["GitHubAppWrite"], t: ReturnType<typeof useT>): string {
-  if (write.kind === "Secret") return t("githubApp.plan.secret")
-  if (write.name === "github-app-installations") return t("githubApp.plan.grants")
-  return t("githubApp.plan.project", write.namespace)
-}
-
-function WriteList({ writes }: { writes: Schemas["GitHubAppWrite"][] }) {
-  const t = useT()
-  if (writes.length === 0) return <p>{t("clusterBackups.plan.nothing")}</p>
-  return (
-    <ul className="flex flex-col gap-1">
-      {writes.map((w) => (
-        <li key={[w.namespace, w.kind, w.name].join("/")}>{writeLine(w, t)}</li>
-      ))}
-    </ul>
-  )
-}
-
-function GitHubAppPlanDialog({
-  title,
-  action,
-  queryKey,
-  plan: planOf,
-  onDone,
-  onClose,
-}: {
-  title: string
-  action: string
-  queryKey: unknown[]
-  plan: (signal: AbortSignal) => Promise<GitHubAppPlan>
-  onDone: () => void
-  onClose: () => void
-}) {
-  const t = useT()
-  const plan = useQuery({
-    queryKey,
-    queryFn: ({ signal }) => planOf(signal),
-    retry: false,
-    staleTime: Infinity,
-    gcTime: 0,
-    refetchOnWindowFocus: false,
-  })
-  const apply = useMutation({
-    mutationFn: applyGitHubApp,
-    onSuccess: () => {
-      refreshGitHubApp()
-      onDone()
-    },
-    onError: refreshGitHubApp,
-  })
-  return (
-    <PlanFrame
-      title={title}
-      plan={plan}
-      apply={apply}
-      action={action}
-      what={t("githubApp.what")}
-      ready={(data) => (data?.writes.length ?? 0) > 0}
-      onClose={onClose}
-    >
-      {(data) => (
-        <>
-          <WriteList writes={data.writes} />
-          {data.warnings.length > 0 ? (
-            <Alert variant="warn">
-              <WarningIcon aria-hidden="true" />
-              <AlertDescription>
-                {t(
-                  "common.sentences",
-                  data.warnings.map((w) => t(warningText[w])),
-                )}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {data.writes.some((w) => w.kind === "Secret") ? (
-            <p className="type-meta text-muted-foreground">{t("githubApp.plan.keysHidden")}</p>
-          ) : null}
-          <PlanDiffs writes={data.writes} />
-        </>
-      )}
-    </PlanFrame>
-  )
-}
-
 const callbackRoute = getRouteApi("/cluster/github-app")
 
-/** Where GitHub sends the browser back: the code becomes the App, through a plan. */
+// The project whose Git form led here, kept through GitHub's manifest flow, which takes the
+// browser to GitHub and back.
+const RETURN_KEY = "zeabur.github-app.project"
+
+function rememberProject(project: string | undefined) {
+  try {
+    if (project) window.sessionStorage.setItem(RETURN_KEY, project)
+    else window.sessionStorage.removeItem(RETURN_KEY)
+  } catch {
+    // Storage unavailable: the page offers no way back to the project.
+  }
+}
+
+function rememberedProject(): string | undefined {
+  try {
+    return window.sessionStorage.getItem(RETURN_KEY) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Cluster → GitHub: the App, and where GitHub sends the browser back after making it. */
 export function GitHubAppPage() {
-  const { code, state } = callbackRoute.useSearch()
+  const { code, state, ...search } = callbackRoute.useSearch()
+  const project = search.project ?? (code ? rememberedProject() : undefined)
+  return (
+    <ClusterFrame tab="github">
+      {project ? <BackToProject project={project} /> : null}
+      <Callback code={code} state={state} project={project} />
+      <GitHubAppSection project={project} />
+    </ClusterFrame>
+  )
+}
+
+function Callback({ code, state, project }: { code?: string; state?: string; project?: string }) {
   const t = useT()
   const navigate = useNavigate()
-  const back = () => void navigate({ to: "/cluster", hash: "github-app" })
+  if (!code && !state) return null
+  if (!code || !state)
+    return (
+      <Alert variant="warn">
+        <WarningIcon aria-hidden="true" />
+        <AlertDescription>{t("githubApp.callback.missing")}</AlertDescription>
+      </Alert>
+    )
+  const back = () => void navigate({ to: "/cluster/github-app", search: { project } })
   return (
-    <ClusterFrame tab="overview">
-      <Section id="github-app" title={t("githubApp.callback.title")}>
-        {code && state ? (
-          <GitHubAppPlanDialog
-            title={t("githubApp.plan.save")}
-            action={t("githubApp.plan.save")}
-            queryKey={["github-app-conversion", code]}
-            plan={(signal) => convertCode({ code, state }, signal)}
-            onDone={back}
-            onClose={back}
-          />
-        ) : (
-          <p className="type-body">
-            {t("githubApp.callback.missing")}
-            {t("common.gap")}
-            <Link to="/cluster" hash="github-app" className={buttonVariants({ variant: "link" })}>
-              {t("githubApp.callback.back")}
-            </Link>
-          </p>
-        )}
-      </Section>
-    </ClusterFrame>
+    <GitHubAppPlanDialog
+      title={t("githubApp.plan.save")}
+      action={t("githubApp.plan.save")}
+      queryKey={["github-app-conversion", code]}
+      plan={(signal) => convertCode({ code, state }, signal)}
+      onDone={back}
+      onClose={back}
+    />
+  )
+}
+
+function BackToProject({ project }: { project: string }) {
+  const t = useT()
+  const navigate = useNavigate()
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-main bg-card px-3 py-2.5">
+      <p className="min-w-0 flex-1 type-meta text-muted-foreground">
+        {t("githubApp.return.body", project)}
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          rememberProject(undefined)
+          void navigate({ to: "/projects/$project", params: { project } })
+          openAdd(project, "git")
+        }}
+      >
+        {t("githubApp.return.action")}
+      </Button>
+    </div>
   )
 }

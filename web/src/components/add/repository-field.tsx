@@ -6,9 +6,10 @@ import { useState } from "react"
 import { projectGitHubAppQuery } from "@/api/github-app"
 import { Segmented } from "@/components/bits"
 import { FormField } from "@/components/form-field"
+import { GitHubConnect } from "@/components/add/github-connect"
 import { useI18n, useT } from "@/i18n"
 import { formatDate } from "@/lib/format"
-import { repositoriesOf, type GitHubRepository } from "@/model/github-app"
+import { grantedRepository, repositoriesOf, type GitHubRepository } from "@/model/github-app"
 import {
   Combobox,
   ComboboxContent,
@@ -22,6 +23,9 @@ import { Input } from "@zeabur/design-system/components/input"
 type Source = "github" | "url"
 
 export interface GitHubSource {
+  project: string
+  /** The project's grants have been read, or could not be. */
+  checked: boolean
   repositories: GitHubRepository[]
   /** The oldest list among the installations. */
   listedAt?: string
@@ -34,12 +38,15 @@ export interface GitHubSource {
 
 /** GitHub is the first choice when the project may build from an installation. */
 export function useGitHubSource(project: string): GitHubSource {
-  const granted = useQuery(projectGitHubAppQuery(project)).data
+  const grants = useQuery(projectGitHubAppQuery(project))
+  const granted = grants.data
   const [chosen, setSource] = useState<Source>()
   const [picked, setPicked] = useState<GitHubRepository | null>(null)
   const repositories = repositoriesOf(granted)
   const source: Source = repositories.length > 0 ? (chosen ?? "github") : "url"
   return {
+    project,
+    checked: !grants.isPending,
     repositories,
     listedAt: granted?.installations
       .map((i) => i.refreshedAt)
@@ -50,6 +57,12 @@ export function useGitHubSource(project: string): GitHubSource {
     picked: source === "github" ? (picked ?? undefined) : undefined,
     setPicked,
   }
+}
+
+/** The repository the App reads: the one picked, or a granted one whose URL was typed. */
+export function appRepository(github: GitHubSource, typed: string): GitHubRepository | undefined {
+  if (github.source === "github") return github.picked
+  return grantedRepository(github.repositories, typed)
 }
 
 /** The picked repository's URL, or what was typed. */
@@ -72,6 +85,9 @@ export function RepositoryField({
   const t = useT()
   return (
     <>
+      {github.checked && github.repositories.length === 0 ? (
+        <GitHubConnect project={github.project} />
+      ) : null}
       {github.repositories.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-medium">{t("add.source")}</span>

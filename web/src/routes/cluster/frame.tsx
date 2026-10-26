@@ -18,6 +18,7 @@ const paths = {
   backups: "/cluster/backups",
   notifications: "/cluster/notifications",
   components: "/cluster/components",
+  github: "/cluster/github-app",
 } as const
 
 export type ClusterTab = keyof typeof paths
@@ -40,6 +41,7 @@ export function ClusterFrame({ tab, children }: { tab: ClusterTab; children: Rea
             <TabsTrigger value="backups">{t("cluster.backups")}</TabsTrigger>
             <TabsTrigger value="notifications">{t("notify.title")}</TabsTrigger>
             <TabsTrigger value="components">{t("settings.components")}</TabsTrigger>
+            <TabsTrigger value="github">{t("cluster.github")}</TabsTrigger>
           </TabsList>
         </PageColumn>
       </header>
