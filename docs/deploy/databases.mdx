@@ -8,7 +8,7 @@ Choose a database engine from the project's **Add** menu, set the version and st
 ## Before you begin
 
 - You have a project and permission to create databases and the required secrets. To connect a service, you also need permission to modify that service.
-- An administrator has installed the operator for the engine you choose. If a component is missing, the **Add** menu links to **Components**. See [View and install cluster components](../cluster/components.mdx).
+- An administrator has installed the operator for the engine you choose. If it's missing, the **Add** menu says under the engine which operator to install first, and clicking it lists the install commands. See [View and install cluster components](../cluster/components.mdx).
 - The cluster has an available storage class and enough space. When you create multiple instances, the capacity and resources in the form apply to each instance.
 - To set up backups, have an S3-compatible endpoint reachable from the cluster, an existing bucket, and access keys, or a [shared S3 destination](../cluster/s3-destinations.mdx) you can read. PostgreSQL backups also require the Barman Cloud plugin.
 
@@ -705,7 +705,7 @@ The `zeabur.com/restored-*` annotations make the interface show restore informat
 - To change **Instances**, **Size**, or **Storage per instance**, edit them in **Settings**, then select **Review changes**. Storage can only increase, and the storage class must support expansion. Dragonfly's snapshot volume size is set at creation; the settings form doesn't support expanding it.
 - If you can't find a database engine, check its operator in **Components**. If the page explicitly says you don't have permission to read it, ask an administrator for the required permission.
 - If a database stays **Unknown** or isn't ready after creation, check **Events** and **Logs** to confirm that the operator, volumes, node resources, and image are available.
-- If you can't set up PostgreSQL backups, first check that the Barman Cloud plugin is installed and you can read it.
+- If you can't set up PostgreSQL backups, first check that the Barman Cloud plugin is installed and you can read it. The plugin comes with the CloudNativePG component, and **How to install** on the **Backups** tab lists the commands.
 - If a backup fails, read the reason in **Backups** and check the S3 endpoint, bucket, keys, and network. MySQL also needs enough space to allocate a temporary volume for the backup job.
 - If **Connect to a service** doesn't list the target, check that the project has an app service you can modify. Services managed by other tools and data services aren't included in this menu.
 

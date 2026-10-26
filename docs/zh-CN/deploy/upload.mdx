@@ -1,7 +1,7 @@
 ---
 title: 上传文件夹并部署服务
 description: 将电脑上的文件夹或 .zip 文件交给 Zeabur Builder 构建。通过网页或 zeaburctl 创建服务、上传新版本。
-source: "1a8ddf492087"
+source: "cfbc3e677752"
 ---
 
 在项目中选择 **新增** → **上传文件夹**，将文件夹拖入虚线框，填写服务名称和端口，再点击 **检查变更**。应用变更后，文件夹会立即上传，上传完成后开始首次构建。
@@ -10,7 +10,7 @@ source: "1a8ddf492087"
 
 ## 开始前
 
-- 条件与[从 Git 部署](./git.mdx)相同：已安装 Zeabur Builder 和 Keel，chart 已配置 `builds.registry`，你有在项目中创建服务和 Build 的权限。
+- 条件与[从 Git 部署](./git.mdx)相同：已安装 Zeabur Builder 和 Keel，chart 已配置 `builds.registry`，你有在项目中创建服务和 Build 的权限。缺少组件时，**上传文件夹** 下方会写出缺少哪些，点击后会列出安装命令。
 - Zeabur Builder 必须配置 `registry.tokenKey`，上传时才能获取有时效的令牌。未配置时，上传会停在 **Zeabur Builder 不允许上传**。
 - 你需要有读取项目中机密变量的权限。Zeabur Builder 将上传令牌写入 `<服务名称>-upload` 机密变量，Zeabur 使用你的权限读取它，不使用自身的权限。
 

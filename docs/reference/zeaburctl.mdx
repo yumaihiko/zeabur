@@ -151,10 +151,10 @@ These are the same change plans the web interface uses. Running the command conf
 ## `components export`
 
 ```sh
-zeaburctl components export <capability>/<id> [--format helmchart|helm|flux|argocd] [--profile single-node|multi-node]
+zeaburctl components export <capability>/<id>... [--format helmchart|helm|flux|argocd] [--profile single-node|multi-node]
 ```
 
-Prints installation manifests or commands for Catalog components on clusters that weren't installed with zeabur-installer. The output comes from zeaburctl's built-in Catalog, with pinned versions and configuration values. The command doesn't connect to the cluster, so it doesn't need `--context`.
+Prints installation manifests or commands for Catalog components on clusters that weren't installed with zeabur-installer. You can name several components; their output comes one after another. The output comes from zeaburctl's built-in Catalog, with pinned versions and configuration values. The command doesn't connect to the cluster, so it doesn't need `--context`.
 
 | Option | Default and purpose |
 |---|---|

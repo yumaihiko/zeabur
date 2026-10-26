@@ -28,7 +28,9 @@ If a feature such as backups or notifications already works, but its component c
 
 ### View the commands to run
 
-Click **Install** on a component card to open a dialog with the commands to run on the server. If a template or build configuration needs a missing component, clicking **Install…** opens the same dialog.
+Click **Install** on a component card to open a dialog with the commands to run on the server. When the **Add** menu, a template, a build setting or database backups need a missing component, **How to install** opens the same dialog. It lists every component that action lacks at once, and you can copy the `enable` list as is.
+
+Zeabur checks the ConfigMap `zeabur-installer` in `kube-system` to tell whether zeabur-installer set up the cluster. If it isn't there, the dialog only shows the `zeaburctl components export` command. If Zeabur can't read it, the dialog shows both.
 
 </Step>
 <Step>
@@ -55,7 +57,7 @@ Under **Components**, select the components to install. Go to **Review**, review
 </Tab>
 <Tab value="Config file">
 
-Add the component ID to `enable` in `/etc/zeabur-installer/config.yaml`:
+Add the component IDs to `enable` in `/etc/zeabur-installer/config.yaml`. You can add several at once:
 
 ```yaml
 enable:
@@ -103,6 +105,8 @@ If you didn't install the cluster with zeabur-installer, or you want to manage c
 zeaburctl components export volume-backup/velero > velero.yaml
 zeaburctl components export volume-backup/velero --format helm
 ```
+
+To install several at once, list all their IDs, for example `zeaburctl components export container-registry/zot image-updates/keel`. The output puts them one after another.
 
 By default, the command prints a K3s/RKE2 `HelmChart`, which the cluster's built-in helm-controller installs. For other clusters, use `--format` to choose `helm`, `flux`, or `argocd`. Required component values appear as `<name>` placeholders. Replace them with actual values, then apply the manifest with `kubectl apply -f` or commit it to a GitOps repository. For command details, see [zeaburctl](../reference/zeaburctl.mdx#components-export).
 
