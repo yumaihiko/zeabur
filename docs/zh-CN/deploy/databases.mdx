@@ -1,21 +1,21 @@
 ---
 title: 创建、备份与还原数据库
 description: 创建五种受支持的数据库、连接到服务，并完成备份、还原或转储导出。
-source: "8458d10fa266"
+source: "0622626e03e4"
 ---
 
-在项目的 **新增** 菜单中选择数据库引擎，配置版本与存储空间，再 **检查变更**。数据库就绪后，用 **连接到服务** 添加连接变量。要保留可还原的数据，接着到 **备份** 配置 S3 目标位置。
+在项目的 **新增** 菜单中选择数据库引擎，配置版本和存储空间，再点击 **检查变更**。数据库就绪后，用 **连接到服务** 添加连接变量。要保留可还原的数据，接着到 **备份** 配置 S3 目标。
 
 ## 开始前
 
-- 已有项目，并有创建数据库与所需机密变量的权限。为服务添加连接时，还需要修改该服务的权限。
-- 管理员已安装所选引擎的 operator。缺少组件时，**新增** 菜单会链接到 **组件**，见[管理集群组件](../cluster/components.mdx)。
-- 集群有可用的存储类与足够空间。创建多个实例时，表单中的容量与资源数值均按每个实例计算。
-- 要配置备份，准备集群可访问的 S3 兼容端点、已存在的存储桶与密钥，或可读取的[共享 S3 目标位置](../cluster/s3-destinations.mdx)。PostgreSQL 备份还需要 Barman Cloud 插件。
+- 已有项目，并有创建数据库和所需机密变量的权限。为服务添加连接时，还需要修改该服务的权限。
+- 管理员已安装所选引擎的 operator。缺少组件时，**新增** 菜单会提供 **组件** 的链接，见[查看与安装集群组件](../cluster/components.mdx)。
+- 集群有可用的存储类和足够空间。创建多个实例时，表单中的容量和资源数值均按每个实例计算。
+- 要配置备份，准备集群可访问的 S3 兼容端点、已有的存储桶和密钥，或可读取的[共享 S3 目标](../cluster/s3-destinations.mdx)。PostgreSQL 备份还需要 Barman Cloud 插件。
 
 ## 选择引擎
 
-| 引擎 | 管理组件 | 创建表单提供的版本 | 每个实例的默认容量 |
+| 引擎 | 管理组件 | 创建表单提供的版本 | 默认每个实例容量 |
 | --- | --- | --- | --- |
 | PostgreSQL | CloudNativePG | 18、17、16 | 5 GiB |
 | MongoDB | Percona Operator for MongoDB | 8.0、7.0 | 10 GiB |
@@ -23,9 +23,9 @@ source: "8458d10fa266"
 | MariaDB | mariadb-operator | 12.3、11.8 | 10 GiB |
 | Dragonfly（兼容 Redis） | Dragonfly Operator | 1.34 | 2 GiB |
 
-表单默认选择最新版本。MongoDB 8.0 在部分 Linux 版本上需要修改一项内存配置才能启动。Zeabur 创建和还原的 MongoDB 8 都会添加 `GLIBC_TUNABLES=glibc.pthread.rseq=1`，性能可能略有下降。对于之前创建、尚未添加这项配置的 MongoDB 8，数据库页面会显示提醒，点击“修改配置”即可补上。
+表单默认选择最新版本。MongoDB 8.0 在部分 Linux 版本上需要修改一项内存配置才能启动，Zeabur 创建和还原的 MongoDB 8 都会添加 `GLIBC_TUNABLES=glibc.pthread.rseq=1`，性能可能略有下降。对于之前创建、尚未添加这项配置的 MongoDB 8，数据库页面会显示提醒，点击“修改配置”即可补上。
 
-Dragonfly 的许可证为 `Apache-2.0 AND BUSL-1.1`。选用前阅读表单显示的许可限制，尤其是在向他人提供托管数据库服务的场景下。
+Dragonfly 的许可证为 `Apache-2.0 AND BUSL-1.1`。选用前阅读表单显示的许可限制，尤其是向他人提供托管数据库服务的场景。
 
 ## 创建并连接到应用
 
@@ -36,13 +36,13 @@ Dragonfly 的许可证为 `Apache-2.0 AND BUSL-1.1`。选用前阅读表单显�
 
 在项目中选择 **新增** → 所需引擎，或点击 **新建数据库**。
 
-填写 **名称**，选择 **版本**、**实例数**、**每个实例的存储空间**、**规格** 与存储类。名称最多 30 个字符，使用小写字母、数字与连字符，以字母开头。
+填写 **名称**，选择 **版本**、**实例数**、**每个实例的存储空间**、**规格** 和存储类。名称最多 30 个字符，使用小写字母、数字和连字符，以字母开头。
 
-单节点集群默认创建一个实例。多节点集群中的 MongoDB、MySQL 默认创建三个，其余引擎默认创建一个。MongoDB、MySQL 可选 1、3、5，其他引擎按表单提供的数量选择。
+单节点集群默认一个实例。多节点集群的 MongoDB、MySQL 默认三个，其余引擎默认一个。MongoDB、MySQL 可选 1、3、5，其他引擎按表单提供的数量选择。
 
-只有一个实例时，故障后没有其他实例接管，数据也只有一个卷上的副本。需要容错时，除了实例数量，还要规划实例分布与存储位置。
+只有一个实例时，故障后没有其他实例接管，数据也只有一个卷上的副本。需要容错时，除了实例数量，还要安排实例分布和存储位置。
 
-![新增 PostgreSQL 的表单，已填写名称、版本、实例数与存储空间，并提醒只有一个实例](https://oss.zeabur.com/shots/zeabur/zh-CN/light/database-form.avif)
+![新增 PostgreSQL 的表单，已填写名称、版本、实例数和存储空间，并提醒只有一个实例](https://oss.zeabur.com/shots/zeabur/zh-CN/light/database-form.avif)
 
 </Step>
 <Step>
@@ -51,7 +51,7 @@ Dragonfly 的许可证为 `Apache-2.0 AND BUSL-1.1`。选用前阅读表单显�
 
 在创建表单的 **连接到服务** 中勾选应用。也可以先不选，等数据库就绪后，在 **概览** → **连接** 中点击 **连接到服务**。
 
-确认 **变量名** 与 **会添加的变量**：
+确认 **变量名** 和 **会添加的变量**：
 
 | 引擎 | 默认主要变量 | 额外添加的值 |
 | --- | --- | --- |
@@ -60,51 +60,51 @@ Dragonfly 的许可证为 `Apache-2.0 AND BUSL-1.1`。选用前阅读表单显�
 | MySQL、MariaDB | `DATABASE_URL` | 密码变量 `MYSQLPASSWORD`。 |
 | Dragonfly | `REDIS_URL` | 密码变量 `REDIS_PASSWORD`。 |
 
-密码保存在机密变量中，服务通过引用读取。已有同名变量时，表单会提示冲突，或建议在变量名称前加上数据库名称。请确认名称符合应用的配置。
+密码保存在机密变量中，服务通过引用读取。已有同名变量时，表单会提示冲突，或建议在变量名称前加上数据库名称。确认名称符合应用的配置。
 
 </Step>
 <Step>
 
 ### 检查并应用
 
-点击 **检查变更**，确认引擎、名称、实例数与容量。如果同时连接到服务，也要检查哪些服务会更新连接。
+点击 **检查变更**，确认引擎、名称、实例数和容量。如果同时连接到服务，也要检查哪些服务会更新连接。
 
-应用后打开数据库，等待 **就绪**，再确认实例数量。刚创建时如果显示 **未知**，到 **事件**、**日志** 查看 operator 与实例的状态。
+应用后打开数据库，等待 **就绪**，再确认实例数量。刚创建时如果显示 **未知**，到 **事件**、**日志** 查看 operator 和实例的状态。
 
 </Step>
 </Steps>
 
-![PostgreSQL 数据库 orders 的概览与连接信息](https://oss.zeabur.com/shots/zeabur/zh-CN/light/database-overview.avif)
+![PostgreSQL 数据库 orders 的概览和连接信息](https://oss.zeabur.com/shots/zeabur/zh-CN/light/database-overview.avif)
 
-数据库 **连接** 显示的是集群内地址。需要手动配置应用时，复制 **主机**、**端口**、**数据库** 与 **用户名**。有读取机密变量的权限时，点击密码旁的 **显示**。最后从应用写入并读回一条测试数据，确认连接与权限。
+数据库的 **连接** 显示集群内地址。需要手动配置应用时，复制 **主机**、**端口**、**数据库** 和 **用户名**。有读取机密变量的权限时，点击密码旁的 **显示**。最后从应用写入并读回一条测试数据，确认连接和权限。
 
 ## 配置 S3 备份
 
 1. 打开数据库的 **备份** → **设置备份**。
-2. **S3 目的地** 默认选择集群登记的第一个目标位置。要使用其他位置，改选另一个目标位置，或选择 **手动输入**，填写 **端点**、**存储桶**、**区域**、**访问密钥 ID**、**私密访问密钥**。集群还没有目标位置时，表单会提供添加目标位置的链接。
-3. 有 **文件夹** 字段时，可以指定存储位置，留空则使用数据库名称。MySQL 固定写入 `moco/<项目名称>/<数据库名称>`。
-4. 在 **定时** 中选择 **每天 03:00（UTC）** 或 **每周日 03:00（UTC）**。台湾时间对应上午 11:00。
-5. 按引擎配置保留方式，点击 **检查变更**。检查页面会逐项说明定时与目标位置、保留天数、存放密钥的 Secret，以及数据库是否会重启。确认后点击 **设置备份**。
+2. **S3 目的地** 默认选择集群中登记的第一个目标。要使用其他位置，改选另一个目标，或选择 **手动输入**，填写 **端点**、**存储桶**、**区域**、**访问密钥 ID**、**私密访问密钥**。集群还没有目标时，表单会提供添加目标的入口。
+3. 有 **文件夹** 字段时，可指定存储位置，留空则使用数据库名称。MySQL 固定写入 `moco/<项目名称>/<数据库名称>`。
+4. 在 **定时** 中选择 **每天 03:00（UTC）** 或 **每周日 03:00（UTC）**。北京时间对应上午 11:00。
+5. 按引擎设置保留方式，点击 **检查变更**。检查页面会逐项列出定时时间和目标、保留天数、存放密钥的机密变量，以及数据库是否会重启。确认后点击 **设置备份**。
 
 <Callout type="warn">
-CloudNativePG（PostgreSQL）的备份文件以明文存入存储桶。请使用已开启服务器端加密的存储桶，或在存储服务自身的配置中开启加密，并限制谁能读取这个存储桶。
+CloudNativePG（PostgreSQL）的备份文件以明文存入存储桶。请使用启用服务器端加密的存储桶，或在存储服务自身的设置中启用加密，并限制谁能读取该存储桶。
 </Callout>
 
-选择共享目标位置时，应用变更会将密钥复制到项目。之后管理员更换共享目标位置的密钥，这份副本不会自动更新。
+选择共享目标时，应用变更会将密钥复制到项目。之后管理员更换共享目标的密钥，这份副本不会自动更新。
 
 | 引擎 | 保留方式 | 立即备份 | 还原来源 |
 | --- | --- | --- | --- |
-| PostgreSQL | **保留天数**，同时持续归档预写式日志 | 有 | 已成功且含还原信息的备份 |
-| MongoDB | 将表单中的天数换算成份数。每日备份保留相同份数，每周备份的保留份数为天数除以 7 后向上取整 | 有 | 已成功且含还原信息的备份 |
-| MySQL | 保留所有备份，在 S3 存储桶中配置生命周期清理 | 无，按定时运行 | 已成功且含还原信息的备份 |
-| MariaDB | **保留天数** | 有 | 已成功且含还原信息的备份 |
-| Dragonfly | 保留所有快照，在 S3 存储桶中配置生命周期清理 | 无，按定时和停止时写入快照 | 最新快照 |
+| PostgreSQL | **保留天数**，同时持续归档预写式日志 | 有 | 已成功且包含还原信息的备份 |
+| MongoDB | 将表单中的天数换算成份数。每日备份保留相同份数，每周备份保留天数除以 7 后向上取整 | 有 | 已成功且包含还原信息的备份 |
+| MySQL | 保留所有备份，在 S3 存储桶中设置生命周期清理规则 | 无，按定时配置运行 | 已成功且包含还原信息的备份 |
+| MariaDB | **保留天数** | 有 | 已成功且包含还原信息的备份 |
+| Dragonfly | 保留所有快照，在 S3 存储桶中设置生命周期清理规则 | 无，按定时配置及停止时写入快照 | 最新快照 |
 
 <Callout type="warn">
-只有一个实例的 Dragonfly 在切换为 S3 快照配置时会重启。如果目标位置还没有快照，它会从空数据开始，原数据只保留在原卷上的快照中。已有数据时，先安排数据迁移，再应用这项变更。
+只有一个实例的 Dragonfly 在切换到 S3 快照配置时会重启。如果目标位置还没有快照，它会从空数据开始，原数据只保留在原卷的快照中。已有数据时，先安排数据迁移，再应用这项变更。
 </Callout>
 
-PostgreSQL、MongoDB、MariaDB 配置好备份后，点击页面上方的 **立即备份**，检查页面会说明要备份到哪个目标位置。再次点击 **立即备份**，到 **备份记录** 等待备份成功。第一条成功记录出现之前，还没有可以还原的备份。Dragonfly 的快照不会列在这个页面，需要到 S3 目标位置确认快照文件。
+PostgreSQL、MongoDB、MariaDB 配置好备份后，点击页面上方的 **立即备份**，检查页面会显示备份目标。再次点击 **立即备份**，到 **备份记录** 等待备份成功。第一条成功记录出现之前，还没有可还原的备份。Dragonfly 的快照不会列在这个页面，需要到 S3 目标确认快照文件。
 
 ## 还原为新数据库并切换服务
 
@@ -113,34 +113,34 @@ PostgreSQL、MongoDB、MariaDB 配置好备份后，点击页面上方的 **立�
 
 ### 选择还原来源
 
-到原数据库的 **备份**，点击 **还原为新数据库**。选择 **备份**，填写未使用的 **新数据库名称**，再检查并应用。
+到原数据库的 **备份**，点击 **还原为新数据库**。选择 **备份**，填写尚未使用的 **新数据库名称**，再检查并应用。
 
-PostgreSQL、MongoDB、MySQL、MariaDB 只会列出成功且含还原信息的记录。Dragonfly 使用 **最新的快照**。新数据库沿用原有规格，数据停留在所选备份的时间点，原数据库与应用连接保持不变。
+PostgreSQL、MongoDB、MySQL、MariaDB 只列出成功且包含还原信息的记录。Dragonfly 使用 **最新的快照**。新数据库沿用原来的规格，数据停留在所选备份的时间点，原数据库和应用连接保持不变。
 
 </Step>
 <Step>
 
 ### 检查还原后的数据
 
-等待新数据库 **就绪**，使用它的连接信息检查数据。MongoDB 还原会沿用原数据库的用户机密变量，请确认备份与相关机密变量都还保留着。
+等待新数据库 **就绪**，使用它的连接信息检查数据。MongoDB 还原时会沿用原数据库的用户机密变量，确认备份和相关机密变量均已保留。
 
 </Step>
 <Step>
 
 ### 将服务指向新数据库
 
-在新数据库的还原信息中点击 **把服务指向这里**。核对变更中列出的服务、环境变量与机密变量引用，再应用，并从应用确认读写正常。
+在新数据库的还原信息中点击 **把服务指向这里**。核对变更列出的服务、环境变量和机密变量引用，再应用，并从应用确认读写正常。
 
-这个操作只会改写变更中列出的服务环境变量。写在配置文件或外部系统中的连接，需要自行更新。如果没有这个按钮，用 **连接到服务** 添加新连接。
+这个操作只改写变更中列出的服务环境变量。写在配置文件或外部系统中的连接，需要自行更新。如果没有这个按钮，用 **连接到服务** 添加新连接。
 
 </Step>
 </Steps>
 
 <Callout type="warn">
-切换到还原副本后，服务会读到备份时的数据。切换前先停止或协调写入，处理备份之后新增的数据。切换与环境变量更新也会替换受影响服务的副本。
+切换到还原副本后，服务会读到备份时的数据。切换前先停止或协调写入，处理备份之后新增的数据。切换和环境变量更新也会替换受影响服务的副本。
 </Callout>
 
-原数据库会继续运行。确认切换结果与保留需求后，再清理不需要的数据库。
+原数据库会继续运行。确认切换结果和保留需求后，再清理不需要的数据库。
 
 ## 下载数据库转储文件
 
@@ -154,15 +154,15 @@ PostgreSQL、MongoDB、MySQL、MariaDB 只会列出成功且含还原信息的�
 | MariaDB | `mariadb-dump --single-transaction`，排除系统数据库，下载 gzip 压缩的 SQL。 |
 | Dragonfly | 没有 **导出** 操作，使用快照备份。 |
 
-导出使用你的 `pods/exec` 权限在数据库容器中运行。MySQL 还需要读取其机密变量的权限。下载失败或中途停止时，文件不完整，需要重新导出。
+导出使用你的 `pods/exec` 权限在数据库容器中运行。MySQL 还需要读取其机密变量的权限。如果下载失败或中途停止，文件不完整，需要重新导出。
 
-下载的转储文件可以交给相应数据库工具处理。**还原为新数据库** 使用的是 S3 备份记录，没有上传转储文件的字段。
+下载的转储文件可交给相应的数据库工具处理。**还原为新数据库** 使用 S3 备份记录，不提供上传转储文件的字段。
 
 ## 确认结果
 
-数据库页面显示 **就绪**，**连接** 列出主机和端口，即可使用。配置备份后，**备份记录** 的第一条记录显示成功，才有可以还原的备份。
+数据库页面显示 **就绪**，**连接** 列出主机和端口，即可使用。配置备份后，**备份记录** 中的第一条记录显示成功，才有可还原的备份。
 
-用 kubectl 等待数据库就绪，每种引擎检查的字段不同：
+用 kubectl 等待数据库就绪，各引擎检查的字段不同：
 
 ```sh
 kubectl -n shop wait --for=condition=Ready cluster.postgresql.cnpg.io/orders --timeout=10m
@@ -172,13 +172,13 @@ kubectl -n shop wait --for=condition=Ready mariadb/blogdb --timeout=10m
 kubectl -n shop wait --for=jsonpath='{.status.phase}'=Ready dragonfly/cache --timeout=10m
 ```
 
-Zeabur 创建的数据库对象、机密变量和备份配置都带有 `zeabur.com/database: <名称>`，用它列出同一个数据库的对象：
+Zeabur 创建的数据库对象、机密变量和备份配置都带有 `zeabur.com/database: <名称>`，用它列出同一数据库的对象：
 
 ```sh
 kubectl -n shop get secret,job -l zeabur.com/database=shopdb
 ```
 
-MySQL 还有一个 `shopdb-app-setup` Job，负责创建数据库 `app` 和用户 `app`。`COMPLETIONS` 为 `1/1` 后，应用才能连接。
+MySQL 还有 `shopdb-app-setup` Job，负责创建数据库 `app` 和用户 `app`，`COMPLETIONS` 达到 `1/1` 后应用才能连接。
 
 备份记录是 operator 的对象：
 
@@ -217,7 +217,7 @@ spec:
       memory: 512Mi
 ```
 
-CloudNativePG 会自行创建 `orders-app` 机密变量，`uri` 是完整的连接字符串，另有 `host`、`port`、`username`、`password`、`dbname`。服务连接到 `orders-rw`，端口为 5432。
+CloudNativePG 会自动创建 `orders-app` 机密变量，`uri` 是完整的连接字符串，另有 `host`、`port`、`username`、`password`、`dbname`。服务连接到 `orders-rw`，端口为 5432。
 
 </Tab>
 <Tab value="MongoDB">
@@ -265,7 +265,7 @@ spec:
     image: percona/percona-backup-mongodb:2.15.0
 ```
 
-只有一个或两个实例时，需要添加 `unsafeFlags.replsetSize: true`。MongoDB 7.0 改用 `percona/percona-server-mongodb:7.0.43-23`，不需要 `GLIBC_TUNABLES`。operator 将用户 `app` 的密码放在 `catalog-custom-user-secret` 的 `app` 中，服务连接到 `catalog-rs0`，端口为 27017。
+只有一个或两个实例时，需要添加 `unsafeFlags.replsetSize: true`。MongoDB 7.0 改用 `percona/percona-server-mongodb:7.0.43-23`，不需要 `GLIBC_TUNABLES`。operator 将用户 `app` 的密码存放在 `catalog-custom-user-secret` 的 `app` 中，服务连接到 `catalog-rs0`，端口为 27017。
 
 </Tab>
 <Tab value="MySQL">
@@ -393,7 +393,7 @@ spec:
               drop: [ALL]
 ```
 
-MOCO 不会创建应用的数据库，因此需要额外的 Job，使用 MOCO 的 `moco-writable` 账号创建数据库 `app` 和用户 `app`。annotation `zeabur.com/app-database` 和 `zeabur.com/app-secret` 告诉 Zeabur 应用使用的数据库和密码机密变量。不添加时 MySQL 仍会正常运行，但界面的 **连接到服务** 找不到应用账号。服务连接到 `moco-shopdb-primary`，端口为 3306。
+MOCO 不会创建应用的数据库，因此需要额外的 Job，使用 MOCO 的 `moco-writable` 账号创建数据库 `app` 和用户 `app`。annotation `zeabur.com/app-database` 和 `zeabur.com/app-secret` 告诉 Zeabur 应用使用的数据库和密码机密变量。不添加它们，MySQL 仍会正常运行，但界面的 **连接到服务** 找不到应用账号。服务连接到 `moco-shopdb-primary`，端口为 3306。
 
 </Tab>
 <Tab value="MariaDB">
@@ -539,7 +539,7 @@ spec:
                   key: uri
 ```
 
-其他引擎先从机密变量中读取密码，再用 `$(变量)` 拼出连接字符串。Kubernetes 只会展开写在前面的变量，因此密码变量必须放在前面：
+其他引擎先从机密变量读取密码，再用 `$(变量)` 拼接连接字符串。Kubernetes 只会展开前面已定义的变量，因此密码变量要放在前面：
 
 ```yaml
 spec:
@@ -561,7 +561,7 @@ spec:
 
 ### 配置 PostgreSQL 备份
 
-PostgreSQL 备份使用 Barman Cloud 插件，需要创建存放密钥的机密变量、ObjectStore 和 ScheduledBackup，再让 Cluster 使用插件归档预写式日志：
+PostgreSQL 备份使用 Barman Cloud 插件，需要创建密钥机密变量、ObjectStore 和 ScheduledBackup，再让 Cluster 使用插件归档预写式日志：
 
 ```yaml
 apiVersion: v1
@@ -623,7 +623,7 @@ kubectl -n shop patch cluster.postgresql.cnpg.io orders --type=merge \
   -p '{"spec":{"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"barmanObjectName":"orders-backups"}}]}}'
 ```
 
-CloudNativePG 的定时表达式有秒字段，`0 0 3 * * *` 表示每天 03:00（UTC）。**立即备份** 对应一个 Backup：
+CloudNativePG 的定时表达式包含秒字段，`0 0 3 * * *` 表示每天 03:00（UTC）。**立即备份** 对应一个 Backup：
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -640,16 +640,16 @@ spec:
     name: barman-cloud.cloudnative-pg.io
 ```
 
-其他引擎的备份配置写在以下位置，命名规则相同（存放密钥的机密变量都叫 `<名称>-backups-s3`）：
+其他引擎的备份配置写在以下位置，命名规则相同（密钥机密变量都叫 `<名称>-backups-s3`）：
 
 | 引擎 | 对象 |
 | --- | --- |
-| MongoDB | PerconaServerMongoDB 的 `spec.backup`：`storages.backups.s3` 填写存储桶和端点，`credentialsSecret` 指向存放密钥的机密变量（`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`），`tasks` 中有一项 `scheduled`。立即备份对应 PerconaServerMongoDBBackup。 |
-| MySQL | ServiceAccount `<名称>-backup`、BackupPolicy `<名称>-backups`，MySQLCluster 的 `spec.backupPolicyName` 指向该 BackupPolicy。 |
+| MongoDB | PerconaServerMongoDB 的 `spec.backup`：`storages.backups.s3` 填写存储桶和端点，`credentialsSecret` 指向密钥机密变量（`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`），`tasks` 中有一项 `scheduled`。立即备份对应 PerconaServerMongoDBBackup。 |
+| MySQL | ServiceAccount `<名称>-backup`、BackupPolicy `<名称>-backups`，MySQLCluster 的 `spec.backupPolicyName` 指向后者。 |
 | MariaDB | Backup `<名称>-scheduled`，`schedule.cron` 是定时表达式，`maxRetention` 是保留时间。 |
 | Dragonfly | 在 Dragonfly 的 `spec.args` 中添加 `--s3_endpoint`、`--s3_use_https`，`spec.env` 读取密钥，`spec.snapshot.dir` 改为 `s3://<存储桶>/<文件夹>`。 |
 
-要查看字段的完整内容，可以先在界面配置一次，再用 `kubectl -n shop get <种类> <名称> -o yaml` 对照。
+要查看字段的完整内容，可以先在界面中配置一次，再用 `kubectl -n shop get <种类> <名称> -o yaml` 对照。
 
 ### 从备份还原 PostgreSQL
 
@@ -659,7 +659,7 @@ spec:
 kubectl -n shop get backup.postgresql.cnpg.io orders-20261026-030000 -o jsonpath='{.status.backupId}'
 ```
 
-再创建新的 Cluster，`spec` 沿用原数据库，移除 `plugins`，添加 `bootstrap.recovery` 和 `externalClusters`：
+再创建新的 Cluster，`spec` 沿用原数据库的配置，移除 `plugins`，添加 `bootstrap.recovery` 和 `externalClusters`：
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -703,19 +703,19 @@ spec:
 
 ## 调整容量与处理失败
 
-- 要修改 **实例数**、**规格** 或 **每个实例的存储空间**，到 **设置** 修改，再 **检查变更**。存储空间只能扩大，且必须使用支持扩容的存储类。Dragonfly 的快照卷大小在创建时确定，设置表单不提供扩容。
+- 要更改 **实例数**、**规格** 或 **每个实例的存储空间**，到 **设置** 修改，再点击 **检查变更**。存储空间只能扩容，且需要使用支持扩容的存储类。Dragonfly 的快照卷大小在创建时确定，设置表单不提供扩容选项。
 - 找不到数据库引擎时，到 **组件** 检查 operator。如果页面明确显示无权读取，向管理员申请相应权限。
-- 创建后一直显示 **未知** 或未就绪时，查看 **事件** 与 **日志**，确认 operator、卷、节点资源与镜像都可用。
+- 创建后一直显示 **未知** 或未就绪时，查看 **事件** 和 **日志**，确认 operator、卷、节点资源和镜像均可用。
 - PostgreSQL 无法配置备份时，先确认 Barman Cloud 插件已安装且可读取。
-- 备份失败时，查看 **备份记录** 中的原因，检查 S3 端点、存储桶、密钥与网络。MySQL 还需要足够空间来分配备份任务使用的临时卷。
-- **连接到服务** 没有列出目标时，确认项目中已有可修改的应用服务。其他工具管理的服务与数据服务不会列入这个菜单。
+- 备份失败时，阅读 **备份记录** 中的原因，检查 S3 端点、存储桶、密钥和网络。MySQL 还需要足够空间来分配备份任务的临时卷。
+- **连接到服务** 未列出目标时，确认项目内已有可修改的应用服务。其他工具管理的服务和数据服务不会列入这个菜单。
 
 ## 断开连接与删除
 
-只想移除应用的连接时，在 **连接** 的服务操作中选择 **断开连接**。这会移除相关环境变量，保留数据库与机密变量。
+只想移除应用连接时，在 **连接** 的服务操作中选择 **断开连接**。这会移除相关环境变量，保留数据库和机密变量。
 
-要删除数据库，在右上角的 **更多** 中选择 **删除数据库**。先查看删除清单、仍在使用它的服务，以及卷的回收策略，再应用。S3 中的备份会保留，后续按目标位置的生命周期策略处理。
+要删除数据库，在右上角的 **更多** 中选择 **删除数据库**。先查看删除列表、仍在使用它的服务，以及卷的回收策略，再应用。S3 中的备份会保留，后续按目标的生命周期策略处理。
 
 <Callout type="warn">
-删除数据库会移除正在运行的数据库，并可能删除其卷与数据。先确认已完成备份或导出，且所有服务都已切换到要保留的数据库。
+删除数据库会移除正在运行的数据库，并可能删除其卷和数据。先确认已完成备份或导出，且所有服务都已切换到要保留的数据库。
 </Callout>

@@ -20,7 +20,19 @@ In a project, select **Add** → **Deploy from Git**, enter the repository and t
 
 ### Set the repository and build method
 
-Open **Add** → **Deploy from Git** and enter an HTTPS or SSH URL in **Repository**, such as `https://github.com/acme/web`.
+Open **Add** → **Deploy from Git**. If your code is on GitHub, connect GitHub first, then choose a repository from the list. Private repositories don't need a separate key:
+
+- If the project is already connected to GitHub, **Source** defaults to **GitHub**. Search for and select a repository under **Repository**.
+- If it isn't connected yet, **Connect GitHub** appears above **Repository**. Select it to continue based on the current setup:
+  - If the cluster doesn't have a GitHub App, you'll go to **Cluster** → **GitHub** to create one. See [Deploy private repositories with a GitHub App](../cluster/github-app.mdx). After creating it, select **Back to Deploy from Git**.
+  - If the App isn't installed on the account that owns the repository, select the account and repositories on GitHub to install it. The page updates automatically when you return to this tab.
+  - If the App is installed but isn't available to this project yet, review the changes and select **Apply** to make the account available to the current project. If there's more than one account, choose one from the menu first.
+
+  After you apply the changes, the form switches to the GitHub repository list. These steps require permission to modify secrets and config files in `builder-system`, which is usually limited to cluster administrators. Other members see “Ask a cluster administrator to enable GitHub for this project.”
+
+If you're not using GitHub, select **Git URL** as the source and enter an HTTPS or SSH URL in **Repository**, such as `https://gitlab.com/acme/web`. If you enter the URL of a GitHub repository already available to the project, Zeabur still reads it through the GitHub App.
+
+![Deploy from GitHub with GitHub selected as the source, a searchable repository picker, and access through the cluster's GitHub App](https://oss.zeabur.com/shots/zeabur/en/light/git-github.avif)
 
 Leave **Branch** empty to track the repository's default branch. To always track `main`, enter `main`.
 
@@ -31,7 +43,7 @@ Under **Build with**, choose:
 
 Under **More settings**, set **Root directory** to the folder to build, such as `apps/web`. When using Dockerfile, the path in the **Dockerfile** field is relative to this root directory. Leave it empty to use `Dockerfile`.
 
-![Deploy from Git form with a repository URL and Railpack selected, followed by the name, port, and repository access fields](https://oss.zeabur.com/shots/zeabur/en/light/git-form.avif)
+![Deploy from Git form with Connect GitHub at the top, a repository URL entered, and Railpack selected, followed by the name, port, and repository access fields](https://oss.zeabur.com/shots/zeabur/en/light/git-form.avif)
 
 </Step>
 <Step>
@@ -52,9 +64,11 @@ Under **More settings**, configure these separately:
 </Step>
 <Step>
 
-### Allow access to a private repository
+### Allow access to a private repository without GitHub
 
-Under **Repository access**, choose the option that matches the repository:
+If you chose a repository from the GitHub list, **Repository access** says “Access through the cluster's GitHub App. No additional setup needed.” Skip this step.
+
+When using **Git URL**, choose the option under **Repository access** that matches the repository:
 
 | Option | Action |
 | --- | --- |
@@ -234,7 +248,7 @@ spec:
 - `web-git` is only needed when using an access token for a private repository. The Build references it through `spec.source.credentialsRef`, and the `builder.zeabur.com/git-credentials: "true"` label lets Zeabur Builder read it. For a public repository, remove this secret and `credentialsRef`.
 - `web-build-env` and the Build's `spec.env` are only needed when using build variables.
 - The Deployment starts with the nonexistent `:pending` tag, which Keel replaces after the first build finishes. `keel.sh/policy: force` corresponds to **Auto-deploy new builds**.
-- To build with a Dockerfile, change `builderRef` to `dockerfile` and add `contextDir` and `dockerfile` under `spec.source.git` as needed. When **Branch** is empty, the form writes `HEAD` to `ref` to track the default branch.
+- To build with a Dockerfile, change `builderRef` to `dockerfile` and add `contextDir` and `dockerfile` under `spec.source.git` as needed. When `ref` is empty, the form writes `HEAD` to track the default branch.
 
 To use a deploy key instead, generate a key pair, add the public key to the repository, and put the private key and `known_hosts` in a `kubernetes.io/ssh-auth` secret. Change the Build's `url` to an SSH URL, such as `git@github.com:acme/web.git`:
 

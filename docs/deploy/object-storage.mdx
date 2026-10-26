@@ -8,7 +8,7 @@ In a project, select **Add** → **Object storage**, enter the capacity and firs
 ## Before you begin
 
 - You have a project and permission to create object storage. Adding a connection to an application also requires permission to modify that service. Showing the secret access key requires permission to read secrets.
-- An administrator has installed SeaweedFS Operator. See [Manage cluster components](../cluster/components.mdx).
+- An administrator has installed SeaweedFS Operator. See [View and install cluster components](../cluster/components.mdx).
 - The cluster has an available storage class and enough space.
 - You have an S3-compatible application or client ready to use. The endpoint configured by the creation form is for use inside the cluster.
 
@@ -37,7 +37,7 @@ The capacity field sets the volume server's data storage. The master and filer e
 
 Select applications under **Connect to a service** in the creation form, or connect them after the object storage is ready. Click **Review changes**, check the name, capacity, bucket, and services to modify, then apply.
 
-![Object storage form with the name files, capacity, and bucket uploads filled in, and web selected under Connect to service](https://oss.zeabur.com/shots/zeabur/en/light/object-storage-form.avif)
+![Object storage form with the name files, capacity, and bucket uploads filled in, and web selected under Connect to a service](https://oss.zeabur.com/shots/zeabur/en/light/object-storage-form.avif)
 
 These changes create the SeaweedFS storage service, an identity and keys for applications, and the selected bucket.
 

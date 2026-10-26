@@ -40,7 +40,7 @@ Kubernetes keeps events for about an hour. For older problems, check log **Histo
 
 Open the service's **Usage** tab:
 
-- **Current usage**: CPU and memory usage for each replica, alongside its reserved resources and maximums. **Near memory max** appears when usage approaches the memory maximum. The container restarts if it exceeds that maximum. This requires metrics-server in the cluster. If it isn't installed, click **Install**.
+- **Current usage**: CPU and memory usage for each replica, alongside its reserved resources and maximums. **Near memory max** appears when usage approaches the memory maximum. The container restarts if it exceeds that maximum. This requires metrics-server in the cluster. If it isn't installed, click **Install** to see the commands to run on the server.
 - **History**: A usage chart over time, with markers for OOMKilled events and restarts. This requires Prometheus-compatible metrics storage, such as VictoriaMetrics or Prometheus. If none is installed, click **Install VictoriaMetrics**. If you already have one, click **Choose another store** and specify its Kubernetes Service.
 
 Once a cluster administrator enables `proxy.enabled` in the Helm chart, Viewers and Developers can see **History** for their own projects. Zeabur Proxy checks that you're a member of the project and limits queries to that project's metrics. If the proxy isn't enabled, or you select another storage service in settings, Zeabur reads the storage service directly. Anyone who can read it this way can see metrics for all projects, so only administrators have access.
