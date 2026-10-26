@@ -4,6 +4,7 @@ import PlusIcon from "~icons/ph/plus"
 import XIcon from "~icons/ph/x"
 
 import type { Schemas } from "@/api/client"
+import { Hint } from "@/components/bits"
 import { FormField } from "@/components/form-field"
 import { usePlanner } from "@/components/plan/planner"
 import { useT } from "@/i18n"
@@ -81,7 +82,10 @@ function NewProjectDialog({ taken, onClose }: { taken: string[]; onClose: () => 
               review()
             }}
           >
-            <p className="type-meta text-muted-foreground">{t("projects.newBody")}</p>
+            <p className="type-meta text-muted-foreground">
+              {t("projects.newBody")}{" "}
+              <Hint label={t("projects.newWhatLabel")}>{t("projects.newWhat")}</Hint>
+            </p>
             <FormField
               label={t("projects.newName")}
               hint={t("projects.newNameHint")}

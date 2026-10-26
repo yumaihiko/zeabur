@@ -486,7 +486,9 @@ export const en = {
     "A project is a Kubernetes namespace shown in Zeabur. Create one, or use an existing namespace below.",
   "projects.new": "New project",
   "projects.newBody":
-    "A project is a namespace with the Zeabur project label. You review it before it is created.",
+    "A project keeps related services and databases together. You review it before it's created.",
+  "projects.newWhat": "In Kubernetes, a project is a namespace with the Zeabur project label.",
+  "projects.newWhatLabel": "What a project is in Kubernetes",
   "projects.newName": "Name",
   "projects.newNameHint": "It becomes the namespace's name, which can't change later.",
   "projects.newDisplayName": "Display name",

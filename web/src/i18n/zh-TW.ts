@@ -452,7 +452,9 @@ export const zhTW: Messages = {
   "projects.noneBody":
     "專案是 Zeabur 顯示的 Kubernetes Namespace。新增一個，或使用下方既有的 Namespace。",
   "projects.new": "新增專案",
-  "projects.newBody": "專案是帶有 Zeabur 專案標籤的 Namespace。建立前會先讓你確認。",
+  "projects.newBody": "專案把相關的服務和資料庫放在一起。建立前會先讓你確認。",
+  "projects.newWhat": "在 Kubernetes 裡，專案是帶有 Zeabur 專案標籤的 Namespace。",
+  "projects.newWhatLabel": "專案在 Kubernetes 裡是什麼",
   "projects.newName": "名稱",
   "projects.newNameHint": "也是 Namespace 的名稱，之後不能修改。",
   "projects.newDisplayName": "顯示名稱",

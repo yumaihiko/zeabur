@@ -452,7 +452,9 @@ export const zhCN: Messages = {
   "projects.noneBody":
     "项目是 Zeabur 显示的 Kubernetes Namespace。新建一个，或使用下方已有的 Namespace。",
   "projects.new": "新建项目",
-  "projects.newBody": "项目是带有 Zeabur 项目标签的 Namespace。创建前会先让你确认。",
+  "projects.newBody": "项目把相关的服务和数据库放在一起。创建前会先让你确认。",
+  "projects.newWhat": "在 Kubernetes 中，项目是带有 Zeabur 项目标签的 Namespace。",
+  "projects.newWhatLabel": "项目在 Kubernetes 中是什么",
   "projects.newName": "名称",
   "projects.newNameHint": "也是 Namespace 的名称，之后不能修改。",
   "projects.newDisplayName": "显示名称",
