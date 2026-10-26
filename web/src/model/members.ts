@@ -123,13 +123,17 @@ export function accessSummary(
   return { kind: "projects", roles }
 }
 
-/** The projects a role can be given in, by name: every namespace but Kubernetes' own, and those
- * the member already has a role in, so a role in a project since deleted can still be taken away. */
+/** The projects a role can be given in, by name: Zeabur's projects (with `others`, every namespace
+ * but Kubernetes' own), and those the member already has a role in, so a role in a project since
+ * deleted can still be taken away. */
 export function grantableProjects(
-  projects: readonly { name: string; system: boolean }[],
+  projects: readonly { name: string; system: boolean; adopted: boolean }[],
   held: Iterable<string> = [],
+  others = false,
 ): string[] {
-  const names = new Set(projects.filter((p) => !p.system).map((p) => p.name))
+  const names = new Set(
+    projects.filter((p) => !p.system && (others || p.adopted)).map((p) => p.name),
+  )
   for (const name of held) names.add(name)
   return [...names].toSorted()
 }

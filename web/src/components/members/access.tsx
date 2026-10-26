@@ -153,9 +153,10 @@ function ProjectPicker({
   const projects = useQuery(projectsQuery)
   const [query, setQuery] = useState("")
   const [first] = useState(() => new Set(chosen.keys()))
+  const [others, setOthers] = useState(false)
   if (projects.isPending) return <Skeleton variant="card" className="h-24" />
   if (projects.isError) return <Problem error={projects.error} />
-  const names = grantableProjects(projects.data.items, held)
+  const names = grantableProjects(projects.data.items, held, others)
   const title = (name: string) =>
     projectTitle(
       projects.data.items.find((item) => item.name === name),
@@ -229,7 +230,21 @@ function ProjectPicker({
           </p>
         </>
       )}
+      <ShowOthers
+        hidden={grantableProjects(projects.data.items, held, true).length - names.length}
+        onShow={() => setOthers(true)}
+      />
     </div>
+  )
+}
+
+function ShowOthers({ hidden, onShow }: { hidden: number; onShow: () => void }) {
+  const t = useT()
+  if (hidden === 0) return null
+  return (
+    <Button variant="link" size="xs" className="self-start" onClick={onShow}>
+      {t("roles.showOthers", hidden)}
+    </Button>
   )
 }
 

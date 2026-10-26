@@ -3111,6 +3111,7 @@ export const zhTW: Messages = {
   "roles.filter": "篩選專案",
   "roles.noProjects": "目前還沒有專案。",
   "roles.noMatch": "沒有符合的專案。",
+  "roles.showOthers": (n: number) => `一併顯示 ${n} 個不是專案的 Namespace`,
   "roles.noneChosen": "還沒勾選專案：對方可以登入，但只看得到專案名稱。",
   "roles.chosen": (n) => `已勾選 ${n} 個專案`,
   "roles.roleIn": (project) => `${project} 的角色`,

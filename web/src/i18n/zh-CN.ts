@@ -3102,6 +3102,7 @@ export const zhCN: Messages = {
   "roles.filter": "筛选项目",
   "roles.noProjects": "目前还没有项目。",
   "roles.noMatch": "没有匹配的项目。",
+  "roles.showOthers": (n: number) => `同时显示 ${n} 个不是项目的 Namespace`,
   "roles.noneChosen": "还没勾选项目：对方可以登录，但只能看到项目名称。",
   "roles.chosen": (n) => `已勾选 ${n} 个项目`,
   "roles.roleIn": (project) => `${project} 的角色`,

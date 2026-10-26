@@ -3398,6 +3398,8 @@ export const en = {
   "roles.filter": "Filter projects",
   "roles.noProjects": "There are no projects yet.",
   "roles.noMatch": "No projects match.",
+  "roles.showOthers": (n: number) =>
+    `Also show ${n} ${n === 1 ? "namespace" : "namespaces"} that aren't projects`,
   "roles.noneChosen": "No project picked: they can sign in and see project names, nothing more.",
   "roles.chosen": (n: number) => `${n} ${n === 1 ? "project" : "projects"} picked`,
   "roles.roleIn": (project: string) => `Role in ${project}`,

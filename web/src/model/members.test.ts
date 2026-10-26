@@ -201,13 +201,15 @@ describe("project roles", () => {
     })
   })
 
-  it("offers every project but Kubernetes' own, and keeps one already held", () => {
+  it("offers projects, other namespaces on request, and keeps one already held", () => {
     const projects = [
-      { name: "shop", system: false },
-      { name: "kube-system", system: true },
-      { name: "blog", system: false },
+      { name: "shop", system: false, adopted: true },
+      { name: "kube-system", system: true, adopted: false },
+      { name: "default", system: false, adopted: false },
+      { name: "blog", system: false, adopted: true },
     ]
     expect(grantableProjects(projects)).toStrictEqual(["blog", "shop"])
+    expect(grantableProjects(projects, [], true)).toStrictEqual(["blog", "default", "shop"])
     expect(grantableProjects(projects, ["gone", "shop"])).toStrictEqual(["blog", "gone", "shop"])
   })
 
