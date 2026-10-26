@@ -1,5 +1,5 @@
-//! Prints the Helm commands that install a catalogue component, the text Cluster → Components
-//! shows, with each `<input>=<value>` given filling that input's placeholder.
+//! Prints the Helm commands that install a catalogue component, as `zeaburctl components export
+//! --format helm` does, with each `<input>=<value>` given filling that input's placeholder.
 //! `scripts/dev-cluster.sh` runs them:
 //!
 //! ```sh

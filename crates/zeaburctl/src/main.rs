@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod components;
 mod doctor;
 mod forward;
 mod in_process;
@@ -41,6 +42,9 @@ enum Command {
     /// cluster. With other credentials, zeaburctl does the same steps on this computer, and the
     /// credentials stay here.
     Up(up::UpArgs),
+    /// Print a Zeabur Catalog component's manifests, for a cluster that zeabur-installer did not
+    /// install.
+    Components(components::ComponentsArgs),
 }
 
 fn main() -> ExitCode {
@@ -53,5 +57,6 @@ fn main() -> ExitCode {
         Command::Ui(ui_args) => ui::run(&ui_args),
         Command::Doctor(doctor_args) => doctor::run(&doctor_args),
         Command::Up(up_args) => up::run(&up_args),
+        Command::Components(components_args) => components::run(&components_args),
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "zeaburctl"
-description = "Kubernetes made simple and secure by default: the command-line tool (ui, doctor, up)"
+description = "Kubernetes made simple and secure by default: the command-line tool (ui, doctor, up, components)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,7 @@ ui = ["dep:zeabur-ui"]
 
 [dependencies]
 zeabur-api.workspace = true
+zeabur-catalog.workspace = true
 zeabur-core.workspace = true
 zeabur-kube.workspace = true
 zeabur-ui = { workspace = true, optional = true }

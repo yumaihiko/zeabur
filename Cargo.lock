@@ -2752,6 +2752,7 @@ dependencies = [
  "tokio",
  "tower",
  "zeabur-api",
+ "zeabur-catalog",
  "zeabur-core",
  "zeabur-kube",
  "zeabur-ui",

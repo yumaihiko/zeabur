@@ -1,12 +1,11 @@
 //! How to install a catalogue component, in four forms: Helm commands, a K3s/RKE2 `HelmChart`, Flux
 //! objects and an Argo CD `Application`.
 //!
-//! Each is a text to copy, or to commit to a Git repository a GitOps tool watches. The three
-//! object forms also list their objects, which a plan creates in one namespace (`kube-system`,
-//! `flux-system` or `argocd`) when the component is only charts and asks for nothing. Each renders
-//! the component's releases in order, with the catalogue's pinned versions and its values for the
-//! chosen profile (`single-node` or `multi-node`): the release's values, with the profile's merged
-//! over them as Helm merges values files, maps merged and lists replaced [helm-values].
+//! Each is a text to copy, or to commit to a Git repository a GitOps tool watches
+//! (`zeaburctl components export`). Each renders the component's releases in order, with the
+//! catalogue's pinned versions and its values for the chosen profile (`single-node` or
+//! `multi-node`): the release's values, with the profile's merged over them as Helm merges values
+//! files, maps merged and lists replaced [helm-values].
 //!
 //! - **Helm** keeps the catalogue's two values files apart, comments and all, and passes both
 //!   (`--values base --values profile`), so the reasons for each value stay readable. `helm upgrade
@@ -28,7 +27,7 @@
 //! restart), and what that removes [k3s-packaged]. RKE2 names its copies `rke2-<name>` and
 //! chooses its ingress controller with `ingress-controller` in `/etc/rancher/rke2/config.yaml`
 //! [rke2-packaged] [rke2-ingress], so the comment gives that form too. The guide lists those
-//! add-ons for the interface to warn about.
+//! add-ons.
 //!
 //! Releases that are manifests (by URL or inline) are applied with `kubectl apply
 //! --server-side` in the Helm form, and listed in the others for the person's own repository.
@@ -78,27 +77,6 @@ pub struct InstallText {
     pub format: InstallFormat,
     /// The text to copy: shell for Helm, YAML for the others.
     pub text: String,
-    /// The objects a plan creates, YAML, in install order, all in [`Self::namespace`]; empty for
-    /// Helm and when the guide is blocked.
-    pub objects: Vec<String>,
-    /// The namespace of the objects: `kube-system`, `flux-system` or `argocd`; absent for Helm.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub namespace: Option<String>,
-}
-
-/// Why a plan cannot install a component; the texts still work.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum InstallBlocked {
-    /// It replaces a component K3s and RKE2 package, which is turned off on the servers first.
-    K3sPackaged,
-    /// It asks for values (a token, a domain) or generates secrets.
-    Inputs,
-    /// Some of it is plain manifests, or applies only when CRDs are missing.
-    Manifests,
-    /// It runs privileged or needs `baseline`: its namespace needs a Pod Security level that a
-    /// project plan does not set.
-    Privileged,
 }
 
 /// What a component's RBAC and network access amount to, from the catalogue.
@@ -186,9 +164,6 @@ pub struct InstallGuide {
     pub replaces_k3s_packaged: Vec<String>,
     /// The texts, one per form.
     pub formats: Vec<InstallText>,
-    /// Why no plan can install it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blocked: Option<InstallBlocked>,
 }
 
 /// Why a guide could not be rendered.
@@ -390,18 +365,18 @@ pub fn guide(component: &str, profile: &str) -> Result<InstallGuide, InstallErro
             .collect(),
         contributes_to: file.contributes.iter().map(|c| c.target.clone()).collect(),
         replaces_k3s_packaged: file.detection.k3s_addons.clone(),
-        formats: vec![
-            InstallText {
-                format: InstallFormat::Helm,
-                text: rendered.helm(),
-                objects: Vec::new(),
-                namespace: None,
-            },
-            rendered.objects(InstallFormat::K3s, "kube-system"),
-            rendered.objects(InstallFormat::Flux, "flux-system"),
-            rendered.objects(InstallFormat::ArgoCd, "argocd"),
-        ],
-        blocked: rendered.blocked(),
+        formats: [
+            InstallFormat::Helm,
+            InstallFormat::K3s,
+            InstallFormat::Flux,
+            InstallFormat::ArgoCd,
+        ]
+        .into_iter()
+        .map(|format| InstallText {
+            format,
+            text: rendered.text(format),
+        })
+        .collect(),
     })
 }
 
@@ -853,50 +828,13 @@ impl<'a> Rendered<'a> {
         }
     }
 
-    /// Why a plan cannot install it: it replaces a component k3s packages, asks for values, is
-    /// not only charts, or runs privileged.
-    fn blocked(&self) -> Option<InstallBlocked> {
-        if !self.file.detection.k3s_addons.is_empty() {
-            Some(InstallBlocked::K3sPackaged)
-        } else if !self.file.inputs.is_empty() {
-            Some(InstallBlocked::Inputs)
-        } else if self
-            .file
-            .releases
-            .iter()
-            .any(|r| !r.is_chart() || !r.skip_if_present.is_empty())
-        {
-            Some(InstallBlocked::Manifests)
-        } else if self.file.security.privileged || self.file.security.level.is_some() {
-            Some(InstallBlocked::Privileged)
-        } else {
-            None
-        }
-    }
-
-    /// A YAML form with the objects a plan creates.
-    fn objects(&self, format: InstallFormat, namespace: &str) -> InstallText {
-        let text = match format {
+    /// The text of one form.
+    fn text(&self, format: InstallFormat) -> String {
+        match format {
             InstallFormat::Helm => self.helm(),
             InstallFormat::K3s => self.k3s(),
             InstallFormat::Flux => self.flux(),
             InstallFormat::ArgoCd => self.argo_cd(),
-        };
-        let objects = if self.blocked().is_some() {
-            Vec::new()
-        } else {
-            self.file
-                .releases
-                .iter()
-                .zip(&self.merged)
-                .flat_map(|(release, merged)| Self::release_objects(format, release, merged))
-                .collect()
-        };
-        InstallText {
-            format,
-            text,
-            objects,
-            namespace: Some(namespace.to_owned()),
         }
     }
 
@@ -1228,7 +1166,7 @@ mod tests {
     }
 
     #[test]
-    fn a_privileged_component_gets_a_privileged_namespace_and_no_plan() {
+    fn a_privileged_component_gets_a_privileged_namespace() {
         let (_, _, text) = bundle::FILES
             .iter()
             .find(|(capability, id, _)| *capability == "databases" && *id == "cloudnative-pg")
@@ -1236,7 +1174,6 @@ mod tests {
         let mut file: File = serde_saphyr::from_str(text).unwrap();
         file.security.privileged = true;
         let rendered = Rendered::new(&file, "single-node").unwrap();
-        assert_eq!(rendered.blocked(), Some(InstallBlocked::Privileged));
         let k3s = rendered.k3s();
         let namespace = k3s.find("kind: Namespace").unwrap();
         assert!(namespace < k3s.find("kind: HelmChart").unwrap());
@@ -1245,9 +1182,7 @@ mod tests {
             if !guide.security.privileged {
                 continue;
             }
-            assert!(guide.blocked.is_some(), "{capability}/{id}");
             for text in &guide.formats {
-                assert!(text.objects.is_empty(), "{capability}/{id}");
                 let level = if text.format == InstallFormat::Helm {
                     "pod-security.kubernetes.io/enforce=privileged"
                 } else {
@@ -1266,7 +1201,6 @@ mod tests {
     fn a_baseline_component_gets_a_baseline_namespace_in_every_form() {
         let guide = guide("volume-backup/k8up", "single-node").unwrap();
         assert_eq!(guide.security.level.as_deref(), Some("baseline"));
-        assert!(guide.blocked.is_some());
         for text in &guide.formats {
             let label = if text.format == InstallFormat::Helm {
                 "pod-security.kubernetes.io/enforce=baseline"
@@ -1278,61 +1212,15 @@ mod tests {
     }
 
     #[test]
-    fn a_plan_installs_only_components_that_are_charts_without_inputs() {
-        let pg = guide("databases/cloudnative-pg", "single-node").unwrap();
-        assert_eq!(pg.blocked, None);
-        let kinds = |format: InstallFormat| -> Vec<String> {
-            let text = pg.formats.iter().find(|t| t.format == format).unwrap();
-            assert!(!text.objects.is_empty() || format == InstallFormat::Helm);
-            text.objects
-                .iter()
-                .map(|object| {
-                    let parsed: Value = serde_saphyr::from_str(object).unwrap();
-                    assert_eq!(
-                        parsed["metadata"]["namespace"].as_str(),
-                        text.namespace.as_deref()
-                    );
-                    parsed["kind"].as_str().unwrap().to_owned()
-                })
-                .collect()
-        };
-        assert_eq!(kinds(InstallFormat::Helm), Vec::<String>::new());
-        assert!(kinds(InstallFormat::K3s).iter().all(|k| k == "HelmChart"));
-        assert!(kinds(InstallFormat::Flux).contains(&"HelmRelease".to_owned()));
-        assert!(kinds(InstallFormat::ArgoCd).contains(&"Application".to_owned()));
-        for (component, blocked) in [
-            ("volume-backup/velero", InstallBlocked::Inputs),
-            ("metrics/metrics-server", InstallBlocked::K3sPackaged),
-            ("certificates/cert-manager", InstallBlocked::Manifests),
-        ] {
-            let guide = guide(component, "single-node").unwrap();
-            assert_eq!(guide.blocked, Some(blocked), "{component}");
-            assert!(guide.formats.iter().all(|t| t.objects.is_empty()));
-        }
-        for (capability, id, _) in bundle::FILES {
-            let guide = guide(&format!("{capability}/{id}"), "multi-node").unwrap();
-            for text in &guide.formats {
-                for object in &text.objects {
-                    assert!(text.text.contains(object.as_str()), "{capability}/{id}");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn a_planned_install_is_found_in_every_form_by_its_chart_label() {
+    fn an_install_is_found_in_every_form_by_its_chart_label() {
         // Argo CD leaves no Helm release Secret, and a release named otherwise than its chart
         // (`cnpg`) hides the Secret k3s or Flux leaves: the chart label is what every form leaves.
         let components = crate::catalogue().unwrap();
         for (capability, id, text) in bundle::FILES {
-            if guide(&format!("{capability}/{id}"), "single-node")
-                .unwrap()
-                .blocked
-                .is_some()
-            {
+            let file: File = serde_saphyr::from_str(text).unwrap();
+            if !file.releases.iter().all(Release::is_chart) {
                 continue;
             }
-            let file: File = serde_saphyr::from_str(text).unwrap();
             let mut facts = zeabur_kube::ClusterFacts::default();
             for release in &file.releases {
                 let (chart, version) = match release.source() {
