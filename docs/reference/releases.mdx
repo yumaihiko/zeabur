@@ -1,0 +1,102 @@
+---
+title: Release files and verification
+description: Choose Zeabur release files for your operating system, then verify checksums, signatures, and build provenance before running them.
+---
+
+Choose a version on [GitHub Releases](https://github.com/zeabur-oss/zeabur/releases), then download the matching archive, `SHA256SUMS`, and signature. When verifying, restrict the signer to the release workflow at that version's tag. Extract and run the files only after verification passes.
+
+## Files and platforms
+
+| Artifact | Location or filename | Platform |
+|---|---|---|
+| `zeaburctl` | `zeaburctl-v<version>-<os>-<arch>.tar.gz` | Linux `amd64` and `arm64`, macOS `arm64` |
+| `zeabur` server | `zeabur-v<version>-linux-<arch>.tar.gz` | Linux `amd64` and `arm64` |
+| `zeabur-installer` | `zeabur-installer-v<version>-linux-<arch>.tar.gz` | Linux `amd64` and `arm64` |
+| Multi-platform container image | `ghcr.io/zeabur-oss/zeabur:<version>` | Linux `amd64` and `arm64` |
+| Helm chart | `oci://ghcr.io/zeabur-oss/charts/zeabur`; also available as `zeabur-<version>.tgz` | Install on a Kubernetes cluster |
+| Artifact digests | `digests.txt` | Image index, each platform's image, and the chart |
+| File checksums and signature | `SHA256SUMS`, `SHA256SUMS.sigstore.json` | Assets from the same release |
+
+Every archive holds the binary and `LICENSE`. macOS builds are for Apple silicon (`arm64`) only; there's no Intel Mac build. `zeabur` and the installer run only on Linux. On macOS, you only need `zeaburctl`.
+
+At release time, the chart's `image.digest` is pinned to that release's image index. Installing with the chart's defaults gives you the same image. Image tags and chart versions have no leading `v`; GitHub release tags and archive filenames do.
+
+## Download and verify binaries
+
+You'll need GitHub CLI `gh`, cosign 3, and GNU `sha256sum`. Set `version` to the version you chose. This example uses `0.1.0`:
+
+```sh
+version=0.1.0
+platform=darwin-arm64
+binary=zeaburctl
+identity="https://github.com/zeabur-oss/zeabur/.github/workflows/release.yml@refs/tags/v$version"
+
+gh release download "v$version" --repo zeabur-oss/zeabur \
+  --dir "zeabur-$version" \
+  --pattern SHA256SUMS \
+  --pattern SHA256SUMS.sigstore.json \
+  --pattern "$binary-v$version-$platform.tar.gz"
+```
+
+You can set `platform` to `linux-amd64` or `linux-arm64`. To download the installer, set `binary` to `zeabur-installer` and choose a Linux platform.
+
+Open the download directory, then verify the checksum list's signer, the file contents, and the build provenance in that order:
+
+```sh
+cd "zeabur-$version"
+
+cosign verify-blob \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS
+
+sha256sum --check --ignore-missing SHA256SUMS
+
+gh attestation verify "$binary-v$version-$platform.tar.gz" \
+  --repo zeabur-oss/zeabur \
+  --cert-identity "$identity"
+```
+
+Extract the binary only after all three checks pass:
+
+```sh
+tar -xzf "$binary-v$version-$platform.tar.gz" "$binary"
+"./$binary" --version
+```
+
+If a checksum doesn't match, download that file again. If the signer, issuer, or attestation doesn't match, don't run the file. Check the release, filename, and workflow identity first. Don't relax the verification parameters to make it pass.
+
+Files downloaded in a browser on macOS carry a quarantine flag. After verification passes, run this command on the extracted file:
+
+```sh
+xattr -d com.apple.quarantine zeaburctl
+```
+
+`gh release download` doesn't add this flag. The macOS build has a Sigstore signature but isn't notarized by Apple.
+
+## Verify the image and chart
+
+`digests.txt` lists the full registry references for the image index, each platform's image, and the chart. It's also listed in `SHA256SUMS`. Verify it with the steps above first, then pass the digests it contains to cosign:
+
+```sh
+cosign verify \
+  --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  'ghcr.io/zeabur-oss/zeabur@sha256:<image-index-digest>'
+
+cosign verify \
+  --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  'ghcr.io/zeabur-oss/charts/zeabur@sha256:<chart-digest>'
+```
+
+Replace the placeholders in angle brackets with the values from `digests.txt`. For chart installation steps, see [Install on an existing cluster](../get-started/install.mdx).
+
+## Release process
+
+When a maintainer pushes a `v<version>` tag, the release workflow runs CI, builds the Linux and macOS binaries, runs smoke tests, and publishes the image and chart. It then signs the image, chart, and checksum list with Sigstore keyless signing and generates build provenance attestations for all three.
+
+The workflow finishes by creating a draft GitHub release. A maintainer checks the draft before publishing it. Downloadable files are available only for versions visible on the Releases page.
+
+Downloading and verifying files don't change the cluster. You can delete the download directory when you're done. To remove an installed copy of Zeabur, see [Uninstall](../leave/uninstall.mdx).

@@ -1,0 +1,180 @@
+---
+title: Permissions
+description: Compare member roles, admin accounts, and Kubernetes RBAC to check which operations each account can access and how long sign-in lasts.
+---
+
+If you can see a project but can't read its logs, check your role in that project: a **Viewer** can only view status and events. A **Developer** can also read logs, read secrets, and deploy. Zeabur calls kube-apiserver with your identity. Kubernetes RBAC decides what you can do.
+
+For steps to assign member roles, see [Members](../cluster/members.mdx). When you run [`zeaburctl ui`](./zeaburctl.mdx) locally, your permissions come from kubeconfig. The Helm chart provides the member roles below, and admins bind them when inviting members.
+
+## Member roles
+
+| Operation | Viewer | Developer |
+|---|---|---|
+| View service status, events, general config files, and volume details | Yes | Yes |
+| View database, backup, and build status | Yes | Yes |
+| Read replica logs and log history | No | Yes |
+| View usage history (requires Zeabur Proxy) | Yes | Yes |
+| Read and edit secrets | No | Yes |
+| Create, edit, and delete workloads and Kubernetes Services | No | Yes |
+| Change replica counts and restart services | No | Yes |
+| Edit public domains, HTTPRoutes, and connection rules | No | Yes |
+| Add or edit volumes | No | Yes |
+| Create databases, object storage, and supported backup configurations | No | Yes |
+| Deploy from Git and rebuild | No | Yes |
+| Open container terminals and add debug containers | No | Yes |
+| Edit a project's display name, description, and icon | No | Yes |
+| Create or delete namespaces and add namespaces to or remove them from Zeabur | No | No |
+| Edit roles, member access, nodes, and cluster components | No | No |
+| Restore volumes from backups (K8up) | No | Yes |
+| Configure cluster backups and restore from cluster backups | No | No |
+
+Operations marked "Yes" must still pass ResourceQuota, Pod Security, admission policies, and the component's own checks. Creating databases and backups requires the corresponding operators. The roles already include these operators' resources, so you don't need to change the roles after installing them.
+
+Developers can restore volumes in their own projects. The role only adds permission to create and delete `restores.k8up.io` in that namespace. Before using it, note two things:
+
+- Restoring in place overwrites the entire volume and deletes files added after the backup.
+- Anyone who can restore can read every backup in the project's backup repository. Use a separate backup path and password for each project.
+
+Velero runs cluster backups. During a restore, Velero uses its own permissions (`cluster-admin` by default) to write objects back to the namespaces specified in the Restore, including RoleBindings and secrets. RBAC can control who creates a Restore, but it can't restrict which namespaces the Restore writes to. Member roles therefore have no `velero.io` permissions, and only admins can restore cluster backups. The **Restore** button is disabled for anyone without permission to create a Restore.
+
+**Admin** users use admin accounts, which have full access to the entire cluster as soon as they sign in, with no additional confirmation. See [Admin accounts and regular accounts](#admin-accounts-and-regular-accounts) below. The interface shows available operations based on your actual RBAC rules, including any additional bindings or ClusterRole changes made by an admin.
+
+## What the chart creates
+
+The chart sets `memberRoles.enabled` to `true` by default and creates:
+
+- `zeabur-member`: Reads nodes, namespaces, storage classes, and PersistentVolumes whose names are known. Every member can see the names and annotations of all namespaces, so don't put secrets in project descriptions.
+- `zeabur-project-viewer`, `zeabur-project-developer`: Project roles that aggregate rules using the `zeabur.com/aggregate-to-<role>` label.
+- `zeabur-project-viewer-rules`, `zeabur-project-developer-rules`, `zeabur-project-builds-read`, `zeabur-project-builds-write`: The actual verbs and resources for the two roles above. Viewers can view builds. Developers can also deploy from Git and rebuild.
+- The `zeabur-project-namespace` ValidatingAdmissionPolicy and its binding: Restricts which namespace fields developers can change. Requires Kubernetes 1.30 or later.
+
+The chart doesn't bind roles to anyone. When an admin invites or updates a member in Zeabur, Zeabur uses the admin's permissions to create:
+
+| Object | Scope and contents |
+|---|---|
+| `ClusterRoleBinding zeabur-member-<username>` | Binds `zeabur-member` to `zeabur:<username>` |
+| `RoleBinding zeabur-member-<username>` in each project | Binds the project's developer or viewer role to the same user |
+
+These bindings have the labels `zeabur.com/member: <username>` and `app.kubernetes.io/managed-by: zeabur`. `zeabur-installer uninstall` deletes them too. If you remove Zeabur with `helm uninstall`, you must delete them yourself. See [Permissions after uninstalling](../leave/uninstall.mdx#member-permissions-and-admission-policies).
+
+When `memberRoles.enabled` is off, the chart doesn't create these roles or the namespace policy. When inviting a member, the only role choice is whether to make them an **Admin**.
+
+## Protecting project namespaces
+
+Developers need `patch namespaces` to change a project's name, description, and icon. RBAC can't restrict a patch to individual fields, so the chart uses the `zeabur-project-namespace` policy to limit developers to three annotations:
+
+```text
+zeabur.com/display-name
+zeabur.com/description
+zeabur.com/icon
+```
+
+Developers can't change other annotations, any labels, finalizers, ownerReferences, or spec. This includes labels that control Pod Security levels and NetworkPolicy selection.
+
+This restriction doesn't apply to anyone with `zeabur-manage` permission on that namespace or `patch`/`update` permission on all namespaces. Adding an existing namespace to Zeabur or removing it therefore requires an admin or someone with these additional permissions.
+
+## Which secrets developers can access
+
+<Callout type="warn">
+Developers can read the project's secrets, create replicas, edit workloads, and run commands in containers. This gives them access to secrets mounted by workloads and lets them run with the permissions of any ServiceAccount in the project. Don't put admin credentials or ServiceAccounts with more permissions than the team should have in the project.
+</Callout>
+
+The Developer role can't write RBAC objects or ServiceAccounts and has no `bind`, `escalate`, `impersonate`, `nodes/proxy`, or service/pod proxy permissions, so developers can't grant themselves more permissions. What they can actually do also depends on the permissions of existing ServiceAccounts in the project.
+
+Viewers can't read secrets or logs, but they can read config files and workload configurations. They can also see passwords written directly in those places.
+
+## Admin accounts and regular accounts
+
+Zeabur Identity has two account types. Assigning someone the **Admin** role in **Members** makes their account an admin account. Removing **Admin** changes it back to a regular account.
+
+| | Regular account | Admin account |
+|---|---|---|
+| Sign-in methods | Every method enabled in Zeabur Identity: passkeys, plus GitHub and Google if configured | Passkeys only |
+| Permissions | Project roles assigned on the Members page, plus any additional RBAC bindings | Full access to the entire cluster: the token includes the `admins` group, which is bound to `cluster-admin` |
+
+Admin accounts can do anything as soon as they sign in, with no additional confirmation. Admins should keep a separate regular account for daily work and sign in with their admin account only to change the cluster or manage members. Zeabur has no sudo mode; the admin account itself is the access boundary. For stricter controls, enable [AAL3](#require-device-bound-passkeys-aal3) below.
+
+When a regular account lacks permissions, the interface says more permissions are needed and lists the missing rules. Send the list to an admin and ask them to adjust your role or perform the operation for you.
+
+After a member becomes an **Admin**, they can only sign in with a passkey. Existing GitHub or Google sessions end the next time they refresh their tokens. Tokens already issued remain valid until they expire, for up to 5 or 10 minutes.
+
+The first admin comes from the setup link generated during installation (`zeabur-identityctl setup-link`). You can also invite admins or change an existing account's type from the command line:
+
+```sh
+zeabur-identityctl invite --username alice --admin
+zeabur-identityctl account-type alice admin     # back to a regular account: regular
+```
+
+Only the account type can grant the `admins` group. Zeabur Identity doesn't accept it in a user's `groups`. For details, see [Admin accounts](https://oss.zeabur.com/docs/identity/managing-users#admin-accounts) in the Zeabur Identity docs.
+
+## How long sign-in lasts
+
+Regular accounts must sign in again after 1 hour of inactivity. Admin accounts have the same 1-hour limit, reduced to 15 minutes when multiple teams or AAL3 is enabled. All accounts must sign in again after 12 hours, even if they're active.
+
+| Account | Token lifetime | Idle timeout | Maximum session length |
+|---|---|---|---|
+| Regular account | 10 minutes | 1 hour | 12 hours after sign-in |
+| Admin account, one team | 5 minutes | 1 hour | 12 hours after sign-in |
+| Admin account, multiple teams or AAL3 enabled | 5 minutes | 15 minutes | 12 hours after sign-in |
+
+Zeabur automatically refreshes expired tokens without asking you to use your passkey again. The 12-hour limit starts when you sign in with a passkey, GitHub, or Google. Refreshing a token doesn't extend it. The Zeabur web interface has a 1-hour idle timeout, or the shorter timeout set by Zeabur Identity.
+
+Leaving the page open without interacting doesn't count as activity. After 60 seconds without interaction, automatic status refresh requests no longer count as activity, and idle time continues to accumulate.
+
+Terminals stay open while in use and close after 15 minutes of inactivity.
+
+## Sign-in settings
+
+**Sign-in** on the **Settings** page affects only admin accounts, not regular accounts. The settings are stored in the `zeabur-identity-settings` config file in the namespace where Zeabur Identity runs. Zeabur Identity reads them at every sign-in and token refresh, so no restart is needed.
+
+| Setting | Config file key and values | Default | Effect |
+|---|---|---|---|
+| Teams | `teams`: `single` or `multiple` | `single`, one team | With multiple teams, admin sessions end after 15 minutes of inactivity. |
+| AAL3 | `admin-aal3`: `false` or `true` | `false`, off | Admin accounts require device-bound passkeys, and sessions end after 15 minutes of inactivity. |
+
+Installation can't determine whether one team or multiple teams will use the cluster, so it always starts with one team. In a single-team cluster, the admin is usually the only user, so the idle timeout matches regular accounts. If multiple teams share the cluster, change the setting to multiple teams.
+
+Neither setting has a Helm value because Zeabur Identity isn't part of the Zeabur chart. Change them on the **Settings** page or use kubectl to edit the same config file:
+
+```sh
+kubectl -n zeabur-identity create configmap zeabur-identity-settings --from-literal=teams=multiple
+kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge -p '{"data":{"teams":"single"}}'
+```
+
+If the config file or a key is missing, Zeabur Identity uses the default. If it doesn't recognize a value, it uses the stricter option (`multiple` or `true`).
+
+### Require device-bound passkeys (AAL3)
+
+With AAL3 enabled, admin accounts can only use passkeys that don't sync to other devices, such as security keys or passkeys stored on a single device. Synced passkeys stored in services such as iCloud Keychain or Google Password Manager are rejected at sign-in. The interface explains that the passkey syncs and that admin accounts require a security key or a passkey stored on a single device. Anyone already signed in with a synced passkey is signed out at the next token refresh.
+
+NIST SP 800-63B-4 limits synced passkeys to AAL2. Only device-bound passkeys can potentially meet AAL3. The authenticator reports whether a passkey can sync through WebAuthn's backup eligibility flag (BE). Zeabur Identity doesn't require attestation, so no one verifies that this report is true. AAL3 can block synced passkeys, but it can't prove what hardware stores a key.
+
+Before enabling AAL3, make sure every admin has a device-bound passkey. Zeabur won't let you enable it without one yourself, to prevent you from locking yourself out. Other admins without one won't be able to sign in after you enable it. Use `zeabur-identityctl setup-link --username <admin> --reset` to generate a new link so they can register a security key. For steps to check each passkey, see [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins) in the Zeabur Identity docs.
+
+## Using kubectl
+
+Both admin and regular accounts use standard kubelogin (`oidc-login`) contexts in kubeconfig. They use refresh tokens to get new tokens, so you can run kubectl commands without using your passkey every few minutes. The time limits are the same as in the table above.
+
+kubectl has no additional confirmation step. For admin accounts, the only protections in kubectl are passkey sign-in and the time limits above.
+
+By default, kubelogin stores refresh tokens in `~/.kube/cache/oidc-login`. To avoid leaving them on disk, add one of these options to the context's exec arguments:
+
+- `--token-cache-storage=keyring`: Store tokens in the operating system's keyring.
+- `--token-cache-storage=none`: Store nothing and open the sign-in page for every kubectl command.
+
+For steps to configure kubeconfig, see [Get started](https://oss.zeabur.com/docs/identity/get-started#7-set-up-kubectl-on-your-computer) in the Zeabur Identity docs.
+
+## Checking permissions with kubectl
+
+Use the same kubeconfig to check your permissions:
+
+```sh
+kubectl auth can-i --list --namespace shop
+kubectl auth can-i get pods --namespace shop
+kubectl auth can-i get pods/log --namespace shop
+kubectl auth can-i create pods/exec --namespace shop
+kubectl auth can-i patch deployments.apps --namespace shop
+```
+
+Zeabur uses `SelfSubjectRulesReview` to decide which operations to show in the interface. If the cluster returns incomplete rules, Zeabur can't determine whether you have permission and lets the dry run before applying decide. If a policy or quota rejects the operation, fix the conditions it identifies. Admin accounts must also pass admission policies.

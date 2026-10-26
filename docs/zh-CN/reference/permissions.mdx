@@ -1,0 +1,181 @@
+---
+title: 权限
+description: 对照成员角色、管理员账号和 Kubernetes RBAC，确认各项操作的访问范围和登录有效期。
+source: "f2991f1dd0b1"
+---
+
+能看到项目却读不到日志时，先确认自己在项目中的角色：**查看者**只能看状态和事件，**开发者**才能读取日志、读取 Secret 和部署。Zeabur 用你自己的身份调用 kube-apiserver，能否执行操作由 Kubernetes RBAC 决定。
+
+设置成员角色的步骤见[成员](../cluster/members.mdx)。在本地使用 [`zeaburctl ui`](./zeaburctl.mdx) 时，权限就是 kubeconfig 的权限。以下成员角色由 Helm chart 提供，管理员邀请成员时绑定。
+
+## 成员角色
+
+| 操作 | 查看者 | 开发者 |
+|---|---|---|
+| 查看服务状态、事件、普通配置文件和卷信息 | 可以 | 可以 |
+| 查看数据库、备份和构建的状态 | 可以 | 可以 |
+| 读取 Pod 日志和日志历史记录 | 不可以 | 可以 |
+| 查看用量历史记录（需启用 Zeabur Proxy） | 可以 | 可以 |
+| 读取和修改 Secret | 不可以 | 可以 |
+| 添加、修改、删除工作负载和 Kubernetes Service | 不可以 | 可以 |
+| 修改副本数、重启服务 | 不可以 | 可以 |
+| 修改公开域名、HTTPRoute 和 NetworkPolicy | 不可以 | 可以 |
+| 添加或修改卷 | 不可以 | 可以 |
+| 创建数据库、对象存储和支持的备份配置 | 不可以 | 可以 |
+| 从 Git 部署、重新构建 | 不可以 | 可以 |
+| 打开容器终端、添加调试容器 | 不可以 | 可以 |
+| 修改项目显示名称、描述和图标 | 不可以 | 可以 |
+| 创建／删除 Namespace、将 Namespace 加入或移出 Zeabur | 不可以 | 不可以 |
+| 修改角色和成员访问权限、节点、集群组件 | 不可以 | 不可以 |
+| 从卷的备份还原（K8up） | 不可以 | 可以 |
+| 配置集群备份、从集群备份还原 | 不可以 | 不可以 |
+
+标为“可以”的操作仍需通过 ResourceQuota、Pod Security、admission policy 和组件自身的检查。创建数据库和备份前，需先安装对应的 operator。角色已包含这些 operator 的资源，安装后不用修改角色。
+
+开发者可以在自己的项目中还原卷，角色只额外授予该 Namespace 内 `restores.k8up.io` 的创建和删除权限。使用前注意两点：
+
+- 还原到原位置会覆盖整个卷，备份后新增的文件会被删除。
+- 有还原权限的人能读取项目备份仓库中的所有备份。每个项目应使用独立的备份路径和密码。
+
+集群备份由 Velero 执行。还原时，Velero 用自己的权限（默认为 `cluster-admin`）将对象写回 Restore 指定的 Namespace，包括 RoleBinding 和 Secret。RBAC 只能决定谁能创建 Restore，不能限制它写入哪些 Namespace，因此成员角色没有任何 `velero.io` 权限，只有管理员能还原。没有创建 Restore 权限的人无法使用 **还原** 按钮。
+
+**管理员**使用管理员账号，登录后就有整个集群的完整权限，无需再次确认，见下方[管理员账号和普通账号](#管理员账号和普通账号)。界面根据你实际拥有的 RBAC 规则显示可执行的操作，因此额外绑定的规则、管理员修改过的 ClusterRole 都会反映在界面上。
+
+## Chart 会创建什么
+
+Chart 的 `memberRoles.enabled` 默认为 `true`，会创建：
+
+- `zeabur-member`：读取节点、Namespace、StorageClass，以及已知名称的 PersistentVolume。每位成员都能看到所有 Namespace 的名称和 annotations，因此不要在项目描述中放入机密信息。
+- `zeabur-project-viewer`、`zeabur-project-developer`：项目角色，通过 `zeabur.com/aggregate-to-<role>` 标签聚合规则。
+- `zeabur-project-viewer-rules`、`zeabur-project-developer-rules`、`zeabur-project-builds-read`、`zeabur-project-builds-write`：上面两个角色实际使用的 verb 和 resource。查看者能查看构建，开发者还能从 Git 部署和重新构建。
+- `zeabur-project-namespace` ValidatingAdmissionPolicy 及其 binding：限制开发者可以修改 Namespace 的哪些字段，需要 Kubernetes 1.30 及以上版本。
+
+Chart 本身不绑定任何人。管理员在 Zeabur 中邀请成员或变更成员权限时，Zeabur 用管理员的权限创建：
+
+| 对象 | 范围和内容 |
+|---|---|
+| `ClusterRoleBinding zeabur-member-<username>` | 将 `zeabur-member` 绑定给 `zeabur:<username>` |
+| 各项目中的 `RoleBinding zeabur-member-<username>` | 将该项目的 developer 或 viewer 角色绑定给同一用户 |
+
+这些 binding 带有 `zeabur.com/member: <username>` 和 `app.kubernetes.io/managed-by: zeabur` 标签。`zeabur-installer uninstall` 会一并删除它们。使用 `helm uninstall` 卸载时需要自行删除，见[卸载后的权限](../leave/uninstall.mdx#成员权限和准入策略)。
+
+关闭 `memberRoles.enabled` 后，chart 不会创建这些角色和 Namespace 策略，邀请成员时只能选择是否授予 **管理员** 角色。
+
+## 项目 Namespace 的保护
+
+开发者需要 `patch namespaces` 权限才能修改项目名称、描述和图标，但 RBAC 无法将 patch 限制在特定字段，因此 chart 通过 `zeabur-project-namespace` 策略，将开发者可修改的范围限制为三个 annotation：
+
+```text
+zeabur.com/display-name
+zeabur.com/description
+zeabur.com/icon
+```
+
+开发者不能修改其他 annotation、任何 label、finalizers、ownerReferences 和 spec。其中也包括决定 Pod Security 级别和 NetworkPolicy 选择范围的 label。
+
+对该 Namespace 有 `zeabur-manage` 权限，或对所有 Namespace 有 `patch`／`update` 权限的人，不受此限制。因此，将已有的 Namespace 加入或移出 Zeabur，都需要管理员或拥有这些额外权限的人操作。
+
+## 开发者能访问哪些机密
+
+<Callout type="warn">
+开发者能读取项目的 Secret，也能创建 Pod、修改工作负载、在容器中运行命令，因此能获取工作负载挂载的机密，也能以项目中任意 ServiceAccount 的权限运行。不要在项目中放入权限超出团队所需范围的 ServiceAccount 或管理员凭证。
+</Callout>
+
+开发者角色不能写入 RBAC 对象和 ServiceAccount，也没有 `bind`、`escalate`、`impersonate`、`nodes/proxy` 或 service／pod proxy 权限，因此无法自行扩大权限。实际能执行哪些操作，还取决于项目中已有的 ServiceAccount 有哪些权限。
+
+查看者无法读取 Secret 和日志，但能读取 ConfigMap 和工作负载的配置。直接写在这些位置的密码，查看者也能看到。
+
+## 管理员账号和普通账号
+
+Zeabur Identity 的账号分为两种。在 **成员** 中将某人设为 **管理员**，其账号就会变为管理员账号；移除 **管理员** 角色后，账号就会改回普通账号。
+
+| | 普通账号 | 管理员账号 |
+|---|---|---|
+| 登录方式 | Zeabur Identity 开放的所有方式：通行密钥，以及已配置的 GitHub、Google | 只能用通行密钥 |
+| 权限 | 成员页授予的项目角色，加上额外绑定的 RBAC 规则 | 整个集群的完整权限：令牌带有 `admins` 组，绑定 `cluster-admin` |
+
+管理员账号登录后就能执行任何操作，没有再次确认的步骤。因此，建议管理员另备一个普通账号处理日常工作，只在修改集群、管理成员时使用管理员账号登录。Zeabur 没有 sudo 模式，管理员账号本身就是这道关卡；要更严格地限制登录，可以启用下方的 [AAL3](#只接受不会同步的通行密钥aal3)。
+
+普通账号权限不足时，界面会提示需要更多权限，并列出缺少的规则。将这些规则交给管理员，请他调整你的角色或代为处理。
+
+将成员设为 **管理员** 后，他之后只能用通行密钥登录，原先通过 GitHub 或 Google 登录的会话会在下次刷新令牌时结束。已签发的令牌在到期前仍然有效，最长为 5 或 10 分钟。
+
+首位管理员通过安装时的配置链接创建（`zeabur-identityctl setup-link`）。也可以在命令行中邀请管理员，或更改已有账号的类型：
+
+```sh
+zeabur-identityctl invite --username alice --admin
+zeabur-identityctl account-type alice admin     # 改回普通账号：regular
+```
+
+`admins` 组只能通过账号类型获得，Zeabur Identity 不接受将它写入用户的 `groups`。详情见 Zeabur Identity 的[管理员账号](https://oss.zeabur.com/docs/identity/managing-users#admin-accounts)。
+
+## 登录有效期
+
+普通账号闲置 1 小时后需要重新登录。管理员账号同样为 1 小时，但配置为多个团队或启用 AAL3 时会缩短至 15 分钟。无论是否持续使用，登录 12 小时后都需要重新登录。
+
+| 账号 | 令牌有效期 | 闲置多久后结束 | 最长有效期 |
+|---|---|---|---|
+| 普通账号 | 10 分钟 | 1 小时 | 登录后 12 小时 |
+| 管理员账号，一个团队 | 5 分钟 | 1 小时 | 登录后 12 小时 |
+| 管理员账号，多个团队或启用 AAL3 | 5 分钟 | 15 分钟 | 登录后 12 小时 |
+
+令牌到期时，Zeabur 会自动刷新，无需再次使用通行密钥验证。12 小时从通过通行密钥、GitHub 或 Google 登录的那一刻算起，刷新令牌不会延长有效期。Zeabur 网页的闲置上限为 1 小时；如果 Zeabur Identity 设置的时间更短，则以它为准。
+
+打开页面但不操作不算活跃使用。超过 60 秒没有操作后，页面自动更新状态的请求不再计为活动，闲置时间会继续累计。
+
+终端在持续使用时会保持打开，闲置 15 分钟后关闭。
+
+## 登录设置
+
+**设置** 页的 **登录设置** 只影响管理员账号，不影响普通账号。配置保存在 Zeabur Identity 所在 Namespace 的 ConfigMap `zeabur-identity-settings` 中，Zeabur Identity 在每次登录和刷新令牌时读取，无需重启。
+
+| 设置 | ConfigMap 的键和值 | 默认值 | 作用 |
+|---|---|---|---|
+| 团队 | `teams`：`single` 或 `multiple` | `single`，一个团队 | 多个团队时，管理员账号闲置 15 分钟后会话结束。 |
+| AAL3 | `admin-aal3`：`false` 或 `true` | `false`，关闭 | 管理员账号只接受不会同步的通行密钥，闲置 15 分钟后会话结束。 |
+
+安装时无法确定集群是供一个团队使用，还是由多个团队共用，因此一律默认为一个团队。只有一个团队使用集群时，管理员通常就是唯一的用户，闲置时间与普通账号相同。多个团队共用集群时，记得改为多个团队。
+
+这两项没有对应的 Helm value，因为 Zeabur Identity 不在 Zeabur 的 chart 中。在 **设置** 页修改，或用 kubectl 修改同一个 ConfigMap：
+
+```sh
+kubectl -n zeabur-identity create configmap zeabur-identity-settings --from-literal=teams=multiple
+kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge -p '{"data":{"teams":"single"}}'
+```
+
+如果 ConfigMap 或某个键不存在，则使用默认值。如果填入 Zeabur Identity 无法识别的值，则采用更严格的选项（`multiple` 或 `true`）。
+
+### 只接受不会同步的通行密钥（AAL3）
+
+启用 AAL3 后，管理员账号只能使用不会同步到其他设备的通行密钥，例如安全密钥，或仅保存在一台设备上的通行密钥。登录时，Zeabur Identity 会拒绝保存在 iCloud 钥匙串、Google 密码管理工具等服务中、会同步的通行密钥。界面会明确提示该通行密钥会同步，管理员账号需要使用安全密钥或仅保存在一台设备上的通行密钥。已经通过会同步的通行密钥登录的人，会在下次刷新令牌时退出登录。
+
+NIST SP 800-63B-4 规定，会同步的通行密钥最高只能达到 AAL2，不会同步的才可能达到 AAL3。通行密钥是否会同步，由验证器自行报告（WebAuthn 的 backup eligibility 标志，BE）。Zeabur Identity 不要求 attestation，因此没有人验证这一报告是否属实。AAL3 能拦截会同步的通行密钥，但不能证明密钥保存在什么硬件中。
+
+启用前，先确认每位管理员都有不会同步的通行密钥。如果你自己没有，Zeabur 不会允许你启用，以免将自己锁在账号外。启用后，其他没有此类通行密钥的管理员将无法登录，需要用 `zeabur-identityctl setup-link --username <管理员> --reset` 生成新链接，让他注册安全密钥。检查每把通行密钥的方法见 Zeabur Identity 的 [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins)。
+
+## 使用 kubectl 操作
+
+管理员账号和普通账号的 kubeconfig 都使用常规的 kubelogin（`oidc-login`）context，通过 refresh token 刷新令牌，直接运行 kubectl 命令即可，不会每隔几分钟就要求你使用通行密钥验证。有效期与上表相同。
+
+kubectl 没有额外的确认步骤。管理员账号在 kubectl 中的保护措施，只有通行密钥登录和上述时间限制。
+
+kubelogin 默认将 refresh token 保存在 `~/.kube/cache/oidc-login`。如果不想将它保留在磁盘上，在 context 的 exec 参数中添加：
+
+- `--token-cache-storage=keyring`：保存到操作系统的钥匙串中。
+- `--token-cache-storage=none`：不保存任何内容，每次运行 kubectl 命令都会打开登录页。
+
+配置 kubeconfig 的步骤见 Zeabur Identity 的[入门](https://oss.zeabur.com/docs/identity/get-started#7-set-up-kubectl-on-your-computer)。
+
+## 使用 kubectl 确认权限
+
+使用同一份 kubeconfig 检查自己的权限：
+
+```sh
+kubectl auth can-i --list --namespace shop
+kubectl auth can-i get pods --namespace shop
+kubectl auth can-i get pods/log --namespace shop
+kubectl auth can-i create pods/exec --namespace shop
+kubectl auth can-i patch deployments.apps --namespace shop
+```
+
+Zeabur 用 `SelfSubjectRulesReview` 判断界面应显示哪些操作。如果集群返回的规则不完整，Zeabur 无法确定你能否执行操作，会交由应用前的 dry run 判断。如果策略或用量上限拒绝了操作，需要修正策略指出的条件。管理员账号同样需要通过 admission policy。
