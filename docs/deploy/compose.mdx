@@ -1,0 +1,134 @@
+---
+title: Import Docker Compose services
+description: Read Compose and environment variable files, review conversion differences, and create services in a project.
+---
+
+In a project, select **Add** → **Docker Compose**, paste `compose.yaml`, and click **Read file**. Review each service, database replacement, and public domain, then **Review changes** and apply them. After import, you can edit each service separately. Zeabur doesn't store or continuously sync the original Compose file.
+
+## Before you start
+
+- Prepare the Compose file and the contents of any `.env` and `env_file` files it uses. The Compose file must be no larger than 256 KiB and contain 1 to 50 services.
+- Each service you want to deploy must have an `image` pushed to a registry. Services with only `build:` won't be created. [Deploy from Git](git.mdx) instead, or push an image first.
+- You need an existing project and permission to create services. Importing volumes, secrets, domains, or operator-managed databases also requires permission to create each of those resources.
+- To replace PostgreSQL, MongoDB, MySQL, MariaDB, Redis/Valkey, or MinIO with operator-managed services, install the corresponding [components](../cluster/components.mdx) first.
+
+<Callout type="warn">
+Importing doesn't move data from the Docker host. Choosing an operator-managed database or object storage creates empty storage. Named volumes for regular services also get new disks. Before switching over to production, migrate the data separately and confirm that the application can read it.
+</Callout>
+
+## Read files and create services
+
+<Steps>
+<Step>
+
+### Provide Compose and variable files
+
+Open **Add** → **Docker Compose**. Paste YAML into **Compose file**, or click **Upload file** to select a file, then click **Read file**.
+
+If the file uses interpolation such as `${NAME}` without a corresponding value, the interface asks for the `.env` contents. Each file referenced by `env_file` also gets its own input field. Paste or upload those files, then click **Read file** again.
+
+Missing interpolation values become empty strings, and variables from files you haven't provided for `env_file` are skipped. Fill in these values first so the application doesn't start with an empty password or address. If a variable appears in both `env_file` and `environment`, the `environment` value takes precedence.
+
+</Step>
+<Step>
+
+### Choose how to run each database
+
+When the cluster has the corresponding operator installed and you have permission to create the service, **Create operator-managed…** (followed by the engine name) is on by default for these services:
+
+| Compose image | Service created |
+| --- | --- |
+| PostgreSQL | PostgreSQL managed by CloudNativePG |
+| MongoDB | MongoDB managed by Percona Operator |
+| MySQL | MySQL managed by MOCO |
+| MariaDB | MariaDB managed by mariadb-operator |
+| Redis, Valkey | Dragonfly managed by Dragonfly Operator |
+| MinIO | Object storage managed by SeaweedFS Operator |
+
+When this option is on, the differences between the new service and the Compose service appear below it: version, startup command, ports, volumes, username and password variables, and instance count. For example, the volume row shows the new volume's size and notes that it starts empty.
+
+![Service list after reading the files: db uses operator-managed PostgreSQL, with differences listed below; web waits until db is reachable before starting](https://oss.zeabur.com/shots/zeabur/en/light/compose-services.avif)
+
+To keep using the original image, turn this option off. When two or more services can be replaced, **Replace all N with operator-managed services** at the top turns the option on or off for all of them. If the operator is missing, its installation can't be verified, or you don't have enough permissions, the service runs the original image, and the interface explains why.
+
+When you choose an operator-managed service, recognizable connection strings, hosts, usernames, passwords, and database names in other services are rewritten to use the new service's connection settings. References that can't be rewritten keep their original values, with a prompt to check them after import.
+
+</Step>
+<Step>
+
+### Choose public domains
+
+Compose `ports` don't directly expose host ports on nodes. For regular services that need to serve HTTP publicly, turn on **Public domain** and confirm the suggested domain or enter one.
+
+For example, `"3000:3000"` keeps the container's TCP port `3000` but doesn't expose the host's port `3000` publicly. **Public domain** is off by default. DNS and HTTPS still need to be configured as described in [Public domains](../configure/domains.mdx).
+
+</Step>
+<Step>
+
+### Review and apply
+
+Read the mount paths, dependencies to wait for, and skipped fields below each service, then click **Review changes**. Check the service count, secrets, volumes, databases, and domains.
+
+Imported services use **Compatible** security because most Compose images run as root.
+
+If you change the Compose or variable file contents, click **Read file** again before reviewing the new results.
+
+</Step>
+</Steps>
+
+## Review settings that change or are skipped
+
+| Original setting | Behavior after import and affected scenarios |
+| --- | --- |
+| `entrypoint`, `command` | Regular image-based services keep the container command and arguments. For operator-managed services, the operator controls startup. For example, Redis's `redis-server --appendonly yes` isn't carried over to Dragonfly. |
+| Data service `ports` | After replacement with an operator-managed service, connections use the new service's private network. MinIO's port `9000` and management interface port `9001` aren't carried over. Applications connect to the SeaweedFS S3 endpoint instead. |
+| Named volumes | Each mount in each service gets its own 1 GiB volume. Existing data isn't migrated. Services that shared a volume with the same name get separate volumes. Whether you can expand capacity later depends on the storage class. |
+| Host paths, Docker socket | Not mounted. Config files or data previously provided through host directories must be placed in volumes or config files separately. |
+| `depends_on` | Before starting, waits for the dependent services' TCP ports to accept connections. Dependencies without a recognizable port aren't included in the wait. |
+| `healthcheck` | Skips the original check and uses a TCP connection to the first port as the traffic check. You can adjust it in **Settings** after import. |
+| UDP ports | Skipped. Kubernetes Services created by the import use TCP only. |
+| `privileged`, `cap_add`, `devices`, `network_mode: host`, `pid: host` | Skipped. For applications that require host devices or host privileges, address those dependencies before deploying. |
+| `build:` with `image` | Pulls `image` directly and skips the local build. |
+| Service names that don't meet naming rules | Converted to lowercase letters, numbers, and hyphens. Check application settings that still use the old names. |
+| Plaintext variables in regular services | Stored in a secret named `<service-name>-env` if you have permission to create secrets. Rewritten variables such as `S3_ENDPOINT` may also appear here. |
+
+## Verify the results
+
+Return to the project and confirm that all expected services appear. Open each service's **Overview** and **Logs** in turn. Newly created databases and object storage need time for the operator to create instances and connection secrets.
+
+Check the application's **Variables** to see where its connections point after import, then perform a database read and write or a file upload. Once the web page loads, also confirm that it's reading the migrated data.
+
+![Project page listing the imported services](https://oss.zeabur.com/shots/zeabur/en/light/project-services.avif)
+
+When checking with kubectl, regular service objects have the label `app.kubernetes.io/name: <service-name>`. For operator-managed databases, the database objects and secrets Zeabur creates have the label `zeabur.com/database: <name>`. In the example below, `db` was replaced with PostgreSQL:
+
+```sh
+kubectl -n shop get deploy,svc,pvc,secret -l app.kubernetes.io/name=web
+kubectl -n shop get clusters.postgresql.cnpg.io,secret -l zeabur.com/database=db
+kubectl -n shop get deployment web -o jsonpath='{.spec.template.spec.initContainers[*].name}'
+```
+
+Services with `depends_on` get additional init containers named `wait-1`, `wait-2`, and so on. They use `nc -z` and exit only when the dependent services' ports accept connections.
+
+## Do the same with kubectl
+
+Compose files are converted to services only in the interface. Zeabur doesn't store the Compose file, and there's no corresponding object in the cluster. The conversion produces regular Kubernetes objects, just like those created manually:
+
+- Regular services: the same YAML as [Deploy a container image](./image.mdx#do-the-same-with-kubectl), with security fixed to **Compatible**.
+- Databases and object storage: the same YAML as [Databases](./databases.mdx#do-the-same-with-kubectl) and [Object storage](./object-storage.mdx#do-the-same-with-kubectl).
+
+Without the interface, you can write YAML yourself using the two pages above, or convert with [Kompose](https://kompose.io/) and then edit the result. Zeabur's conversion rules are based on Kompose, but names, labels, and security settings differ, so their output won't be identical.
+
+## Common failures and cleanup
+
+- Name already exists: this workflow only creates objects. Change the service name in Compose and read the files again, or use another project.
+- A service wasn't created: check whether it has only `build:`. Specify an image that can be pulled, or deploy it separately from Git.
+- The application can't connect to the new database: check references that couldn't be rewritten, renamed hosts, and the actual variable names. Use **Connect to a service** under the database's **Connections** section. See [Databases](databases.mdx).
+- Previously shared files are missing: imported volumes are independent. Check whether the original Compose file relied on multiple services sharing one volume, then reorganize storage and migrate the files.
+- Only some objects were created: Zeabur creates objects in sequence. If creation fails partway through, objects already created remain in the cluster. Use the results shown in the interface to create the remaining objects or delete the ones already created.
+
+To remove this import, use **Delete service**, **Delete database**, and **Delete object storage** for each service, database, and object storage service, and review each deletion list. Zeabur doesn't store the Compose file, so there's no button to delete the entire import at once.
+
+<Callout type="warn">
+Deleting volumes, databases, or buckets in the deletion list may also delete their data. Export or copy any data you want to keep before applying the deletion.
+</Callout>

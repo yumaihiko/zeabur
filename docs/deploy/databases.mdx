@@ -1,0 +1,720 @@
+---
+title: Create, back up, and restore databases
+description: Create any of the five supported databases, connect it to a service, and back it up, restore it, or export a dump.
+---
+
+Choose a database engine from the project's **Add** menu, set the version and storage, then select **Review changes**. Once the database is ready, use **Connect to a service** to add connection variables. To keep data you can restore, go to **Backups** and set up an S3 destination.
+
+## Before you begin
+
+- You have a project and permission to create databases and the required secrets. To connect a service, you also need permission to modify that service.
+- An administrator has installed the operator for the engine you choose. If a component is missing, the **Add** menu links to **Components**. See [Manage cluster components](../cluster/components.mdx).
+- The cluster has an available storage class and enough space. When you create multiple instances, the capacity and resources in the form apply to each instance.
+- To set up backups, have an S3-compatible endpoint reachable from the cluster, an existing bucket, and access keys, or a [shared S3 destination](../cluster/s3-destinations.mdx) you can read. PostgreSQL backups also require the Barman Cloud plugin.
+
+## Choose an engine
+
+| Engine | Management component | Versions available in the creation form | Default capacity per instance |
+| --- | --- | --- | --- |
+| PostgreSQL | CloudNativePG | 18, 17, 16 | 5 GiB |
+| MongoDB | Percona Operator for MongoDB | 8.0, 7.0 | 10 GiB |
+| MySQL | MOCO | 8.4 | 10 GiB |
+| MariaDB | mariadb-operator | 12.3, 11.8 | 10 GiB |
+| Dragonfly (Redis-compatible) | Dragonfly Operator | 1.34 | 2 GiB |
+
+The form selects the latest version by default. On some Linux versions, MongoDB 8.0 needs a memory setting changed before it can start. Zeabur adds `GLIBC_TUNABLES=glibc.pthread.rseq=1` to every MongoDB 8 database it creates or restores, which may slightly reduce performance. For existing MongoDB 8 databases without this setting, the database page shows a notice. Select “Edit settings” to add it.
+
+Dragonfly is licensed under `Apache-2.0 AND BUSL-1.1`. Before choosing it, read the license restrictions shown in the form, especially if you plan to offer hosted database services to others.
+
+## Create a database and connect it to an app
+
+<Steps>
+<Step>
+
+### Fill in the database settings
+
+In the project, select **Add** → the engine you need, or select **New database**.
+
+Enter a **Name**, then choose the **Version**, **Instances**, **Storage per instance**, **Size**, and storage class. Names can contain up to 30 characters, must use lowercase letters, numbers, and hyphens, and must start with a letter.
+
+Single-node clusters default to one instance. On multi-node clusters, MongoDB and MySQL default to three instances; the other engines default to one. MongoDB and MySQL support 1, 3, or 5 instances. For other engines, choose from the counts available in the form.
+
+With only one instance, no other instance can take over after a failure, and there's only one copy of the data on one volume. For fault tolerance, plan instance placement and storage locations as well as the instance count.
+
+![New PostgreSQL form with the name, version, instance count, and storage filled in, and a warning about using only one instance](https://oss.zeabur.com/shots/zeabur/en/light/database-form.avif)
+
+</Step>
+<Step>
+
+### Choose services to connect
+
+Under **Connect to a service** in the creation form, select the apps to connect. You can also leave this empty and, once the database is ready, select **Connect to a service** under **Overview** → **Connections**.
+
+Check the **Variable name** and **Variables added**:
+
+| Engine | Default primary variable | Additional values |
+| --- | --- | --- |
+| PostgreSQL | `DATABASE_URL` | Optionally add `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`. |
+| MongoDB | `MONGO_URL` | Password variable `MONGOPASSWORD`. |
+| MySQL, MariaDB | `DATABASE_URL` | Password variable `MYSQLPASSWORD`. |
+| Dragonfly | `REDIS_URL` | Password variable `REDIS_PASSWORD`. |
+
+Passwords stay in secrets, and services read them through secret references. If a variable with the same name already exists, the form flags a conflict or suggests prefixing the variable name with the database name. Check that the names match the app's configuration.
+
+</Step>
+<Step>
+
+### Review and apply
+
+Select **Review changes** and check the engine, name, instance count, and capacity. If you're also connecting services, check which services will have their connections updated.
+
+After applying the changes, open the database, wait for **Ready**, and check the instance count. If a newly created database shows **Unknown**, check **Events** and **Logs** for the operator and instance status.
+
+</Step>
+</Steps>
+
+![Overview and connection details for the orders PostgreSQL database](https://oss.zeabur.com/shots/zeabur/en/light/database-overview.avif)
+
+The database's **Connections** section shows an address inside the cluster. To configure an app manually, copy the **Host**, **Port**, **Database**, and **Username**. If you have permission to read secrets, select **Show** next to the password. Then write a test record from the app and read it back to verify the connection and permissions.
+
+## Set up S3 backups
+
+1. Open the database's **Backups** → **Set up backups**.
+2. **S3 destination** defaults to the first destination registered in the cluster. To use a different location, choose another destination, or select **Enter manually** and fill in the **Endpoint**, **Bucket**, **Region**, **Access key ID**, and **Secret access key**. If the cluster has no destinations yet, the form links to where you can add one.
+3. If a **Folder** field is available, use it to specify the storage location. Leave it empty to use the database name. MySQL always writes to `moco/<project-name>/<database-name>`.
+4. Under **Schedule**, select **Daily at 03:00 UTC** or **Sundays at 03:00 UTC**. That's 11:00 AM Taiwan time.
+5. Set retention for the engine, then select **Review changes**. The review lists the schedule and destination, retention days, the secret that stores the keys, and whether the database will restart, each in a sentence. Check the details, then select **Set up backups**.
+
+<Callout type="warn">
+CloudNativePG (PostgreSQL) writes backup files to the bucket in plaintext. Use a bucket with server-side encryption enabled, or enable encryption in the storage service's settings, and restrict who can read the bucket.
+</Callout>
+
+When you use a shared destination, applying the changes copies its keys to the project. If an administrator later changes the shared destination's keys, this copy won't update automatically.
+
+| Engine | Retention | Back up now | Restore source |
+| --- | --- | --- | --- |
+| PostgreSQL | **Keep, in days**, plus continuous write-ahead log archiving | Available | Successful backups that include restore information |
+| MongoDB | The form converts days to a backup count. Daily backups keep the same number; weekly backups keep the number of days divided by 7, rounded up | Available | Successful backups that include restore information |
+| MySQL | Keeps all backups; configure lifecycle cleanup in the S3 bucket | Unavailable; runs on schedule | Successful backups that include restore information |
+| MariaDB | **Keep, in days** | Available | Successful backups that include restore information |
+| Dragonfly | Keeps all snapshots; configure lifecycle cleanup in the S3 bucket | Unavailable; writes snapshots on schedule and when stopping | The latest snapshot |
+
+<Callout type="warn">
+A single-instance Dragonfly database restarts when you switch it to S3 snapshots. If the destination has no snapshots yet, it starts with empty data, leaving the original data only in snapshots on the original volume. If the database already has data, plan a data migration before applying this change.
+</Callout>
+
+After setting up backups for PostgreSQL, MongoDB, or MariaDB, select **Back up now** at the top of the page. The review shows the backup destination. Select **Back up now** again, then wait for it to succeed in **Backups**. Until the first successful record appears, there's no backup you can restore. Dragonfly snapshots aren't listed on this page. Check the S3 destination for snapshot files.
+
+## Restore to a new database and switch services
+
+<Steps>
+<Step>
+
+### Choose a restore source
+
+Go to the original database's **Backups** and select **Restore to a new database**. Choose a **Backup**, enter an unused **New database name**, then review and apply the changes.
+
+PostgreSQL, MongoDB, MySQL, and MariaDB only list successful records that include restore information. Dragonfly uses the **Newest snapshot**. The new database uses the original database's size settings and contains data as of the selected backup. The original database and app connections stay unchanged.
+
+</Step>
+<Step>
+
+### Check the restored data
+
+Wait for the new database to be **Ready**, then use its connection details to check the data. MongoDB restores reuse the original database's user secrets, so keep both the backup and the related secrets.
+
+</Step>
+<Step>
+
+### Point services to the new database
+
+In the new database's restore information, select **Point services here**. Check the services, environment variables, and secret references listed in the changes, then apply them. Verify that the app can read and write data.
+
+This action only rewrites the service environment variables listed in the changes. Update connections in config files or external systems yourself. If the button isn't available, use **Connect to a service** to add the new connection.
+
+</Step>
+</Steps>
+
+<Callout type="warn">
+After switching to the restored copy, services read data as it was at the time of the backup. Before switching, stop or coordinate writes and handle data added since the backup. Switching connections and updating environment variables also replaces the affected services' replicas.
+</Callout>
+
+The original database keeps running. After checking the switch and deciding what to retain, remove any databases you no longer need.
+
+## Download a database dump
+
+From **More** in the top-right corner of the database page, select **Export**. The browser downloads a file generated by the database tool:
+
+| Engine | Tool and download |
+| --- | --- |
+| PostgreSQL | `pg_dump --format=custom`; downloads a `.dump` file. |
+| MongoDB | `mongodump --archive --gzip --oplog`; downloads an `.archive.gz` file. |
+| MySQL | `mysqldump --single-transaction`; excludes system databases and downloads gzip-compressed SQL. |
+| MariaDB | `mariadb-dump --single-transaction`; excludes system databases and downloads gzip-compressed SQL. |
+| Dragonfly | No **Export** action; use snapshot backups. |
+
+Exports run in the database container using your `pods/exec` permission. MySQL also requires permission to read its secret. If a download fails or stops partway through, the file is incomplete. Export it again.
+
+Use the corresponding database tools to work with downloaded dumps. **Restore to a new database** uses S3 backup records and has no field for uploading a dump.
+
+## Verify the result
+
+The database is ready to use when its page shows **Ready** and **Connections** lists a host and port. After setting up backups, you have a restorable backup only when the first record in **Backups** shows success.
+
+To wait for a database to be ready with kubectl, check the field for its engine:
+
+```sh
+kubectl -n shop wait --for=condition=Ready cluster.postgresql.cnpg.io/orders --timeout=10m
+kubectl -n shop wait --for=jsonpath='{.status.state}'=ready psmdb/catalog --timeout=10m
+kubectl -n shop wait --for=condition=Healthy mysqlcluster/shopdb --timeout=10m
+kubectl -n shop wait --for=condition=Ready mariadb/blogdb --timeout=10m
+kubectl -n shop wait --for=jsonpath='{.status.phase}'=Ready dragonfly/cache --timeout=10m
+```
+
+Database objects, secrets, and backup settings created by Zeabur all carry `zeabur.com/database: <name>`. Use it to list objects for the same database:
+
+```sh
+kubectl -n shop get secret,job -l zeabur.com/database=shopdb
+```
+
+MySQL also has a `shopdb-app-setup` Job that creates the `app` database and `app` user. The app can't connect until its `COMPLETIONS` is `1/1`.
+
+Backup records are operator objects:
+
+```sh
+kubectl -n shop get backups.postgresql.cnpg.io -l zeabur.com/database=orders
+kubectl -n shop get psmdb-backup
+kubectl -n shop get backups.k8s.mariadb.com
+```
+
+A PostgreSQL Backup succeeds when its `PHASE` is `completed`; a MongoDB backup succeeds when its `STATUS` is `ready`. MySQL scheduled backups use a CronJob created by MOCO. Check the output of `kubectl -n shop get cronjob,job`.
+
+## Do the same with kubectl
+
+Each engine's operator manages its databases. Zeabur only writes the objects the operator reads. If you remove Zeabur, the operators keep running. The YAML below matches what the form creates with default values: one instance and the **Small** size. Save it to a file and apply it with `kubectl -n shop apply -f <file>`. Replace `<24 alphanumeric characters>` with a password you generate, for example with `openssl rand -base64 18 | tr -d '/+='`.
+
+<Tabs items={["PostgreSQL", "MongoDB", "MySQL", "MariaDB", "Dragonfly"]}>
+<Tab value="PostgreSQL">
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: orders
+  labels:
+    zeabur.com/database: orders
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18-standard-trixie
+  storage:
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+```
+
+CloudNativePG creates the `orders-app` secret automatically. Its `uri` contains the full connection string, and it also has `host`, `port`, `username`, `password`, and `dbname` keys. Services connect to `orders-rw` on port 5432.
+
+</Tab>
+<Tab value="MongoDB">
+
+```yaml
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: catalog
+  labels:
+    zeabur.com/database: catalog
+  finalizers:
+    - percona.com/delete-psmdb-pvc
+spec:
+  image: percona/percona-server-mongodb:8.0.32-14
+  unsafeFlags:
+    replsetSize: true
+  replsets:
+    - name: rs0
+      size: 1
+      env:
+        - name: GLIBC_TUNABLES
+          value: glibc.pthread.rseq=1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+      volumeSpec:
+        persistentVolumeClaim:
+          resources:
+            requests:
+              storage: 10Gi
+  sharding:
+    enabled: false
+  users:
+    - name: app
+      db: app
+      roles:
+        - name: readWrite
+          db: app
+  backup:
+    enabled: false
+    image: percona/percona-backup-mongodb:2.15.0
+```
+
+With only one or two instances, add `unsafeFlags.replsetSize: true`. For MongoDB 7.0, use `percona/percona-server-mongodb:7.0.43-23`; it doesn't need `GLIBC_TUNABLES`. The operator stores the `app` user's password in the `app` key of `catalog-custom-user-secret`. Services connect to `catalog-rs0` on port 27017.
+
+</Tab>
+<Tab value="MySQL">
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shopdb-app
+  labels:
+    zeabur.com/database: shopdb
+type: Opaque
+stringData:
+  password: <24 alphanumeric characters>
+---
+apiVersion: moco.cybozu.com/v1beta2
+kind: MySQLCluster
+metadata:
+  name: shopdb
+  labels:
+    zeabur.com/database: shopdb
+  annotations:
+    zeabur.com/app-database: app
+    zeabur.com/app-secret: shopdb-app
+spec:
+  replicas: 1
+  podTemplate:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 10000
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mysqld
+          image: ghcr.io/cybozu-go/moco/mysql:8.4.10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+    overwriteContainers:
+      - name: agent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+      - name: moco-init
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+      - name: slow-log
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: shopdb-app-setup
+  labels:
+    zeabur.com/database: shopdb
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 10000
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: setup
+          image: ghcr.io/cybozu-go/moco/mysql:8.4.10
+          command:
+            - bash
+            - -c
+            - |
+              set -eu
+              sql() { mysql --defaults-extra-file=<(printf '[client]\npassword=%s\n' "$WRITABLE_PASSWORD") -h "$HOST" -u moco-writable "$@"; }
+              for _ in $(seq 120); do sql -e 'SELECT 1' >/dev/null 2>&1 && break; sleep 5; done
+              sql <<SQL
+              CREATE DATABASE IF NOT EXISTS app;
+              CREATE USER IF NOT EXISTS 'app'@'%' IDENTIFIED BY '$APP_PASSWORD';
+              GRANT ALL ON app.* TO 'app'@'%';
+              SQL
+          env:
+            - name: HOST
+              value: moco-shopdb-primary
+            - name: WRITABLE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: moco-shopdb
+                  key: WRITABLE_PASSWORD
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shopdb-app
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+```
+
+MOCO doesn't create the app's database, so an additional Job uses MOCO's `moco-writable` account to create the `app` database and `app` user. The `zeabur.com/app-database` and `zeabur.com/app-secret` annotations tell Zeabur which database and password secret the app uses. MySQL works without them, but **Connect to a service** in the interface won't find the app account. Services connect to `moco-shopdb-primary` on port 3306.
+
+</Tab>
+<Tab value="MariaDB">
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: blogdb-root
+  labels:
+    zeabur.com/database: blogdb
+type: Opaque
+stringData:
+  password: <24 alphanumeric characters>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: blogdb-app
+  labels:
+    zeabur.com/database: blogdb
+type: Opaque
+stringData:
+  password: <24 alphanumeric characters>
+---
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: MariaDB
+metadata:
+  name: blogdb
+  labels:
+    zeabur.com/database: blogdb
+spec:
+  image: mariadb:12.3.3
+  replicas: 1
+  rootPasswordSecretKeyRef:
+    name: blogdb-root
+    key: password
+    generate: false
+  database: app
+  username: app
+  passwordSecretKeyRef:
+    name: blogdb-app
+    key: password
+    generate: false
+  storage:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+```
+
+For two or more instances, add `replication: {enabled: true}` and connect services to `blogdb-primary`. With one instance, connect to `blogdb` on port 3306.
+
+</Tab>
+<Tab value="Dragonfly">
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cache-auth
+  labels:
+    zeabur.com/database: cache
+type: Opaque
+stringData:
+  password: <24 alphanumeric characters>
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: cache
+  labels:
+    zeabur.com/database: cache
+spec:
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.34.1
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  authentication:
+    passwordFromSecret:
+      name: cache-auth
+      key: password
+  snapshot:
+    cron: "0 * * * *"
+    persistentVolumeClaimSpec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 2Gi
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+```
+
+Services connect to `cache` on port 6379. The password is in the `password` key of `cache-auth`.
+
+</Tab>
+</Tabs>
+
+### Connect to service
+
+**Connect to a service** adds environment variables to a service. PostgreSQL reads `uri` from its secret:
+
+```yaml
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: orders-app
+                  key: uri
+```
+
+Other engines first read the password from a secret, then use `$(variable)` to build the connection string. Kubernetes only expands variables defined earlier in the list, so put the password variable first:
+
+```yaml
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          env:
+            - name: MONGOPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: catalog-custom-user-secret
+                  key: app
+            - name: MONGO_URL
+              value: mongodb://app:$(MONGOPASSWORD)@catalog-rs0.shop.svc:27017/app?replicaSet=rs0&authSource=app
+```
+
+Save this as `connect.yaml` and apply it with `kubectl -n shop patch deployment web --patch-file connect.yaml`. For MySQL and MariaDB, `DATABASE_URL` is `mysql://app:$(MYSQLPASSWORD)@<host>:3306/app`. For Dragonfly, `REDIS_URL` is `redis://:$(REDIS_PASSWORD)@cache.shop.svc:6379`.
+
+### Set up PostgreSQL backups
+
+PostgreSQL backups use the Barman Cloud plugin. Create a secret for the keys, an ObjectStore, and a ScheduledBackup, then configure the Cluster to use the plugin to archive write-ahead logs:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orders-backups-s3
+  labels:
+    zeabur.com/database: orders
+type: Opaque
+stringData:
+  ACCESS_KEY_ID: <access key ID>
+  ACCESS_SECRET_KEY: <secret access key>
+  REGION: us-east-1
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: orders-backups
+  labels:
+    zeabur.com/database: orders
+spec:
+  retentionPolicy: 7d
+  configuration:
+    destinationPath: s3://backups/orders
+    endpointURL: https://s3.example.com
+    s3Credentials:
+      accessKeyId:
+        name: orders-backups-s3
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: orders-backups-s3
+        key: ACCESS_SECRET_KEY
+      region:
+        name: orders-backups-s3
+        key: REGION
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: orders-scheduled
+  labels:
+    zeabur.com/database: orders
+spec:
+  schedule: "0 0 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: orders
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+```
+
+```sh
+kubectl -n shop patch cluster.postgresql.cnpg.io orders --type=merge \
+  -p '{"spec":{"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"barmanObjectName":"orders-backups"}}]}}'
+```
+
+CloudNativePG schedules include a seconds field. `0 0 3 * * *` means daily at 03:00 (UTC). **Back up now** creates a Backup:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: orders-20261026-030000
+  labels:
+    zeabur.com/database: orders
+spec:
+  cluster:
+    name: orders
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+```
+
+Other engines store backup settings in the following objects, using the same naming rules. All key secrets are named `<name>-backups-s3`:
+
+| Engine | Objects |
+| --- | --- |
+| MongoDB | In the PerconaServerMongoDB's `spec.backup`, `storages.backups.s3` sets the bucket and endpoint, `credentialsSecret` points to the key secret (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`), and `tasks` contains a `scheduled` entry. An immediate backup is a PerconaServerMongoDBBackup. |
+| MySQL | ServiceAccount `<name>-backup` and BackupPolicy `<name>-backups`. The MySQLCluster's `spec.backupPolicyName` points to the policy. |
+| MariaDB | Backup `<name>-scheduled`, where `schedule.cron` sets the schedule and `maxRetention` sets the retention period. |
+| Dragonfly | Add `--s3_endpoint` and `--s3_use_https` to the Dragonfly's `spec.args`, read keys through `spec.env`, and change `spec.snapshot.dir` to `s3://<bucket>/<folder>`. |
+
+To see all the fields, set up backups once in the interface, then inspect the result with `kubectl -n shop get <kind> <name> -o yaml`.
+
+### Restore PostgreSQL from a backup
+
+Restoring creates a new Cluster and reads the backup from the ObjectStore. First, get the backup ID:
+
+```sh
+kubectl -n shop get backup.postgresql.cnpg.io orders-20261026-030000 -o jsonpath='{.status.backupId}'
+```
+
+Then create a new Cluster with the same `spec` as the original database, remove `plugins`, and add `bootstrap.recovery` and `externalClusters`:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: orders-restored-1026
+  labels:
+    zeabur.com/database: orders-restored-1026
+  annotations:
+    zeabur.com/restored-from: orders
+    zeabur.com/restored-backup: orders-20261026-030000
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18-standard-trixie
+  storage:
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  bootstrap:
+    recovery:
+      source: orders
+      database: app
+      owner: app
+      recoveryTarget:
+        backupID: <backup ID>
+        targetImmediate: true
+  externalClusters:
+    - name: orders
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: orders-backups
+          serverName: orders
+```
+
+The `zeabur.com/restored-*` annotations make the interface show restore information and **Point services here**. Restoring also works without them. To restore to a specific point in time, change `recoveryTarget` to `targetTime: "2026-10-26T02:00:00Z"`.
+
+## Resize and troubleshoot failures
+
+- To change **Instances**, **Size**, or **Storage per instance**, edit them in **Settings**, then select **Review changes**. Storage can only increase, and the storage class must support expansion. Dragonfly's snapshot volume size is set at creation; the settings form doesn't support expanding it.
+- If you can't find a database engine, check its operator in **Components**. If the page explicitly says you don't have permission to read it, ask an administrator for the required permission.
+- If a database stays **Unknown** or isn't ready after creation, check **Events** and **Logs** to confirm that the operator, volumes, node resources, and image are available.
+- If you can't set up PostgreSQL backups, first check that the Barman Cloud plugin is installed and you can read it.
+- If a backup fails, read the reason in **Backups** and check the S3 endpoint, bucket, keys, and network. MySQL also needs enough space to allocate a temporary volume for the backup job.
+- If **Connect to a service** doesn't list the target, check that the project has an app service you can modify. Services managed by other tools and data services aren't included in this menu.
+
+## Disconnect and delete
+
+To remove only the app's connection, select **Disconnect** from the service's actions under **Connections**. This removes the related environment variables and keeps the database and secrets.
+
+To delete a database, select **Delete database** from **More** in the top-right corner. Before applying, review the deletion list, services still using the database, and the volumes' reclaim policies. Backups in S3 remain and are handled by the destination's lifecycle policy.
+
+<Callout type="warn">
+Deleting a database removes the running database and may delete its volumes and data. First, confirm that you've completed a backup or export and that all services have switched to the database you want to keep.
+</Callout>

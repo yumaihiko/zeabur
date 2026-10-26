@@ -1,0 +1,274 @@
+---
+title: Build and deploy a service from Git
+description: Connect a Git repository, complete the first build, and choose when new images go live.
+---
+
+In a project, select **Add** → **Deploy from Git**, enter the repository and the app's port, then select **Review changes**. After you apply the changes, Zeabur Builder starts the build. The service starts only after the first image is built and deployed.
+
+## Before you begin
+
+- You need a project and permission to create services, Kubernetes Services, and Builds in it. Private repositories and build variables also require permission to create secrets.
+- The cluster must have Zeabur Builder and Keel installed. If a component is missing, the Add menu shows why. For installation instructions, see [Manage cluster components](../cluster/components.mdx).
+- Built images are pushed to the registry set by `builds.registry` in the Zeabur chart. The default is Zot from the component catalog (`zot.zot.svc:5000`). To use Harbor or an external registry, an administrator must set `builds.registry` in the chart and give the Builder and nodes access to it.
+- Zot installed by the installer only accepts connections from the Builder, build replicas, and nodes. Other replicas in projects can't connect to Zot, so a compromised app can't pull images from other projects.
+- Have the port the app actually listens on ready. To make a website public, you also need a domain that can point to the cluster's entry point.
+
+## Create a service
+
+<Steps>
+<Step>
+
+### Set the repository and build method
+
+Open **Add** → **Deploy from Git** and enter an HTTPS or SSH URL in **Repository**, such as `https://github.com/acme/web`.
+
+Leave **Branch** empty to track the repository's default branch. To always track `main`, enter `main`.
+
+Under **Build with**, choose:
+
+- **Railpack**: Let the builder detect the app's language.
+- **Dockerfile**: Use the Dockerfile in the repository.
+
+Under **More settings**, set **Root directory** to the folder to build, such as `apps/web`. When using Dockerfile, the path in the **Dockerfile** field is relative to this root directory. Leave it empty to use `Dockerfile`.
+
+![Deploy from Git form with a repository URL and Railpack selected, followed by the name, port, and repository access fields](https://oss.zeabur.com/shots/zeabur/en/light/git-form.avif)
+
+</Step>
+<Step>
+
+### Configure how the service runs
+
+Check the **Name** and enter the **Port**. For example, if the app listens on `8080`, enter `8080`. Zeabur also adds `PORT=8080`. If you've already set `PORT`, Zeabur uses your value.
+
+Leave **Port** empty for a background service that doesn't accept connections. To make a website public, turn on **Public domain** and check the domain. For DNS and HTTPS settings, see [Add a public domain](../configure/domains.mdx).
+
+Under **More settings**, configure these separately:
+
+- **Environment variables**: Read by the container at runtime. Enter one `KEY=value` per line.
+- **Build variables**: Used only during the build, such as a token for downloading private packages. Values are passed as BuildKit secrets and aren't stored in the image. In a Dockerfile, read them with `RUN --mount=type=secret,id=KEY`.
+- **Size**: CPU and memory for the running service.
+- **Security**: Railpack images run as UID 1000 and default to **Strict**. Dockerfile builds default to **Compatible**. You can change this before creating the service. When building with a Dockerfile and choosing Strict, specify a non-root user with a numeric UID, such as `USER 1000`.
+
+</Step>
+<Step>
+
+### Allow access to a private repository
+
+Under **Repository access**, choose the option that matches the repository:
+
+| Option | Action |
+| --- | --- |
+| **Public repository** | Don't add credentials. |
+| **Deploy key** | Select **Create deploy key**, copy the **Public key**, and use the link beside it to add the key to the repository's deploy keys. Keep read-only access. |
+| **Access token** | Enter a **Username** and **Token** that can read the repository over HTTPS. Zeabur prefills `x-access-token` for GitHub and `oauth2` for GitLab. |
+
+Deploy keys work with any Git host that supports SSH. Zeabur includes host keys for GitHub and GitLab. For other hosts, paste in the host key first:
+
+1. Run the command shown in the form on your computer, such as `ssh-keyscan -t ed25519,ecdsa -p 2222 git.example.com`. The command omits `-p` when the SSH port is 22.
+2. Paste the output into **Host keys (known_hosts)** and select **Create deploy key**. Zeabur Builder only accepts Ed25519 and ECDSA keys.
+3. The form lists each host key's fingerprint, such as `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`. Compare it with the fingerprint published by the Git host administrator, or ask the administrator to run `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the host. Once the fingerprints match, add the public key to the repository.
+
+If you enter an HTTPS repository URL, Zeabur connects using `git@host:path.git` instead. If SSH uses a port other than 22 or a user other than `git`, enter an SSH URL directly, such as `ssh://git@git.example.com:2222/acme/site.git`.
+
+</Step>
+<Step>
+
+### Review and apply
+
+Select **Review changes** and check the service name, public domain, secrets, and Build.
+
+After applying the changes, open the service's **Builds** tab to check the build status and **Logs** for each build. Until the first build finishes, the service's image tag is `pending`, and there's no version to run. Ten minutes after a build ends, its build replica and logs are deleted.
+
+</Step>
+</Steps>
+
+## Verify the result
+
+In **Builds**, check that an image has been built successfully, then go to **Overview** and check that the service is ready. If you enabled a public domain, open the address from **Networking** and check that the app loads.
+
+Use kubectl to inspect the Build and individual builds:
+
+```sh
+kubectl -n shop get build web -o wide
+kubectl -n shop get buildruns
+kubectl -n shop get deployment web -o jsonpath='{.spec.template.spec.containers[0].image}'
+```
+
+The Build's `READY` is `True`, `REVISION` is the commit used for the build, and the `IMAGE` column added by `-o wide` shows the latest image. Each build is a BuildRun. Its `PHASE` progresses through `Pending`, `Planning`, and `Building`, then ends at `Succeeded` or `Failed`. `REASON` shows why a build failed. When the Deployment's image changes from `:pending` to the tag pushed by the Build, Keel has deployed the new version.
+
+![The service's Builds tab, showing the latest image and build history](https://oss.zeabur.com/shots/zeabur/en/light/git-builds.avif)
+
+## New commits and automatic deployment
+
+Zeabur Builder checks the branch every minute. When it finds a new commit, it builds a new image and notifies Keel when the build finishes. Keel then updates the service to use the new image. The build history shows what triggered each build, such as **New commit** or **Pushed**. For details on how the Builder detects new commits and connects to Git host webhooks, see the [Zeabur Builder documentation](https://oss.zeabur.com/docs/builder/).
+
+**Auto-deploy new builds** is on by default in the service's **Builds** tab. It controls whether a build goes live as soon as it finishes.
+
+To start a build now, select **Build again** in **Builds**, review the changes, and apply them. The Builder uses the branch's latest commit. To check the build result before it goes live, turn off **Auto-deploy new builds**. After the build succeeds, select **Deploy newest**, then review and apply the image change.
+
+To change the build folder, Dockerfile, or build variables, go to **Build** in the service's **Settings**. Changes take effect on the next build.
+
+## Do the same with kubectl
+
+The form creates the objects below. Save them as `web.yaml` and apply them with `kubectl -n shop apply -f web.yaml`. Replace the registry address `zot.zot.svc:5000` with the chart's `builds.registry` value. The path is always `<registry>/<project>/<service-name>`:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-git
+  labels:
+    app.kubernetes.io/name: web
+    builder.zeabur.com/git-credentials: "true"
+type: kubernetes.io/basic-auth
+stringData:
+  username: x-access-token
+  password: <token>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-env
+  labels:
+    app.kubernetes.io/name: web
+type: Opaque
+stringData:
+  PORT: "8080"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-build-env
+  labels:
+    app.kubernetes.io/name: web
+type: Opaque
+stringData:
+  NPM_TOKEN: <token>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+  annotations:
+    keel.sh/policy: force
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: zot.zot.svc:5000/shop/web:pending
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: web-env
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: builder.zeabur.com/v1alpha1
+kind: Build
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  builderRef: railpack
+  source:
+    git:
+      url: https://github.com/acme/web.git
+      ref: main
+    credentialsRef:
+      name: web-git
+  output:
+    image: zot.zot.svc:5000/shop/web
+  env:
+    - name: NPM_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: web-build-env
+          key: NPM_TOKEN
+  notify:
+    - type: keel
+      url: http://keel.keel.svc.cluster.local:9300/v1/webhooks/native
+```
+
+- `web-git` is only needed when using an access token for a private repository. The Build references it through `spec.source.credentialsRef`, and the `builder.zeabur.com/git-credentials: "true"` label lets Zeabur Builder read it. For a public repository, remove this secret and `credentialsRef`.
+- `web-build-env` and the Build's `spec.env` are only needed when using build variables.
+- The Deployment starts with the nonexistent `:pending` tag, which Keel replaces after the first build finishes. `keel.sh/policy: force` corresponds to **Auto-deploy new builds**.
+- To build with a Dockerfile, change `builderRef` to `dockerfile` and add `contextDir` and `dockerfile` under `spec.source.git` as needed. When **Branch** is empty, the form writes `HEAD` to `ref` to track the default branch.
+
+To use a deploy key instead, generate a key pair, add the public key to the repository, and put the private key and `known_hosts` in a `kubernetes.io/ssh-auth` secret. Change the Build's `url` to an SSH URL, such as `git@github.com:acme/web.git`:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C web-deploy -f ./web-deploy
+ssh-keyscan -t ed25519,ecdsa github.com > known_hosts
+kubectl -n shop create secret generic web-git --type=kubernetes.io/ssh-auth \
+  --from-file=ssh-privatekey=./web-deploy --from-file=known_hosts=./known_hosts
+kubectl -n shop label secret web-git app.kubernetes.io/name=web builder.zeabur.com/git-credentials=true
+```
+
+Actions after a build also use standard kubectl commands:
+
+| Interface action | kubectl |
+| --- | --- |
+| **Build again** | `kubectl -n shop annotate build web --overwrite builder.zeabur.com/rebuild="$(date -u +%Y-%m-%dT%H:%M:%SZ)"` |
+| Turn off **Auto-deploy new builds** | `kubectl -n shop annotate deployment web keel.sh/policy-` |
+| Turn on **Auto-deploy new builds** | `kubectl -n shop annotate deployment web keel.sh/policy=force` |
+| **Deploy newest** | `kubectl -n shop set image deployment/web web="$(kubectl -n shop get build web -o jsonpath='{.status.latestImage}')"` |
+
+Zeabur Builder and Keel keep building and deploying after you remove Zeabur. They don't depend on Zeabur.
+
+## When a build or deployment is stuck
+
+| What you see | What to do next |
+| --- | --- |
+| **Deploy from Git** reports a missing registry or Keel | Install it in **Components**. An administrator can also set `builds.registry` in the Zeabur chart to configure a registry. |
+| Repository access is denied | If you're using a deploy key, select **Show deploy key** in **Builds** and check that you've added it to the correct repository. If you're using a token, check its read scope and expiration date. After fixing access, select **Build again**. |
+| Branch or builder not found | Use the reason shown on the build page to check the repository branch and the corresponding Railpack or Dockerfile builder in the cluster. |
+| The build succeeded, but the service still uses the old image | Check **Auto-deploy new builds** and Keel's status, or select **Deploy newest** to apply the image manually. |
+| The container starts but doesn't respond | Check the service's **Logs** and confirm that the app listens on the port entered in the form. Then check the connection checks in **Networking**. |
+
+## Delete a service
+
+Select **More** → **Delete service** in the upper-right corner of the service. Review which objects will be deleted and which will be kept, then apply the changes. If no other service uses the same Build, deletion also removes the Build. Git credential secrets created by the form are deleted only if no other Build uses them.
+
+If you used a deploy key, also remove the public key you added from the Git host. If you created a dedicated token, revoke it on the Git host too.

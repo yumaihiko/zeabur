@@ -1,0 +1,315 @@
+---
+title: Create S3 object storage and buckets
+description: Create SeaweedFS object storage so applications can upload files over S3 and manage buckets.
+---
+
+In a project, select **Add** → **Object storage**, enter the capacity and first bucket, then select **Review changes**. Once the storage service is ready, use **Connect to a service** to add the S3 endpoint and keys so the application can upload files.
+
+## Before you begin
+
+- You have a project and permission to create object storage. Adding a connection to an application also requires permission to modify that service. Showing the secret access key requires permission to read secrets.
+- An administrator has installed SeaweedFS Operator. See [Manage cluster components](../cluster/components.mdx).
+- The cluster has an available storage class and enough space.
+- You have an S3-compatible application or client ready to use. The endpoint configured by the creation form is for use inside the cluster.
+
+## Create the storage service
+
+<Steps>
+<Step>
+
+### Choose a name, capacity, and bucket
+
+Open **Add** → **Object storage** and fill in:
+
+| Field | What to enter |
+| --- | --- |
+| **Name** | For example, `files`. Use up to 30 characters, starting with a lowercase letter. Use lowercase letters, numbers, and hyphens. |
+| **Storage** | The volume size for file data. Defaults to `10Gi`. |
+| **Bucket** | For example, `uploads`. Leave it blank to add a bucket later. Use 3 to 63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number. |
+| Storage class | Choose where to store the files. Whether you can expand the capacity depends on the storage class. |
+
+The capacity field sets the volume server's data storage. The master and filer each also have 1 GiB of persistent storage.
+
+</Step>
+<Step>
+
+### Choose applications and review changes
+
+Select applications under **Connect to a service** in the creation form, or connect them after the object storage is ready. Click **Review changes**, check the name, capacity, bucket, and services to modify, then apply.
+
+![Object storage form with the name files, capacity, and bucket uploads filled in, and web selected under Connect to service](https://oss.zeabur.com/shots/zeabur/en/light/object-storage-form.avif)
+
+These changes create the SeaweedFS storage service, an identity and keys for applications, and the selected bucket.
+
+</Step>
+<Step>
+
+### Wait for the storage service to be ready
+
+From the project, open the object storage's **Overview**, wait for the **Ready** status, and check **Parts** and **Buckets**. Connection keys might not be available right after creation. Check **Events** and **Logs** for the operator's progress.
+
+</Step>
+</Steps>
+
+<Callout type="warn">
+The creation form runs one replica each of the master, volume, filer, and S3 gateway, with only one copy of the file data. If the storage node fails, there's no other copy to take over. Back up important files separately or copy them to another storage service.
+</Callout>
+
+![Overview of the files object storage, listing components and buckets](https://oss.zeabur.com/shots/zeabur/en/light/object-storage.avif)
+
+## Add an S3 connection to an application
+
+1. In the object storage's **Overview** → **Connections**, click **Connect to a service**.
+2. Select applications in the same project, choose a **Bucket**, and check **Variable name** and **Variables added**.
+3. Click **Review changes**, check the services that will be updated, and apply.
+4. Configure the application's S3 client to read these variables, then upload and read back a test file.
+
+If there are no name conflicts and you haven't renamed any variables, the defaults are:
+
+| Variable | Value |
+| --- | --- |
+| `S3_ENDPOINT` | The private S3 HTTP endpoint, such as `http://files-s3.shop.svc:8333`. Use the actual value shown on the page. |
+| `S3_ACCESS_KEY_ID` | The access key ID read from the secret. |
+| `S3_SECRET_ACCESS_KEY` | The secret access key read from the secret. |
+| `S3_REGION` | `us-east-1`. |
+| `S3_BUCKET` | The bucket selected for this connection. Omitted if no bucket is selected. |
+
+If the application already has variables with the same names, the form flags the conflicts or suggests prefixing the variable names with the object storage's name. Match **Variables added** to the settings the application actually uses. Adding variables updates the service's replicas.
+
+To configure the connection manually, copy **Endpoint**, **Region**, and **Access key ID** from **Connections**. If you have permission, click **Reveal** next to **Secret access key**. The endpoint uses cluster DNS, so computers outside the cluster can't use this address directly.
+
+<Callout type="warn">
+These keys can read and write every bucket in this object storage. `S3_BUCKET` only sets the application's default bucket; it doesn't change the permissions. Don't include these keys in browser frontend code or give them to untrusted clients.
+</Callout>
+
+## Add and delete buckets
+
+To add a bucket, click **New bucket** under **Buckets** in **Overview**, enter a name, then **Review changes** and apply. Wait for the row to show `Ready` before using it in an application.
+
+The bucket list shows storage usage and object counts. It shows **Not counted yet** when statistics aren't available. Use an S3 client to upload, download, and browse files. This page only manages buckets.
+
+To delete a bucket, click the delete button in its row, read the confirmation, and apply. Buckets created by Zeabur use the `Delete` reclaim policy, so deleting them also deletes their files. If an existing bucket uses a retain policy, the confirmation states that its files will remain in the storage service.
+
+<Callout type="warn">
+Deleting a bucket with the `Delete` policy deletes its files. First, use an S3 client that can reach the endpoint to copy anything you want to keep. Confirm that you can read the copy at the destination before deleting the source.
+</Callout>
+
+## Keep files and change settings
+
+The object storage page has **Overview**, **Logs**, **Events**, and **Settings** tabs. To expand the space for file data, enter a larger value, such as `20Gi`, under **Settings** → **Storage**. Click **Review changes**, confirm the changes, then click **Expand to 20Gi**. The operator expands the disk directly and keeps all files. Capacity can only increase. The text below the field states whether the current storage class supports expansion.
+
+For other operator settings, switch to **YAML** at the top of **Settings**, make your changes, then review and apply them.
+
+To keep files in another location, use an application or S3 client that can reach the private endpoint to copy the bucket's contents to another S3 service, then confirm that you can read the copy. That tool manages the copy schedule and restores. This page doesn't have a **Backups** tab or restore button like a database does.
+
+## Verify the result
+
+The object storage is ready to use when **Overview** shows **Ready**, master, volume, filer, and S3 are all running under **Parts**, every row in **Buckets** shows `Ready`, and **Connections** has an **Access key ID**. To check with kubectl:
+
+```sh
+kubectl -n shop get seaweed files
+kubectl -n shop get buckets.seaweed.seaweedfs.com
+kubectl -n shop get secret files-app -o jsonpath='{.data.accessKey}' | base64 -d
+```
+
+SeaweedFS Operator creates the `files-app` secret from S3Credentials, with `accessKey` and `secretKey`. Once it exists, the application can connect. From a replica inside the cluster, use an S3 client to list buckets, for example, `aws --endpoint-url http://files-s3.shop.svc:8333 s3 ls`. If `uploads` appears, the keys and endpoint are correct.
+
+## Do the same with kubectl
+
+SeaweedFS Operator manages the object storage. Zeabur only writes the objects the operator reads, so the storage keeps running after you remove Zeabur. The YAML below is equivalent to using the form to create object storage named `files`, with capacity `10Gi` and bucket `uploads`. Save it as `files.yaml` and apply it with `kubectl -n shop apply -f files.yaml`:
+
+```yaml
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: files
+spec:
+  image: chrislusf/seaweedfs:4.48
+  volumeServerDiskCount: 1
+  master:
+    replicas: 1
+    persistence:
+      enabled: true
+      resources:
+        requests:
+          storage: 1Gi
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+  volume:
+    replicas: 1
+    requests:
+      storage: 10Gi
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+  filer:
+    replicas: 1
+    persistence:
+      enabled: true
+      resources:
+        requests:
+          storage: 1Gi
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+  s3:
+    replicas: 1
+    port: 8333
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: files-app
+spec:
+  seaweedRef:
+    name: files
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: files-app
+spec:
+  seaweedRef:
+    name: files
+  identityRef:
+    name: files-app
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Policy
+metadata:
+  name: files-app
+spec:
+  seaweedRef:
+    name: files
+  statements:
+    - effect: Allow
+      actions: ["s3:*"]
+      resources: ["*"]
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3PolicyBinding
+metadata:
+  name: files-app
+spec:
+  seaweedRef:
+    name: files
+  policyRef:
+    name: files-app
+  subjects:
+    - kind: S3Identity
+      name: files-app
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: files-uploads
+spec:
+  name: uploads
+  clusterRef:
+    name: files
+  reclaimPolicy: Delete
+  access:
+    - user: files-app
+      actions: [Read, Write, List, Tagging]
+```
+
+- Seaweed is the storage service itself. The S3 endpoint is `files-s3` on port 8333.
+- S3Identity, S3Credentials, S3Policy, and S3PolicyBinding create the application account `files-app` and give it access to all buckets.
+- Each bucket is a Bucket object named `<object-storage-name>-<bucket-name>`. `spec.name` is the name S3 sees. To add a bucket, create another Bucket object.
+- To specify a storage class, add `storageClassName` to `master.persistence`, `filer.persistence`, and `volume`.
+- To expand capacity, change `spec.volume.requests.storage`, for example, `kubectl -n shop patch seaweed files --type=merge -p '{"spec":{"volume":{"requests":{"storage":"20Gi"}}}}'`.
+
+**Connect to a service** only adds environment variables to the service. Save the following as `connect.yaml` and apply it with `kubectl -n shop patch deployment web --patch-file connect.yaml`:
+
+```yaml
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          env:
+            - name: S3_ENDPOINT
+              value: http://files-s3.shop.svc:8333
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: files-app
+                  key: accessKey
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: files-app
+                  key: secretKey
+            - name: S3_REGION
+              value: us-east-1
+            - name: S3_BUCKET
+              value: uploads
+```
+
+To delete a bucket or the entire object storage, delete these objects:
+
+```sh
+kubectl -n shop delete buckets.seaweed.seaweedfs.com files-uploads
+kubectl -n shop delete s3policybinding/files-app s3policy/files-app s3credentials/files-app s3identity/files-app
+kubectl -n shop delete seaweed files
+```
+
+Delete buckets first, then the account, and finally Seaweed. This is the same order used by **Delete object storage** in the interface. Deleting buckets with the `Delete` reclaim policy also deletes their files.
+
+## If you can't connect or keys are missing
+
+| Situation | What to do next |
+| --- | --- |
+| The **Add** menu requires a component to be installed first | Ask an administrator to install SeaweedFS Operator. |
+| The status stays **Unknown** or components aren't ready | Check **Events**, **Logs**, and the operator's reports to confirm that volumes and related replicas can start. |
+| **Access key ID** is blank | Wait for the operator to create the credentials, then refresh. Check the credential objects and replica events. |
+| The secret access key can't be shown | Confirm that you have permission to read secrets in the project. |
+| **Connect to a service** has no services to select | Create an application in the same project first. Confirm that you can modify it and that it isn't managed by another tool. |
+| **Connect to a service** isn't available for existing object storage | This action requires a recognizable application key. Configure the application manually using the actual endpoint and keys first. |
+| The S3 client can't reach the endpoint | Confirm that the client is inside the cluster and uses the endpoint and region shown on the page. Check the keys and bucket name. |
+
+## Delete object storage
+
+First, disconnect applications from the object storage or connect the services to the destination you want to keep. Then select **Delete object storage** from **More** in the upper-right corner of the object storage page.
+
+The deletion list includes buckets, identity and key objects, Seaweed, and any data volumes Zeabur finds. Review each item before applying. Whether the underlying disks remain depends on their reclaim policies.
+
+<Callout type="warn">
+Deleting the entire object storage disconnects S3 clients. Deleting buckets and volumes may also remove all files. Finish copying the data and confirm that applications have switched to the new destination before deleting.
+</Callout>

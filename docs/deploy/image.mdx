@@ -1,0 +1,241 @@
+---
+title: Deploy a container image
+description: Run images from public or private registries, and configure ports, environment variables, and persistent storage.
+---
+
+In a project, select **Add** → **Docker image**, enter the image and port, then **Review changes** and apply them to start the service. Expand **More settings** to keep files, sign in to a private registry, or adjust resources.
+
+## Before you begin
+
+- You need a project and permission to create services in it. Public domains, secrets, and volumes each have separate permissions. The form shows options based on the permissions you have.
+- The image must be pushed to a registry the nodes can reach, with a version that supports the node architecture.
+- You need to know the port the app actually listens on. For a first deployment, follow [Your first project](../get-started/first-project.mdx) to deploy a public image.
+- To save data, the cluster needs a default storage class that can provision volumes.
+
+## Create a service
+
+<Steps>
+<Step>
+
+### Specify the image
+
+Open **Add** → **Docker image**, and enter the full reference in **Image**, such as `ghcr.io/acme/web:1.4`. Use a fixed tag or digest to track deployed versions. If you don't specify a version, the registry uses `latest`.
+
+Check the **Name**. It must be at most 40 characters, use lowercase letters, numbers, and hyphens, start with a letter, and not conflict with an existing name in the project.
+
+</Step>
+<Step>
+
+### Check the port and domain
+
+Zeabur reads the ports declared by the image. Check that **Port** matches the port the app actually listens on. If the image declares multiple ports, choose the one that matches the app's purpose.
+
+For a background service that doesn't accept connections, leave **Port** empty. This creates only a Deployment, with no private address or option to add a public domain.
+
+To serve an HTTP website, turn on **Public domain**. If an administrator has configured an app domain, the form suggests an address. Otherwise, enter one and point its DNS to the cluster's entry point. The form also shows the current certificate issuer, or indicates that only HTTP is available. See [Add a public domain](../configure/domains.mdx).
+
+![Image deployment form with port 8080 from the image and a suggested public domain](https://oss.zeabur.com/shots/zeabur/en/light/image-form.avif)
+
+</Step>
+<Step>
+
+### Expand more settings as needed
+
+| Setting | What to enter and what it does |
+| --- | --- |
+| **Environment variables** | Enter one `KEY=value` per line. If the app uses `PORT` to decide where to listen, add `PORT` here. |
+| **Store values in a secret** `<name>-env` | On by default. Stores variable values in this secret. If you don't have permission to create secrets, variables are written directly into the Deployment, and you can't use a private registry. Don't enter passwords here in that case. |
+| **Volume** | Turn this on and enter a **Mount path**, such as `/data`, and a **Volume size**, such as `5Gi`. This creates a new, empty volume. |
+| **Size** | Choose **Small**, **Medium**, or **Large**. The CPU reserved, memory reserved, and memory maximum appear below the field. |
+| **Replicas** | Choose from 1 to 20. Fixed at 1 when a volume is mounted. |
+| **Private registry** | Turn this on and enter **Registry**, **Username**, and **Password**. For example, use `ghcr.io` as the registry host. Zeabur creates a secret for pulling the image. |
+| **Security** | Zeabur reads the image's `User`. It selects **Strict** for a numeric UID other than 0, such as `101` or `1000:1000`. It selects **Compatible** if no user is specified, or if the value is `root`, `0`, or a username such as `nginx`. The form explains the choice, and you can change it before creating the service. |
+
+<Callout type="warn">
+A service with a mounted volume runs only one replica. During an update, the old replica stops before the new one starts. The service is unavailable during that time.
+</Callout>
+
+</Step>
+<Step>
+
+### Review the objects to create
+
+Select **Review changes**. Check the image, name, port, and public domain. If you're adding a volume, also check its capacity and mount path. Applying the changes opens the new service.
+
+![Review screen before deploying web, listing the Deployment, Service, and Ingress to create](https://oss.zeabur.com/shots/zeabur/en/light/image-review.avif)
+
+If you need container fields that aren't in the form, select **Edit as YAML**. The form carries the current settings over to the creation page. After editing the YAML, select **Review changes** again, check all documents, and create the objects.
+
+</Step>
+</Steps>
+
+## Check the result
+
+In the service's **Overview**, check that the replica is ready, then check **Logs** to confirm the app has started. If you entered a port, Zeabur adds a TCP traffic check. The replica starts receiving traffic only after it can accept connections.
+
+![Service overview showing replica status and the public address](https://oss.zeabur.com/shots/zeabur/en/light/service-overview.avif)
+
+If the service has a public domain, open its address from **Networking** and check that the app responds. For a private service, connect from another service in the cluster using the address under **Private network**.
+
+When inspecting objects with kubectl, all objects Zeabur creates have the label `app.kubernetes.io/name: <service-name>`:
+
+```sh
+kubectl -n shop get deploy,svc,ingress,secret,pvc -l app.kubernetes.io/name=web
+kubectl -n shop rollout status deployment/web
+```
+
+If `READY` for `deployment.apps/web` is `1/1` and `rollout status` prints `successfully rolled out`, the replica has passed its traffic check. The Ingress's `HOSTS` is the domain you entered, and `ADDRESS` is the address of the cluster's entry point.
+
+To adjust variables or volumes after deployment, see [Environment variables](../configure/variables.mdx) and [Volumes](../configure/volumes.mdx).
+
+## Do the same with kubectl
+
+The form creates standard Kubernetes objects with no Zeabur-specific fields. Save the following YAML as `web.yaml` and apply it with `kubectl -n shop apply -f web.yaml`. This is equivalent to selecting **Strict** security, **Small** size, and a public domain in the form:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-env
+  labels:
+    app.kubernetes.io/name: web
+type: Opaque
+stringData:
+  APP_ENV: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: ghcr.io/acme/web:1.4
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: web-env
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  tls:
+    - hosts: [web.example.com]
+      secretName: web-tls
+  rules:
+    - host: web.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 8080
+```
+
+How this maps to the form options:
+
+- **Compatible**: Keep only `seccompProfile` in the replica's `securityContext` and only `allowPrivilegeEscalation: false` in the container's `securityContext`.
+- **Medium** and **Large** sizes: Reserved CPU and memory are `250m` / `256Mi` (maximum `512Mi`) and `500m` / `512Mi` (maximum `1Gi`), respectively.
+- Without a certificate issuer, the Ingress has no annotation or `tls`. Replace `letsencrypt` with the cluster's actual ClusterIssuer name. Run `kubectl get clusterissuer` to find it.
+- Multiple ports: The first port in the Kubernetes Service is named `http`; the others are named `port-<number>`.
+- With **Store values in a secret** turned off, variables go in the container's `env`, and `web-env` isn't created.
+
+Private registry credentials go in a secret of type `kubernetes.io/dockerconfigjson`, named `<service-name>-registry`. The Deployment references it through `imagePullSecrets`:
+
+```sh
+kubectl -n shop create secret docker-registry web-registry \
+  --docker-server=ghcr.io --docker-username=acme --docker-password=<token>
+kubectl -n shop label secret web-registry app.kubernetes.io/name=web
+kubectl -n shop patch deployment web -p '{"spec":{"template":{"spec":{"imagePullSecrets":[{"name":"web-registry"}]}}}}'
+```
+
+The volume uses a PVC named `<service-name>-<volume-name>`:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: web-data
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+```
+
+To mount it, set the Deployment's `spec.replicas` to `1` and add `strategy: {type: Recreate}`. In the replica's `volumes`, set `persistentVolumeClaim: {claimName: web-data}`, and in the container's `volumeMounts`, set `mountPath: /data`. For an existing service, adding it through the form under [Volumes](../configure/volumes.mdx) is simpler.
+
+## Common failures
+
+| Situation | What to do |
+| --- | --- |
+| Can't read the image's ports | Follow the prompt to check the image name, tag, and registry credentials. If you know the actual port, enter it directly. |
+| Image is only available for other architectures | Use a tag that supports the node architecture, or rebuild the image for that architecture. |
+| Can't pull the image | Check the reason in **Overview** or **Deployments**. Confirm that the node can reach the registry, and check the private registry credentials. |
+| Container can't start because of root or permission issues | Check the image's user, directory permissions, and security settings. Choose **Compatible** for an image that needs root. To keep Strict security, use an image that runs with a non-root numeric UID. If the project still enforces `restricted`, ask an administrator to change the project's Pod Security level to `baseline`. |
+| Replica never becomes ready | Check **Logs** and confirm that the app is listening on the port specified in the form. Then adjust health checks in **Settings**. |
+| Volume never becomes ready | Check storage-related events, the default storage class, available space, and nodes available for scheduling. |
+| Service is ready, but the address won't open | In **Networking**, follow the connection checks through DNS, the entry point, and the service. See [Public domains](../configure/domains.mdx). |
+
+## Delete a service
+
+Select **More** → **Delete service** in the top-right corner of the service. The deletion flow lists networking objects, secrets, and volumes that the service created and no other service uses. Objects still used by other services are kept.
+
+<Callout type="warn">
+Deleting a volume may also delete its files, depending on the underlying disk's reclaim policy. Before applying the changes, review the listed volumes and reclaim policies, and move out any data you want to keep.
+</Callout>

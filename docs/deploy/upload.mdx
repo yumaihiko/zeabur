@@ -1,0 +1,138 @@
+---
+title: Upload a folder and deploy a service
+description: Send a local folder or .zip file to Zeabur Builder to build. Create a service and upload new versions from the web or with zeaburctl.
+---
+
+In a project, choose **Add** → **Upload a folder**, drag a folder into the dashed box, enter a service name and port, then select **Review changes**. Once you apply the changes, the folder uploads immediately. The first build starts when the upload finishes.
+
+You don't need a Git repository. The browser packages the folder and sends it directly to the cluster's registry. Zeabur doesn't store it or put it in a config file, secret, or volume.
+
+## Before you begin
+
+- The requirements are the same as for [deploying from Git](./git.mdx): Zeabur Builder and Keel are installed, the chart has `builds.registry` configured, and you have permission to create services and Builds in the project.
+- Zeabur Builder must have `registry.tokenKey` configured to issue a temporary upload token. Without it, the upload stops at **Zeabur Builder doesn't allow uploads**.
+- You need permission to read secrets in the project. Zeabur Builder writes the upload token to the `<service-name>-upload` secret. Zeabur reads it with your permissions, not its own.
+
+## Create a service
+
+<Steps>
+<Step>
+
+### Choose a folder
+
+Open **Add** → **Upload a folder**, then drag a folder into the dashed box or click **Choose folder**. If you already have a `.zip` file, drag it in or click **Choose .zip file**. A `.zip` downloaded from GitHub often has an extra enclosing folder. Zeabur removes it automatically.
+
+When packaging the folder:
+
+- Files excluded by `.gitignore` aren't uploaded. A `.gitignore` in a subfolder applies only within that folder. Only the top-level `.dockerignore` is read, and its patterns are relative to the top level, just as in Docker.
+- `.git` folders are never uploaded.
+- The browser can't read file permissions, so files that start with `#!` are marked as executable.
+
+Once packaging finishes, the dashed box shows the file count, archive size, and number of excluded files.
+
+![Upload folder form with a dashed box for dropping a folder or archive, followed by the name, port, and build method](https://oss.zeabur.com/shots/zeabur/en/light/upload-form.avif)
+
+The size limit is 256 MiB compressed and 1 GiB uncompressed. If you exceed either limit, the dashed box lists the largest items. Add them to `.gitignore` (for example, `node_modules/`), then select the folder again.
+
+</Step>
+<Step>
+
+### Configure the build and runtime
+
+**Name**, **Port**, **Public domain**, **Environment variables**, **Build variables**, **Size**, and **Security** work the same as in [deploying from Git](./git.mdx).
+
+For **Build with**, choose **Railpack** to let the builder detect the language. Choose **Dockerfile** to use the Dockerfile at the top level of the folder. To build a subfolder, enter its path, such as `apps/web`, in **Root directory** under **More settings**.
+
+</Step>
+<Step>
+
+### Review and apply
+
+Click **Review changes** and check the Deployment and Build. After you apply the changes, the page opens the service. The **Builds** tab shows the upload progress: getting permission, uploading, and starting the build. Keep the page open until the upload finishes.
+
+After the build succeeds, Keel updates the service to use the new image. **Auto-deploy new builds** is on by default.
+
+</Step>
+</Steps>
+
+## Upload a new version
+
+In the service's **Builds** tab, click **Upload a folder** and choose the updated folder. Zeabur reuses the service's build method and settings.
+
+## Upload with zeaburctl
+
+Use [`zeaburctl up`](../reference/zeaburctl.mdx#up) from a terminal or script without knowing the registry or Zeabur address. When you sign in with Zeabur Identity, the folder is sent to Zeabur in the cluster. With other credentials, such as the admin kubeconfig provided by the installer, the command runs the same steps on your computer. The credentials never leave your computer.
+
+```sh
+zeaburctl up ./site --project shop --service site
+```
+
+If the service doesn't exist, the command creates it. In scripts or CI, both `--project` and `--service` are required, and the project must already exist.
+
+## Check the result
+
+After the upload finishes, a build appears in the **Builds** tab. Once it succeeds, **Overview** shows the service as ready. To check with kubectl:
+
+```sh
+kubectl -n shop get build site
+kubectl -n shop get buildruns
+```
+
+The Build's `SOURCE` is `Archive`, and its `REVISION` is the digest of the uploaded content. After the BuildRun's `PHASE` becomes `Succeeded`, the Deployment's image changes to a tag in the form `archive-<time>-<digest first 7 characters>`.
+
+## Do the same with kubectl
+
+Uploading creates the same objects as [deploying from Git](./git.mdx#do-the-same-with-kubectl). Only the Build source differs: `spec.source` is `archive` instead of `git`, and there's no `credentialsRef`. Create the Deployment, Service, and `<service-name>-env` using the YAML on the Git page, replacing `web` with `site`. Then create this Build:
+
+```yaml
+apiVersion: builder.zeabur.com/v1alpha1
+kind: Build
+metadata:
+  name: site
+  labels:
+    app.kubernetes.io/name: site
+  annotations:
+    builder.zeabur.com/upload-token-request: u1
+spec:
+  builderRef: railpack
+  source:
+    archive: {}
+  output:
+    image: zot.zot.svc:5000/shop/site
+  notify:
+    - type: keel
+      url: http://keel.keel.svc.cluster.local:9300/v1/webhooks/native
+```
+
+You can choose any value for the `builder.zeabur.com/upload-token-request` annotation. Each time you set a new value, Zeabur Builder issues a new token, writes it to the `<service-name>-upload` secret, and keeps it valid for 15 minutes. Next, use [ORAS](https://oras.land) to push the folder to the registry, then write the digest to the Build:
+
+```sh
+kubectl -n shop wait build/site --for=jsonpath='{.status.uploadToken.request}'=u1
+printf '{"auths":{"localhost:5000":{"registrytoken":"%s"}}}' \
+  "$(kubectl -n shop get secret site-upload -o jsonpath='{.data.token}' | base64 -d)" > auth.json
+kubectl -n zot get secret zot-tls -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+kubectl -n zot port-forward svc/zot 5000:5000 &
+tar -czf source.tar.gz -C ./site .
+oras push --registry-config auth.json --ca-file ca.crt \
+  localhost:5000/shop/site/source:upload-1 \
+  --artifact-type application/vnd.zeabur.source.v1+tar \
+  source.tar.gz:application/vnd.oci.image.layer.v1.tar+gzip
+kubectl -n shop patch build site --type=merge \
+  -p '{"spec":{"source":{"archive":{"digest":"sha256:<oras digest printed by oras>"}}}}'
+```
+
+To upload a new version, change the annotation value, push the new content, then update `digest`. The web interface and `zeaburctl up` apply `.gitignore`, `.dockerignore`, and size limits for you. When packaging the folder yourself, exclude files you don't need. See the [Zeabur Builder documentation](https://oss.zeabur.com/docs/builder/archive-source) for the upload format and limits.
+
+## When an upload gets stuck
+
+| What you see | What to do next |
+| --- | --- |
+| **Waiting for folder** | The upload hasn't started, or the page was closed during the upload. Click **Upload a folder** in **Builds**. |
+| **Zeabur Builder doesn't allow uploads** | Check that Zeabur Builder has `registry.tokenKey` configured and that you can read the `<service-name>-upload` secret. |
+| **Folder upload failed** | Click **Try again**. Tokens expire after 15 minutes, so Zeabur requests a new one. |
+| **Folder uploaded, but the build hasn't started** | Click **Try again**. If it still fails, check the Build's status in **Builds**. |
+| The build reports that the source couldn't be found | The registry may have removed the uploaded content. By default, the registry keeps only the 20 most recent uploads for each service. Upload the folder again. |
+
+## Delete a service
+
+Deleting a service also deletes its Build. Zeabur Builder removes the service's uploaded content from the registry.

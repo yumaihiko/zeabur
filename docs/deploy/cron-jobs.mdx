@@ -1,0 +1,201 @@
+---
+title: Run service commands on a schedule
+description: Create scheduled jobs from an existing service, set a time zone and concurrency policy, and view the results of each run.
+---
+
+Open the service’s **Settings** → **Scheduled tasks**, click **Add scheduled task**, enter a command, cron schedule, and time zone, then click **Review changes**. Each run starts a new container while the source service keeps running.
+
+## Before you start
+
+- The project must have a continuously running service, such as a Deployment. Scheduled jobs copy its container configuration, so you can’t create one from a Job or CronJob.
+- You need permission to modify services and create CronJobs. To run a job manually, you also need permission to create Jobs.
+- The source image must include `/bin/sh` and the program you want to run. The job runs the command through `/bin/sh -c`.
+
+## Create a scheduled job
+
+<Steps>
+<Step>
+
+### Choose a command and source container
+
+Open the application service, go to **Settings** → **Scheduled tasks**, and click **Add scheduled task**.
+
+In **Command**, enter a command available in the image, such as an existing `npm run cleanup` script. The job uses the source container’s working directory. All programs and files the command needs must exist in the image or a mounted volume.
+
+If the service has multiple regular containers, use **Container to copy** to select the one that contains the command. Each scheduled job copies only one container. The source service’s other containers won’t start with it.
+
+</Step>
+<Step>
+
+### Enter a cron schedule and time zone
+
+In **Schedule**, enter five fields in this order: minute, hour, day of the month, month, and day of the week. For example:
+
+| Schedule | Run time in the specified time zone |
+| --- | --- |
+| `0 3 * * *` | Every day at 03:00 |
+| `*/15 * * * *` | Every 15 minutes |
+| `0 9 * * 1-5` | Monday through Friday at 09:00 |
+| `0 3 * * 0` | Every Sunday at 03:00 |
+
+**Time zone** defaults to the browser’s time zone and is written to the CronJob’s `spec.timeZone` when you create it. To run a job every day at 03:00 Taiwan time, for example, enter `0 3 * * *` and confirm that **Time zone** is `Asia/Taipei`. For UTC, enter `Etc/UTC`.
+
+![Add scheduled job form with the command npm run cleanup and the schedule 0 3 * * *, shown below as every day at 03:00 in Asia/Taipei](https://oss.zeabur.com/shots/zeabur/en/light/cron-job-form.avif)
+
+If you clear **Time zone**, the CronJob won’t set `spec.timeZone`. It will use the kube-controller-manager’s time zone, which is usually UTC. The interface also displays these schedules in UTC.
+
+</Step>
+<Step>
+
+### Choose concurrency and history settings
+
+Check the **Name**: it must be at most 52 characters, use lowercase letters, numbers, and hyphens, and start and end with a letter or number.
+
+Under **If the last run is still running**, choose:
+
+| Option | What happens at the next scheduled time |
+| --- | --- |
+| **Skip the new run** | Don’t start this run if the previous one hasn’t finished. This is the default. |
+| **Run both** | Allow multiple runs at the same time. |
+| **Stop the last run and start the new one** | Stop unfinished runs and start a new one. |
+
+Set **Successful runs to keep** and **Failed runs to keep** to a value from 0 to 100. By default, the job keeps 3 successful runs and 1 failed run. Setting either value to 0 also removes the corresponding run records after completion.
+
+</Step>
+<Step>
+
+### Review and apply
+
+Click **Review changes**, check the source service, container, image, command, schedule, time zone, and concurrency policy, then apply the changes. Creating a scheduled job won’t restart the source service.
+
+After you create the job, open it from the source service’s **Scheduled tasks** list or the project’s service list.
+
+</Step>
+</Steps>
+
+## Run now and view results
+
+Open the scheduled job’s **Overview**, then click **Run now** under **Runs**. Review and apply the changes. This creates a single Job without changing the schedule. Manual runs are labeled **Started by hand**.
+
+**Run now** also follows the **If the last run is still running** setting:
+
+- **Skip the new run**: The button is disabled while the previous run is still running. Hover over it to see why.
+- **Stop the last run and start the new one**: The review screen lists the runs that will stop first.
+- **Run both**: Create another Job immediately.
+
+Wait for **Succeeded** or **Failed** in **Runs**. If you have permission to read logs and the replica for that run still exists, click **Logs** in its row to view the output. Then check the result in the application, such as whether it generated the report.
+
+![Overview and run history for the nightly-report scheduled job](https://oss.zeabur.com/shots/zeabur/en/light/cron-job.avif)
+
+## Which version runs after the source service updates
+
+When you create a scheduled job, it copies the source container’s image, environment variable configuration, working directory, resources, security settings, and volume mounts. It also keeps the execution identity, image pull secrets, and node placement settings. Ports and health checks aren’t copied.
+
+If the source service later changes its image, the scheduled job still uses the image copied when it was created. To update the job too, open the scheduled job’s **Settings**, switch to **YAML**, click **Edit**, update `image` for the corresponding container in `spec.jobTemplate.spec.template.spec.containers`, then click **Review changes**.
+
+Plaintext environment variable values are also copies made at creation time. References to secrets or config files still point to the original objects and read their current values each time a new container starts. When changing a shared object, include scheduled jobs when assessing its impact.
+
+<Callout type="warn">
+Volume mounts point to the same disk (PVC). The scheduled job doesn’t get a copy of the data. The source service and job may modify the same files at the same time. A volume that can only mount on a single node may also leave the scheduled job waiting for a mount. Confirm that the storage and command can handle this shared use.
+</Callout>
+
+## Edit or pause a schedule
+
+Open the scheduled job’s **Settings** → **Schedule**. Change **Schedule**, **Time zone**, **Command**, **If the last run is still running**, **Successful runs to keep**, or **Failed runs to keep**, then click **Review changes** and apply. The new settings take effect on the next run. Any run already in progress continues. The **Command** field is only available for jobs created through **Add scheduled task**.
+
+To pause automatic scheduling, click **Pause** next to **Runs** in **Overview**, then review and apply. **Run now** remains available while the schedule is paused. To resume, click **Resume** in the same location.
+
+## Verify the results
+
+After you create a scheduled job, **Runs** lists each run as **Succeeded** or **Failed**. To check with kubectl:
+
+```sh
+kubectl -n shop get cronjob nightly-report
+kubectl -n shop get jobs -l app.kubernetes.io/name=nightly-report
+kubectl -n shop logs job/<Job name>
+```
+
+The CronJob’s `SCHEDULE` and `TIMEZONE` show the values you entered. `SUSPEND` is `True` when paused, and `LAST SCHEDULE` shows how long ago the last run started. Each run is a Job. A `STATUS` of `Complete` means it succeeded; `Failed` means it failed. Manually triggered Jobs are named `<cron-job-name>-manual-<time>`.
+
+## Do the same with kubectl
+
+A scheduled job is a CronJob. The following YAML is equivalent to creating `nightly-report` from the `web` service to run `npm run report` every day at 03:00 Taiwan time:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly-report
+  labels:
+    app.kubernetes.io/name: nightly-report
+    zeabur.com/task-of: web
+spec:
+  schedule: "0 3 * * *"
+  timeZone: Asia/Taipei
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: nightly-report
+        spec:
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          restartPolicy: Never
+          containers:
+            - name: web
+              image: ghcr.io/acme/web:1.4
+              command: ["/bin/sh", "-c", "npm run report"]
+              envFrom:
+                - secretRef:
+                    name: web-env
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+```
+
+- The `zeabur.com/task-of` label holds the source service’s name. The interface uses it to list the job under the source service’s **Scheduled tasks**. If the source service has a `zeabur.com/group` label, that’s copied too.
+- The container’s `image`, `env`, `envFrom`, `workingDir`, `imagePullPolicy`, `resources`, `securityContext`, and `volumeMounts` are copied from the source container. The replica’s `serviceAccountName`, `securityContext`, `imagePullSecrets`, `nodeSelector`, `affinity`, and `tolerations` are copied from the source replica. If it mounts volumes, the `volumes` it uses are copied too.
+- The command is always written as `["/bin/sh", "-c", "<command>"]`.
+- The `concurrencyPolicy` values `Forbid`, `Allow`, and `Replace` correspond to **Skip the new run**, **Run both**, and **Stop the last run and start the new one**, respectively.
+
+Other actions:
+
+| Interface action | kubectl |
+| --- | --- |
+| **Run now** | `kubectl -n shop create job --from=cronjob/nightly-report nightly-report-manual-$(date +%s)` |
+| **Pause** | `kubectl -n shop patch cronjob nightly-report -p '{"spec":{"suspend":true}}'` |
+| **Resume** | `kubectl -n shop patch cronjob nightly-report -p '{"spec":{"suspend":false}}'` |
+| Delete | `kubectl -n shop delete cronjob nightly-report` |
+
+Like `kubectl create job --from`, Zeabur’s **Run now** creates a Job with the annotation `cronjob.kubernetes.io/instantiate: manual` and the CronJob as its owner.
+
+## Common failures
+
+| Situation | What to do |
+| --- | --- |
+| Can’t find **Scheduled tasks** | Open **Settings** on a continuously running service. Jobs and CronJobs don’t have a section for creating another scheduled job. |
+| The cron schedule or time zone is rejected at creation | Check the five-field format and time zone name. Correct the fields based on the reasons returned by the cluster. |
+| `/bin/sh` or the command can’t be found | Use an image with a shell and the required program, and check the command path, working directory, and user permissions. |
+| Creation warns that each replica has its own volume | The source uses volumes from a StatefulSet’s volume templates, which can’t be copied directly as job mounts. First, arrange storage the scheduled job can use. |
+| The job keeps waiting to start | Check events in **Deployments**, available resources, and volume mounts. Check for restrictions caused by the source service’s use of those resources. |
+| The job didn’t run at the expected time | Go to **Settings** → **Schedule** to check the schedule and time zone. Confirm that **Paused** doesn’t appear next to run history, and check whether the previous run is still running. |
+| Older logs aren’t available | Check how many successful and failed runs are kept. After completed Jobs and their replicas are removed, the page can no longer read those replicas’ logs. |
+
+## Delete a scheduled job
+
+In the scheduled job’s upper-right corner, open **More** → **Delete service**, review the deletion list, and apply. Deleting the CronJob also removes its run history and replicas. The source service stays.
+
+To stop automatic runs without deleting the job, click **Pause**.
