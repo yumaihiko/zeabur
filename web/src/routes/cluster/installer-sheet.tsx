@@ -64,9 +64,10 @@ export function InstallerSheet({
             <Command text="sudo zeabur-installer apply" />
           </Step>
           {installed ? (
-            <p className="type-meta text-pretty text-muted-foreground">
-              {t("installer.stays")} {t("installer.elsewhere")}
-            </p>
+            <div className="flex flex-col gap-1 type-meta text-pretty text-muted-foreground">
+              <p>{t("installer.stays")}</p>
+              <p>{t("installer.elsewhere")}</p>
+            </div>
           ) : (
             <Step text={t("installer.otherCluster")}>
               <Command text={`zeaburctl components export ${component}`} />

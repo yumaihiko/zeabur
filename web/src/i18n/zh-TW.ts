@@ -1063,7 +1063,7 @@ export const zhTW: Messages = {
   "installer.config": (path) => `或在 ${path} 的 enable 加上它，再執行 apply：`,
   "installer.configRemove": (path) =>
     `或從 ${path} 的 enable 拿掉它，預設就會裝的元件則加到 disable，再執行 apply：`,
-  "installer.stays": "它的命名空間、CRD 和磁碟區會留著，要刪掉的話，安裝程式文件有寫怎麼做。",
+  "installer.stays": "它的 Namespace、CRD 和磁碟區會留著，要刪掉的話，安裝程式文件有寫怎麼做。",
   "installer.elsewhere": "如果是用 Helm、K3s 或 GitOps 工具裝的，就用同一個工具移除。",
   "installer.otherCluster":
     "叢集不是用 zeabur-installer 裝的話，可以印出 manifests，用 kubectl 套用，或提交到 GitOps 儲存庫。加上 --format helm 會改印 Helm 指令。",
