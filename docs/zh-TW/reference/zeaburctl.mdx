@@ -1,6 +1,6 @@
 ---
 title: zeaburctl
-description: 用目前的 kubeconfig 開啟 Zeabur、上傳資料夾，或檢查叢集。
+description: 用目前的 kubeconfig 開啟 Zeabur、上傳資料夾、檢查叢集，或匯出元件的安裝內容。
 ---
 
 已有能連線到叢集的 kubeconfig 時，執行 `zeaburctl ui` 就會在本機開啟 Zeabur。讀取、**檢查變更**與確認後的套用都使用該 context 的權限，叢集裡不需要先安裝 Zeabur 伺服器。
@@ -15,6 +15,7 @@ zeaburctl ui
 zeaburctl ui --context production --no-browser
 zeaburctl doctor --context production --output json
 zeaburctl up ./site --project shop --service site
+zeaburctl components export certificates/cert-manager
 ```
 
 `ui`、`doctor`、`up` 各自接受 `--context`。省略時使用 kubeconfig 的目前 context，指令不會改動 kubeconfig。
@@ -24,6 +25,7 @@ zeaburctl up ./site --project shop --service site
 | `ui` | 在本機瀏覽器開啟 Zeabur | 不在叢集安裝元件，在介面套用的變更直接寫入叢集 |
 | `doctor` | 檢查叢集版本、元件和 Zeabur Identity 設定 | 只讀取，不修改設定 |
 | `up` | 把資料夾上傳到從資料夾建立的服務，並開始建置 | 修改該服務的 Build，把資料夾推到 registry |
+| `components export` | 印出安裝 Catalog 元件的 manifest 或 Helm 指令 | 不連叢集，什麼都不改 |
 
 ## `ui`
 
@@ -145,6 +147,28 @@ zeaburctl up [資料夾] [--project <專案>] [--service <服務>]
 | `--method railpack\|dockerfile` | 新服務的建置方式，預設是 `railpack` |
 | `--port <連接埠>` | 新服務接收連線的連接埠，同時設定 Service 和 `PORT` 環境變數。省略時不接受連線 |
 | `--yes` | 在終端機建立新服務前，跳過建立確認 |
+
+## `components export`
+
+```sh
+zeaburctl components export <capability>/<id> [--format helmchart|helm|flux|argocd] [--profile single-node|multi-node]
+```
+
+印出安裝 Catalog 元件的內容，給不是用 zeabur-installer 裝的叢集用。內容來自 zeaburctl 內建的 Catalog，版本和設定值都已釘選。指令不連叢集，所以不用 `--context`。
+
+| 選項 | 預設與用途 |
+|---|---|
+| `--format` | `helmchart`：K3s/RKE2 的 `HelmChart`，由 helm-controller 安裝。`helm`：`helm upgrade --install` 指令。`flux`：Flux 的來源和 `HelmRelease`。`argocd`：Argo CD 的 `Application` |
+| `--profile` | `single-node`。`multi-node` 改用 Catalog 給多節點的設定值 |
+
+元件要填的值會留成 `<名稱>`，先換成實際的值。元件需要存取主機時，內容會先把它的 Namespace 設為 `privileged`。K3s 或 RKE2 內建同一種元件時，內容開頭會說怎麼先停用內建版本。
+
+```sh
+zeaburctl components export volume-backup/velero > velero.yaml
+kubectl apply -f velero.yaml
+```
+
+也可以把檔案提交到 GitOps 儲存庫，讓 Flux 或 Argo CD 套用。之後的調整和移除都在這個檔案上做。
 
 ## 連線與權限問題
 

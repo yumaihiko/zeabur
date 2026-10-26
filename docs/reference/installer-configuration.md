@@ -28,6 +28,10 @@ Pods resolve names through DNS, not through `/etc/hosts`. For a test machine, na
 | `enable` | Capabilities (`runtime-security`) or component ids (`volume-backup/velero`) added to the preset. A component's dependencies are added with it. |
 | `disable` | Capabilities or component ids taken out. Disabling one that another chosen component needs is an error that names both. |
 | `profile` | `single-node` (default) or `multi-node`; selects the catalog's values for the profile. |
+| `allowDataLoss` | Component ids whose removal may delete the data they keep, such as `replicated-storage/longhorn`. `apply` refuses such a removal until the id is here. See [Remove a component](installer.md#remove-a-component). |
+
+A component that leaves the list (taken out of `enable`, or added to `disable`) is removed by the
+next `apply`; see [Remove a component](installer.md#remove-a-component).
 
 ### Storage
 
@@ -127,6 +131,7 @@ with no Zeabur, Zeabur Identity, members or isolation; see
 |---|---|
 | `enable` | Ingress and certificates come by default; `builds` (Zeabur Builder, installed with zot, needs 1800 MiB of memory), or component ids under these capabilities, may be added. |
 | `disable` | Capabilities or component ids taken out. |
+| `allowDataLoss` | As for a team install. |
 | `inputs`, `secretFiles` | As for a team install. |
 | `host.tlsSan` | Extra API server certificate names, for when your computer reaches the server by another name. |
 | `host.requireEncryptedDisk` | Stop when `/var/lib/kubesolo` is not on a dm-crypt device. |

@@ -120,6 +120,35 @@ sudo zeabur-installer node sync
 
 `node sync` 讓 installer 建立的基準網路政策放行目前每個節點的流量，也就是每個節點 Pod 網段的第一個位址。新加入的 server 會自己同步。worker 加入後，一定要在 server 執行一次 `node sync`，在這之前網路政策會擋掉新節點的流量。`node add` 的輸出也會提醒這一步。網路和儲存的前提見[加入節點](../cluster/nodes.mdx)。
 
+## 移除元件
+
+元件只由 installer 安裝和移除。在 `gui` 的 **元件** 取消勾選，或從設定檔的 `enable` 拿掉它，預設就會裝的元件則加到 `disable`，再執行 `apply`。自己用的安裝也一樣。
+
+`plan` 會在「Removed」列出要移除的元件和會留下什麼。`apply` 等叢集啟動後先移除元件，再建立 Namespace、儲存類別和其他元件。被別的元件需要的，會排在後面移除。每個元件，`apply` 刪除 `kube-system` 裡帶有 `app.kubernetes.io/managed-by: zeabur-installer` 標籤和 `installer.zeabur.com/component: <capability>/<id>` 註解的 `HelmChart`，等 helm-controller 的 `helm-delete-<chart>` Job 解除安裝完成。
+
+installer 只移除自己裝的元件。用 Helm、Flux 或 Argo CD 裝的沒有這個註解，會留著。Catalog 已經沒列的元件也會留著，`plan` 會提醒並給出 `kubectl delete` 指令。
+
+元件還在使用時，`apply` 什麼都不改，並列出是誰在用：
+
+| 元件 | 什麼情況算在使用 |
+|---|---|
+| 有自訂資源的元件 | 一起移除的元件的 Namespace 以外，還有它 CRD 的物件 |
+| Longhorn | 還有 driver 是 `driver.longhorn.io` 的 PersistentVolume |
+| zot | zot 的 Namespace 以外，還有副本用 `zot.zot.svc:5000` 的映像檔 |
+
+先刪掉或搬走這些。Trivy Operator 的報告是它自己產生的，不算在內。
+
+解除安裝會刪掉元件保存的資料時，還要把元件 ID 寫進 `allowDataLoss`（`gui` 在 **確認** 用勾選框問）。Longhorn 寫了之後，`apply` 會把它的 `deleting-confirmation-flag` 設為 `true`，否則 Longhorn 不肯解除安裝；每個磁碟區的副本也會一起刪掉。
+
+留下的東西，確定用不到之後可以手動刪除：
+
+- 元件的 Namespace，連同裡面的 Secret 和工作負載的磁碟（PersistentVolumeClaim）：`kubectl delete namespace <namespace>`。先備份磁碟。
+- 它的 CRD，Helm 不會刪：`kubectl get crd -o name | grep <group>` 找出來再 `kubectl delete`。這會刪掉叢集裡所有這種物件。
+- installer 為它套用的 manifest，例如 Gateway API 的 CRD 或 cert-manager 的 issuer：`plan` 會列出名稱，用 `kubectl delete` 刪除。
+- Catalog 列出的其他殘留，例如 Longhorn 的 `longhorn-static` 儲存類別：`kubectl delete storageclass longhorn-static`。
+
+這些步驟不靠 Zeabur 的 finalizer，Zeabur 移除後一樣能做。
+
 ## `uninstall`
 
 ```sh

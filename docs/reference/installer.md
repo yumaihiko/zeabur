@@ -190,6 +190,50 @@ service, and the components are `HelmChart` objects that kubectl reads and chang
 removes nothing; it prints the commands that remove KubeSolo and, after a reboot (containers and
 their mounts outlive the service), its data.
 
+## Remove a component
+
+Only the installer installs and removes components; Zeabur shows them and the commands. To
+remove one, untick it under Components in `gui`, or take it out of `enable` (for a component the
+preset brings, add it to `disable`), and run `apply`. A personal install works the same way.
+
+`plan` lists the removal under "Removed", with what stays. `apply` removes components once the
+cluster runs, before it sets up namespaces, storage and the components that stay. A component is
+removed before the components it needs. For each one, `apply` deletes the `HelmChart` objects in
+`kube-system` that carry the label `app.kubernetes.io/managed-by: zeabur-installer` and the
+annotation `installer.zeabur.com/component: <capability>/<id>`, and waits until
+helm-controller's `helm-delete-<chart>` job has uninstalled the chart. The installer removes
+only what it installed: a component installed by Helm, Flux or Argo CD has no such annotation
+and stays. A component the catalog no longer lists stays too; `plan` warns and gives the
+`kubectl delete` command.
+
+`apply` changes nothing while a component is still in use, and names what uses it:
+
+| Component | In use while |
+|---|---|
+| One with custom resources | objects of its CRDs exist outside the namespaces of the components removed with it |
+| Longhorn | a PersistentVolume of the driver `driver.longhorn.io` exists |
+| zot | a Pod outside zot's namespace runs an image from `zot.zot.svc:5000` |
+
+Delete or move those first. Trivy Operator's reports are its own output, so they do not count.
+
+When the uninstall deletes the data a component keeps, `apply` also wants it named in
+`allowDataLoss` (the GUI asks with a checkbox in the review step). For Longhorn, `apply` then
+sets its `deleting-confirmation-flag`, without which Longhorn refuses to uninstall, and every
+volume's replicas go with it.
+
+What stays, and how to delete it by hand once nothing needs it:
+
+- The component's namespace, with its Secrets and the volumes (PersistentVolumeClaims) of its
+  workloads: `kubectl delete namespace <namespace>`. Back the volumes up first.
+- Its CRDs, which Helm never deletes: `kubectl get crd -o name | grep <group>`, then
+  `kubectl delete` those. That deletes every object of them in the cluster.
+- Manifests the installer applied for it (Gateway API CRDs, cert-manager issuers): `plan` names
+  them; delete them with `kubectl delete -f` on the same URL or by name.
+- Other leftovers the catalog lists, such as Longhorn's `longhorn-static` storage class:
+  `kubectl delete storageclass longhorn-static`.
+
+No finalizer of Zeabur's is involved, so all of this works with Zeabur removed.
+
 ## What stays after uninstalling
 
 `rke2-uninstall.sh` removes RKE2 and its data, but not the installer's own files: the download

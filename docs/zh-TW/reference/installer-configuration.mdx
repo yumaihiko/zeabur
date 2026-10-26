@@ -34,6 +34,7 @@ host:
 | `profile` | `single-node` | `single-node` 或 `multi-node`，選取 Catalog 對應的元件設定 |
 | `enable` | `[]` | 加入 capability 或完整元件 ID |
 | `disable` | `[]` | 排除 capability 或完整元件 ID |
+| `allowDataLoss` | `[]` | 同意移除時連資料一起刪掉的元件 ID，例如 `replicated-storage/longhorn` |
 | `zeabur` | `true` | 安裝 Zeabur Identity 與 Zeabur。`false` 只安裝 RKE2 與選定元件 |
 | `inputs` | `{}` | 依元件 ID 分組的一般輸入值 |
 | `secretFiles` | `{}` | 依元件 ID 分組的機密檔案路徑 |
@@ -64,6 +65,8 @@ host:
 - `secure`：`standard` 再加上執行期偵測、漏洞掃描和入侵防護。
 
 `enable` 可以寫 capability（例如 `runtime-security`）或完整元件 ID（例如 `volume-backup/velero`），相依的元件會一起加入。`disable` 排除了另一個元件需要的元件時，`plan` 會列出兩者並停下。最後裝哪些元件、順序和排除原因，看 `plan` 的輸出。
+
+已經裝好的元件從清單拿掉後，下次 `apply` 會移除它。移除會連資料一起刪掉的元件，要先寫進 `allowDataLoss`，見[移除元件](./installer.mdx#移除元件)。
 
 ```yaml
 inputs:
@@ -155,6 +158,7 @@ host:
 |---|---|
 | `enable` | `[]`。Ingress 和憑證是預設的，只能再加 `builds`（Zeabur Builder，會連 zot 一起裝，記憶體要 1800 MiB 以上），或這幾個 capability 底下的元件 ID |
 | `disable` | `[]`。排除 capability 或完整元件 ID |
+| `allowDataLoss` | `[]`。和建立叢集的檔案一樣 |
 | `inputs` | `{}`。和建立叢集的檔案一樣，依元件 ID 分組 |
 | `secretFiles` | `{}`。和建立叢集的檔案一樣，檔案權限要是 `0600` |
 | `host.tlsSan` | `[]`。自己的電腦用別的位址或網域連 API 時，把它加在這裡 |

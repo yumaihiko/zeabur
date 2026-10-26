@@ -473,6 +473,22 @@ To see what a member may do, ask as them:
 kubectl auth can-i --list -n shop --as=zeabur:bob
 ```
 
+## Catalog components
+
+In a cluster zeabur-installer did not install, the Components page shows what is installed and
+what is missing, but installs nothing. `zeaburctl components export <capability>/<id>` prints
+what installs a component, from the catalog in the binary, with its pinned versions and values.
+Apply it with `kubectl`, or commit it to the repository a GitOps tool watches:
+
+```sh
+zeaburctl components export certificates/cert-manager --format flux > cert-manager.yaml
+```
+
+`--format` is `helmchart` by default (K3s/RKE2 `HelmChart` objects for helm-controller), or
+`helm`, `flux` or `argocd`; `--profile multi-node` takes the catalog's values for several nodes.
+Values the component asks for show as `<name>` placeholders. Change or remove the component
+where you keep that text.
+
 ## Uninstall
 
 ```sh
