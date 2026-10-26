@@ -12,6 +12,7 @@ import { CopyButton } from "@/components/bits"
 import { FormField } from "@/components/form-field"
 import { Notifications } from "@/components/notifications"
 import { LoadingRows } from "@/components/page"
+import { ProjectMembers } from "@/components/members/project-members"
 import { GateTip, useGates } from "@/components/gate"
 import { usePlanner } from "@/components/plan/planner"
 import { ProjectDeleting } from "@/components/project-deleting"
@@ -85,6 +86,7 @@ export function ProjectSettings({ namespace }: { namespace: Schemas["ProjectName
           />
         </Group>
       ) : null}
+      <ProjectMembers namespace={namespace} />
       <Group label={t("projectSettings.namespaceGroup")}>
         <Card variant="list">
           <CardRow

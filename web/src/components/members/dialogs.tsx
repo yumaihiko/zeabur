@@ -114,10 +114,13 @@ function DoneButton({ onClose }: { onClose: () => void }) {
 export function InviteDialog({
   members,
   projectRoles,
+  project,
   onClose,
 }: {
   members: readonly Member[]
   projectRoles: boolean
+  /** A project picked to start with, as Developer. */
+  project?: string
   onClose: () => void
 }) {
   const t = useT()
@@ -126,7 +129,9 @@ export function InviteDialog({
   const [username, setUsername] = useState("")
   const [displayName, setDisplayName] = useState("")
   const [admin, setAdmin] = useState(false)
-  const [chosen, setChosen] = useState<Chosen>(new Map())
+  const [chosen, setChosen] = useState<Chosen>(
+    () => new Map(project && projectRoles ? [[project, "developer"]] : []),
+  )
   const [reviewing, setReviewing] = useState(false)
   const [link, setLink] = useState<SetupLink | undefined>(undefined)
   const roleLine = useRoleLine()

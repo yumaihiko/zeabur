@@ -1240,6 +1240,12 @@ export const en = {
   "projectSettings.title": "Project settings",
   "projectSettings.back": "Back",
   "projectSettings.general": "General",
+  "projectMembers.about": "Admin accounts can open every project. Other members need a role in it.",
+  "projectMembers.invite": "Invite someone to this project",
+  "projectMembers.inviteHint":
+    "They start as Developer here. You can change it before you create the link.",
+  "projectMembers.more": (n: number) => `${n} more ${n === 1 ? "person" : "people"}`,
+  "projectMembers.all": "Open members",
   "projectSettings.basic": "Basic information",
   "projectSettings.iconHint": "Shown beside the project's name.",
   "projectSettings.changeIcon": "Change icon",

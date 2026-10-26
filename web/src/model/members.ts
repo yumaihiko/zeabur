@@ -21,6 +21,20 @@ export function sortMembers(members: readonly Member[]): Member[] {
   return members.toSorted((a, b) => rank(a) - rank(b) || a.username.localeCompare(b.username))
 }
 
+/** Who can open `project`, sorted as the members list is: admins, and members with a role in it. */
+export function projectPeople(
+  members: readonly Member[],
+  project: string,
+): { member: Member; role: "admin" | ProjectRole }[] {
+  return sortMembers(members).flatMap(
+    (member): { member: Member; role: "admin" | ProjectRole }[] => {
+      if (member.role === "admin") return [{ member, role: "admin" }]
+      const grant = member.projects?.find((p) => p.project === project)
+      return grant ? [{ member, role: grant.role }] : []
+    },
+  )
+}
+
 /** Members whose user name, display name or group holds every word of `query`. */
 export function filterMembers(members: readonly Member[], query: string): Member[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)

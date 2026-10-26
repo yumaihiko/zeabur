@@ -23,6 +23,7 @@ import {
   pendingInvitations,
   pickerHasFilter,
   pickerProjects,
+  projectPeople,
   sortMembers,
   writeCounts,
   writtenName,
@@ -199,6 +200,22 @@ describe("project roles", () => {
       kind: "projects",
       roles: [{ role: "viewer", named: ["Another blog", "Shop", "api"], count: 3 }],
     })
+  })
+
+  it("lists who can open a project: admins and members with a role in it", () => {
+    const people = projectPeople(
+      [
+        member("dan", { projects: [{ project: "blog", role: "developer" }] }),
+        member("carol", { projects: [{ project: "shop", role: "viewer" }] }),
+        member("alice", { role: "admin" }),
+        member("eve", { projects: null }),
+      ],
+      "shop",
+    )
+    expect(people.map((p) => [p.member.username, p.role])).toStrictEqual([
+      ["alice", "admin"],
+      ["carol", "viewer"],
+    ])
   })
 
   it("offers projects, other namespaces on request, and keeps one already held", () => {
