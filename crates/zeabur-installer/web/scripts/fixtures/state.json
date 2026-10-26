@@ -62,6 +62,7 @@
             "generated": false,
             "name": "cluster-ip",
             "required": false,
+            "filled": false,
             "secret": false
           }
         ],
@@ -131,6 +132,7 @@
             "generated": true,
             "name": "bouncer-key",
             "required": false,
+            "filled": false,
             "secret": true
           },
           {
@@ -139,6 +141,7 @@
             "generated": true,
             "name": "lapi-secret",
             "required": false,
+            "filled": false,
             "secret": true
           },
           {
@@ -147,6 +150,7 @@
             "generated": true,
             "name": "registration-token",
             "required": false,
+            "filled": false,
             "secret": true
           }
         ],
@@ -254,6 +258,7 @@
             "generated": false,
             "name": "oauth-client-id",
             "required": true,
+            "filled": false,
             "secret": true
           },
           {
@@ -262,6 +267,7 @@
             "generated": false,
             "name": "oauth-client-secret",
             "required": true,
+            "filled": false,
             "secret": true
           }
         ],
@@ -366,6 +372,7 @@
             "generated": false,
             "name": "bucket",
             "required": true,
+            "filled": false,
             "secret": false
           },
           {
@@ -374,6 +381,7 @@
             "generated": false,
             "name": "s3-url",
             "required": true,
+            "filled": false,
             "secret": false
           },
           {
@@ -382,6 +390,7 @@
             "generated": false,
             "name": "credentials",
             "required": true,
+            "filled": false,
             "secret": true
           }
         ],

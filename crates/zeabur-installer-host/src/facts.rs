@@ -15,6 +15,13 @@ pub fn read() -> Result<Facts, HostError> {
     let hostname = fs::read_to_string("/proc/sys/kernel/hostname")
         .map_err(HostError::io("/proc/sys/kernel/hostname"))?;
     let meminfo = fs::read_to_string("/proc/meminfo").map_err(HostError::io("/proc/meminfo"))?;
+    let node_ips = node_ips();
+    let node_prefix = node_ips.first().and_then(|ip| {
+        host_addresses()
+            .iter()
+            .find(|a| &a.address == ip)
+            .and_then(|a| a.prefix)
+    });
     Ok(Facts {
         arch: arch(std::env::consts::ARCH).to_owned(),
         hostname: hostname.trim().to_owned(),
@@ -22,7 +29,8 @@ pub fn read() -> Result<Facts, HostError> {
             what: "/proc/meminfo".to_owned(),
             reason: "no MemTotal".to_owned(),
         })?,
-        node_ips: node_ips(),
+        node_ips,
+        node_prefix,
     })
 }
 
@@ -33,6 +41,8 @@ pub struct HostAddress {
     pub interface: String,
     /// The address, without its prefix length.
     pub address: String,
+    /// The prefix length of the address.
+    pub prefix: Option<u8>,
     /// An IPv6 privacy address, which the kernel replaces about once a day (RFC 8981).
     pub temporary: bool,
     /// Past its preferred lifetime, or not yet usable (tentative, failed duplicate detection).
@@ -66,7 +76,8 @@ fn parse_addresses(text: &str) -> Vec<HostAddress> {
             if !matches!(words.next()?, "inet" | "inet6") {
                 return None;
             }
-            let address = words.next()?.split('/').next()?.to_owned();
+            let (address, prefix) = words.next()?.split_once('/')?;
+            let (address, prefix) = (address.to_owned(), prefix.parse().ok());
             let flags: Vec<&str> = words
                 .take_while(|w| *w != "\\" && *w != "valid_lft")
                 .collect();
@@ -74,6 +85,7 @@ fn parse_addresses(text: &str) -> Vec<HostAddress> {
             Some(HostAddress {
                 interface,
                 address,
+                prefix,
                 temporary: has("temporary"),
                 unusable: has("deprecated") || has("tentative") || has("dadfailed"),
                 permanent: !has("dynamic"),

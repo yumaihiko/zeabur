@@ -69,6 +69,9 @@ inputs:
     s3-url: https://s3.example.com
 ```
 
+The installer fills `kube-api-cidr` for External Secrets (the subnet of the node address) and
+`cluster-ip` for zot itself. A value in `inputs` overrides it.
+
 Secret inputs never go in this file. Name a file holding the value instead; it must have mode
 0600:
 

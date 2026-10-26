@@ -449,6 +449,7 @@ fn catalog_json(index: &Index, profile: &str, arch: &str) -> Value {
                         "generated": i.generate.is_some(),
                         "required": i.required,
                         "default": i.default,
+                        "filled": plan::installer_fills(&c.id, &i.name),
                     })
                 })
                 .collect();

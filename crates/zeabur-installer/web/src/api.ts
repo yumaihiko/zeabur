@@ -17,6 +17,8 @@ export interface Input {
   secret: boolean
   generated: boolean
   required: boolean
+  /** The installer fills it, so the page does not ask. */
+  filled: boolean
   default?: unknown
 }
 

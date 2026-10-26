@@ -406,6 +406,7 @@ mod tests {
         let host = |address: &str, temporary| facts::HostAddress {
             interface: "eth0".to_owned(),
             address: address.to_owned(),
+            prefix: None,
             temporary,
             unusable: false,
             permanent: false,

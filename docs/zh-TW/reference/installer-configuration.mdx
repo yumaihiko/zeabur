@@ -74,6 +74,8 @@ inputs:
 
 每個元件有哪些 input、型別是什麼，由 Catalog 定義。少了必填值時，`plan` 會指出要補哪個欄位。
 
+External Secrets 的 `kube-api-cidr`（節點位址所在的子網路）和 zot 的 `cluster-ip`，installer 會自己填。要改的話，在 `inputs` 寫上值即可。
+
 ### `secretFiles`
 
 機密輸入寫成檔案路徑，檔案權限設為 `0600`：

@@ -281,6 +281,7 @@ fn manifests(cli: &Cli, cluster_name: &str) -> Result<(), InstallError> {
         hostname: cluster_name.to_owned(),
         memory_mib: 0,
         node_ips: Vec::new(),
+        node_prefix: None,
     };
     let (identity, zeabur) = plan::products_only(&config, &facts)?.ok_or_else(|| {
         InstallError::Message(format!("{} says `zeabur: false`", cli.config.display()))

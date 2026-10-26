@@ -5,7 +5,7 @@
 //! Secret key and where its value comes from.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -46,6 +46,10 @@ const VICTORIA_LOGS: &str = "logs/victoria-logs";
 const VICTORIA_METRICS: &str = "metrics/victoria-metrics";
 /// zot's input naming that address.
 const ZOT_CLUSTER_IP_INPUT: &str = "cluster-ip";
+/// The catalog's External Secrets Operator.
+const EXTERNAL_SECRETS: &str = "external-secrets/external-secrets";
+/// Its input naming the Kubernetes API server's addresses.
+const KUBE_API_CIDR_INPUT: &str = "kube-api-cidr";
 /// The `ClusterIssuer` of `domain` access, shipped by the catalog's cert-manager component.
 pub const ACME_ISSUER: &str = "letsencrypt";
 /// RKE2's own memory at idle on one node, measured on the test VM (`kubectl top` plus containerd
@@ -85,6 +89,8 @@ pub struct Facts {
     pub memory_mib: u64,
     /// The addresses the node registers with (RKE2's `node-ip`); empty leaves the choice to RKE2.
     pub node_ips: Vec<String>,
+    /// The prefix length of the first IPv4 node address on its interface.
+    pub node_prefix: Option<u8>,
 }
 
 /// The whole plan.
@@ -385,6 +391,7 @@ pub fn plan(index: &Index, config: &Config, facts: &Facts) -> Result<Plan, PlanE
     let choices = Choices {
         inputs: &config.inputs,
         secret_files: &config.secret_files,
+        facts,
     };
     let (components, mut namespaces) =
         components(index, &selection, &choices, profile, &facts.arch)?;
@@ -739,6 +746,39 @@ pub(crate) fn rke2_plan(
 pub(crate) struct Choices<'a> {
     pub(crate) inputs: &'a BTreeMap<String, BTreeMap<String, Value>>,
     pub(crate) secret_files: &'a BTreeMap<String, BTreeMap<String, String>>,
+    pub(crate) facts: &'a Facts,
+}
+
+/// Whether the installer fills this input itself, so a front end need not ask for it.
+#[must_use]
+pub fn installer_fills(component: &str, input: &str) -> bool {
+    matches!(
+        (component, input),
+        (ZOT, ZOT_CLUSTER_IP_INPUT) | (EXTERNAL_SECRETS, KUBE_API_CIDR_INPUT)
+    )
+}
+
+/// The value of an input the installer knows; a configured value wins over it.
+fn known_input(component: &str, input: &str, facts: &Facts) -> Option<Value> {
+    match (component, input) {
+        (ZOT, ZOT_CLUSTER_IP_INPUT) => Some(json!(rke2::ZOT_CLUSTER_IP)),
+        (EXTERNAL_SECRETS, KUBE_API_CIDR_INPUT) => {
+            let ip = facts
+                .node_ips
+                .iter()
+                .find(|a| a.parse::<Ipv4Addr>().is_ok())?;
+            Some(json!(ipv4_network(ip, facts.node_prefix)?))
+        }
+        _ => None,
+    }
+}
+
+/// The IPv4 network of `address` as `network/prefix`; the address with `/32` without a prefix.
+fn ipv4_network(address: &str, prefix: Option<u8>) -> Option<String> {
+    let ip: Ipv4Addr = address.parse().ok()?;
+    let prefix = prefix.filter(|p| (1..=32).contains(p)).unwrap_or(32);
+    let mask = u32::MAX.checked_shl(32 - u32::from(prefix)).unwrap_or(0);
+    Some(format!("{}/{prefix}", Ipv4Addr::from(u32::from(ip) & mask)))
 }
 
 /// The chosen components and the namespaces their releases install into.
@@ -952,10 +992,7 @@ fn inputs(component: &Component, choices: &Choices<'_>) -> Result<Inputs, PlanEr
                 .and_then(|g| g.get(&input.name))
                 .cloned()
                 .or_else(|| input.default.clone())
-                .or_else(|| {
-                    (id == ZOT && input.name == ZOT_CLUSTER_IP_INPUT)
-                        .then(|| json!(rke2::ZOT_CLUSTER_IP))
-                });
+                .or_else(|| known_input(id, &input.name, choices.facts));
             let release = input
                 .release
                 .clone()
@@ -1434,6 +1471,7 @@ mod tests {
             hostname: "vps-1".to_owned(),
             memory_mib: 8192,
             node_ips: vec!["10.0.0.5".to_owned()],
+            node_prefix: Some(24),
         }
     }
 
@@ -2060,5 +2098,22 @@ mod tests {
             panic!("{} MiB is too little for a team install", small.memory_mib);
         };
         assert!(error.to_string().contains("use: personal"), "{error}");
+    }
+
+    #[test]
+    fn ipv4_network_is_the_interface_subnet() {
+        assert_eq!(
+            ipv4_network("10.211.55.168", Some(24)).as_deref(),
+            Some("10.211.55.0/24")
+        );
+        assert_eq!(
+            ipv4_network("192.0.2.121", Some(20)).as_deref(),
+            Some("192.0.0.0/20")
+        );
+        assert_eq!(
+            ipv4_network("10.0.0.5", None).as_deref(),
+            Some("10.0.0.5/32")
+        );
+        assert_eq!(ipv4_network("fd00::6", Some(64)), None);
     }
 }

@@ -415,6 +415,7 @@ mod tests {
                 hostname: "vps-2".to_owned(),
                 memory_mib: 4096,
                 node_ips: vec!["10.0.0.6".to_owned(), "fd00::6".to_owned()],
+                node_prefix: None,
             },
             rtt_us: rtt_us.to_vec(),
             ports: vec![(9345, true), (6443, true), (10250, false)],

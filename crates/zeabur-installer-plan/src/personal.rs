@@ -176,6 +176,7 @@ pub fn plan(
     let choices = Choices {
         inputs: &config.inputs,
         secret_files: &config.secret_files,
+        facts,
     };
     let (mut components, namespaces) =
         components(index, &selection, &choices, PERSONAL_PROFILE, arch)?;
@@ -255,6 +256,7 @@ mod tests {
             hostname: "solo".to_owned(),
             memory_mib,
             node_ips: vec!["10.0.0.5".to_owned()],
+            node_prefix: None,
         }
     }
 

@@ -177,8 +177,9 @@ function ComponentRow({
   const t = useT()
   const id = useId()
   const disabled = !supported || needed
-  const required = component.inputs.filter((input) => input.required)
-  const optional = component.inputs.filter((input) => !input.required)
+  const asked = component.inputs.filter((input) => !input.filled)
+  const required = asked.filter((input) => input.required)
+  const optional = asked.filter((input) => !input.required)
   const unsupported = tooSmall
     ? t("components.needsMemory", component.personalMinMemoryMib ?? 0)
     : component.distributions.length
