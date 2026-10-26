@@ -29,7 +29,9 @@ source: "6666c9e63fb7"
 
 ### 看要執行的指令
 
-在元件卡片按 **安裝**，視窗會列出要在伺服器上執行的指令。範本或建置設定缺少元件時，按 **安裝…** 也會開啟同一個視窗。
+在元件卡片按 **安裝**，視窗會列出要在伺服器上執行的指令。**新增** 選單、範本、建置設定或資料庫備份缺少元件時，按 **安裝方式** 也會開啟同一個視窗，一次列出這件事缺的所有元件，`enable` 的內容可以直接複製。
+
+Zeabur 從 `kube-system` 的 ConfigMap `zeabur-installer` 判斷叢集是不是 zeabur-installer 裝的。找不到時，視窗只列出 `zeaburctl components export` 的指令；讀不到時，兩種方式都列出來。
 
 </Step>
 <Step>
@@ -56,7 +58,7 @@ ssh -L 8085:127.0.0.1:8085 root@server.example.com
 </Tab>
 <Tab value="設定檔">
 
-在 `/etc/zeabur-installer/config.yaml` 的 `enable` 加上元件 ID：
+在 `/etc/zeabur-installer/config.yaml` 的 `enable` 加上元件 ID，一次可以加好幾個：
 
 ```yaml
 enable:
@@ -104,6 +106,8 @@ zeabur-installer 只移除自己裝的元件。用 Helm、Flux 或 Argo CD 裝�
 zeaburctl components export volume-backup/velero > velero.yaml
 zeaburctl components export volume-backup/velero --format helm
 ```
+
+一次要裝好幾個時，把 ID 都寫上，例如 `zeaburctl components export container-registry/zot image-updates/keel`，內容會依序接在一起。
 
 預設印出 K3s/RKE2 的 `HelmChart`，由叢集內建的 helm-controller 安裝。其他叢集用 `--format` 改成 `helm`、`flux` 或 `argocd`。元件要填的值會留成 `<名稱>`，先換成實際的值，再用 `kubectl apply -f` 套用，或提交到 GitOps 儲存庫。指令說明見 [zeaburctl](../reference/zeaburctl.mdx#components-export)。
 

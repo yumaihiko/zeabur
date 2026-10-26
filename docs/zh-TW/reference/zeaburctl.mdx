@@ -152,10 +152,10 @@ zeaburctl up [資料夾] [--project <專案>] [--service <服務>]
 ## `components export`
 
 ```sh
-zeaburctl components export <capability>/<id> [--format helmchart|helm|flux|argocd] [--profile single-node|multi-node]
+zeaburctl components export <capability>/<id>... [--format helmchart|helm|flux|argocd] [--profile single-node|multi-node]
 ```
 
-印出安裝 Catalog 元件的內容，給不是用 zeabur-installer 裝的叢集用。內容來自 zeaburctl 內建的 Catalog，版本和設定值都已釘選。指令不連叢集，所以不用 `--context`。
+印出安裝 Catalog 元件的內容，給不是用 zeabur-installer 裝的叢集用。可以一次寫好幾個元件，內容依序接在一起。內容來自 zeaburctl 內建的 Catalog，版本和設定值都已釘選。指令不連叢集，所以不用 `--context`。
 
 | 選項 | 預設與用途 |
 |---|---|
