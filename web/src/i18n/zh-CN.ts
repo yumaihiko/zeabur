@@ -2463,8 +2463,7 @@ export const zhCN: Messages = {
   "add.buildVariablesHint":
     "每行一个 KEY=value，只有构建时读得到，例如包仓库的令牌。以机密变量传入，不会留在镜像里。",
   "add.buildVariablesDockerfile": "Dockerfile 用 RUN --mount=type=secret,id=KEY 读取。",
-  "add.gitAfter":
-    "应用后开始第一次构建。之后 Zeabur Builder 每分钟检查一次分支，新的 commit 构建成功就会上线。",
+  "add.gitAfter": "应用后开始第一次构建。之后推送到这个分支，大约一分钟内就会开始部署。",
   "add.planGit": (name) => `从 Git 部署 ${name}`,
   "add.card.git": "构建并运行 Git 仓库。",
   "add.palette.git": (project) => `在 ${project} 从 Git 部署`,
@@ -2701,7 +2700,7 @@ export const zhCN: Messages = {
   "db.backup.setUpBody": "备份会存到你提供的 S3 兼容存储桶。密钥会保存为这个项目的机密变量。",
   "githubApp.title": "GitHub App",
   "githubApp.body":
-    "设置好之后，项目成员可以直接选 GitHub 仓库来部署，每次推送都会自动构建，不用另外配置部署密钥或 Webhook。",
+    "设置好之后，项目成员可以直接选 GitHub 仓库来部署，不用另外配置部署密钥。推送后大约一分钟内就会开始部署。",
   "githubApp.what": "设置 GitHub App",
   "githubApp.none": "这个集群还没有 GitHub App。到 GitHub 创建一个，大约一分钟就好。",
   "githubApp.create": "创建 GitHub App",
@@ -2718,7 +2717,7 @@ export const zhCN: Messages = {
   "githubApp.continue": "前往 GitHub",
   "githubApp.install": "安装到 GitHub",
   "githubApp.open": "在 GitHub 上打开",
-  "githubApp.pollsOnly": "没有 Webhook，新提交最多一分钟内会开始构建。",
+  "githubApp.pollsOnly": "没有 Webhook，由 Zeabur Builder 每分钟去 GitHub 检查一次。",
   "githubApp.installations": "已安装的账号",
   "githubApp.noInstallations": "还没安装到任何账号。装到存放仓库的账号或组织，就能开始部署。",
   "githubApp.installationsProblem": "读不到 GitHub 上的安装情况。",

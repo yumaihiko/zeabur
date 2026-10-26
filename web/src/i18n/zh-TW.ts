@@ -2470,8 +2470,7 @@ export const zhTW: Messages = {
   "add.buildVariablesHint":
     "一行一個 KEY=value，只有建置時讀得到，例如套件庫的權杖。以機密變數傳入，不會留在映像檔裡。",
   "add.buildVariablesDockerfile": "Dockerfile 用 RUN --mount=type=secret,id=KEY 讀取。",
-  "add.gitAfter":
-    "套用後開始第一次建置。之後 Zeabur Builder 每分鐘檢查一次分支，新的 commit 建置成功就會上線。",
+  "add.gitAfter": "套用後開始第一次建置。之後推送到這個分支，大約一分鐘內就會開始部署。",
   "add.planGit": (name) => `從 Git 部署 ${name}`,
   "add.card.git": "建置並執行 Git 儲存庫。",
   "add.palette.git": (project) => `在 ${project} 從 Git 部署`,
@@ -2709,7 +2708,7 @@ export const zhTW: Messages = {
   "db.backup.setUpBody": "備份會存到你提供的 S3 相容儲存貯體。金鑰會存成這個專案的機密變數。",
   "githubApp.title": "GitHub App",
   "githubApp.body":
-    "設定好之後，專案成員可以直接挑 GitHub 儲存庫來部署，每次推送都會自動建置，不用另外設定部署金鑰或 Webhook。",
+    "設定好之後，專案成員可以直接挑 GitHub 儲存庫來部署，不用另外設定部署金鑰。推送後大約一分鐘內就會開始部署。",
   "githubApp.what": "設定 GitHub App",
   "githubApp.none": "這個叢集還沒有 GitHub App。到 GitHub 建立一個，大約一分鐘就好。",
   "githubApp.create": "建立 GitHub App",
@@ -2726,7 +2725,7 @@ export const zhTW: Messages = {
   "githubApp.continue": "前往 GitHub",
   "githubApp.install": "安裝到 GitHub",
   "githubApp.open": "在 GitHub 上開啟",
-  "githubApp.pollsOnly": "沒有 Webhook，新提交最多一分鐘內會開始建置。",
+  "githubApp.pollsOnly": "沒有 Webhook，由 Zeabur Builder 每分鐘去 GitHub 檢查一次。",
   "githubApp.installations": "已安裝的帳號",
   "githubApp.noInstallations": "還沒安裝到任何帳號。裝到放儲存庫的帳號或組織，就能開始部署。",
   "githubApp.installationsProblem": "讀不到 GitHub 上的安裝狀態。",

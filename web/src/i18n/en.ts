@@ -2697,7 +2697,7 @@ export const en = {
     "KEY=value lines that only the build reads, such as a registry token. They are passed as secrets and are not kept in the image.",
   "add.buildVariablesDockerfile": "A Dockerfile reads one with RUN --mount=type=secret,id=KEY.",
   "add.gitAfter":
-    "The first build starts when you apply. After that, Zeabur Builder checks the branch every minute, and each new commit goes live once it builds.",
+    "The first build starts when you apply. After that, each push to the branch starts deploying within about a minute.",
   "add.planGit": (name: string) => `Deploy ${name} from Git`,
   "add.card.git": "Build a Git repository and run it.",
   "add.palette.git": (project: string) => `Deploy from Git in ${project}`,
@@ -2951,7 +2951,7 @@ export const en = {
     "Backups go to an S3-compatible bucket you provide. The keys are kept as a secret in this project.",
   "githubApp.title": "GitHub App",
   "githubApp.body":
-    "Once it is set up, project members pick a GitHub repository to deploy, and every push builds on its own. No deploy keys or webhooks to set up.",
+    "Once it is set up, project members pick a GitHub repository to deploy, with no deploy keys to set up. Each push starts deploying within about a minute.",
   "githubApp.what": "Setting up the GitHub App",
   "githubApp.none":
     "This cluster has no GitHub App yet. Create one on GitHub; it takes about a minute.",
@@ -2969,7 +2969,7 @@ export const en = {
   "githubApp.continue": "Continue on GitHub",
   "githubApp.install": "Install on GitHub",
   "githubApp.open": "Open on GitHub",
-  "githubApp.pollsOnly": "No webhook: new commits are picked up within a minute.",
+  "githubApp.pollsOnly": "No webhook: Zeabur Builder checks GitHub once a minute.",
   "githubApp.installations": "Installed on",
   "githubApp.noInstallations":
     "Not installed on any account yet. Install it on the accounts or organizations that hold your repositories.",
