@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use crate::catalog::{Component, Encoding, Index, SecretRef};
 use crate::config::{AccessMode, Config};
 use crate::pins::{self, RKE2};
+use crate::remove::Removal;
 use crate::rke2::{self, HostFile};
 use crate::select::{self, Selection, Why};
 use crate::storage::{self, NodePrep, Storage};
@@ -112,6 +113,9 @@ pub struct Plan {
     pub components: Vec<ComponentPlan>,
     /// Catalog components named but left out, with the reason.
     pub left_out: BTreeMap<String, String>,
+    /// Installed components no longer planned; `apply` fills it from the cluster
+    /// ([`crate::remove`]).
+    pub removals: Vec<Removal>,
     /// The storage classes, and which one is the default.
     pub storage: Storage,
     /// What every node needs before the components' pods run on it.
@@ -426,6 +430,7 @@ pub fn plan(index: &Index, config: &Config, facts: &Facts) -> Result<Plan, PlanE
         namespaces: namespaces.into_values().collect(),
         components,
         left_out: selection.left_out,
+        removals: Vec::new(),
         node_prep: storage::node_prep(chosen.iter().copied()),
         zot_cluster_ip,
         access: config.access.mode,

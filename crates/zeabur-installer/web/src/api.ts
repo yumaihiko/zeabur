@@ -55,6 +55,8 @@ export interface Config {
   zeabur: boolean
   inputs: Record<string, Record<string, unknown>>
   secretFiles: Record<string, Record<string, string>>
+  /** Components apply may remove although that deletes the data they keep. */
+  allowDataLoss?: string[]
   rke2Version?: string | null
   host: { tlsSan: string[]; requireEncryptedDisk: boolean }
   sources: Record<string, unknown>
@@ -69,6 +71,7 @@ export interface PersonalConfig {
   disable: string[]
   inputs: Record<string, Record<string, unknown>>
   secretFiles: Record<string, Record<string, string>>
+  allowDataLoss?: string[]
   host: { tlsSan: string[]; requireEncryptedDisk: boolean }
   sources: Record<string, unknown>
 }
@@ -110,9 +113,28 @@ export interface PlannedComponent {
   releases: Release[]
 }
 
+/** An installed component the configuration no longer has; apply deletes its HelmCharts. */
+export interface Removal {
+  id: string
+  displayName: string
+  helmCharts: string[]
+  /** Namespaces that stay, with what is left in them. */
+  namespaces: string[]
+  /** What the catalog says stays after `helm uninstall`. */
+  leftovers: string[]
+  /** Manifest releases, whose objects stay. */
+  manifests: string[]
+  /** What still uses it; apply stops while there is any. */
+  usedBy: string[]
+  losesData: boolean
+  /** `allowDataLoss` names it. */
+  confirmed: boolean
+}
+
 interface PlanBase {
   components: PlannedComponent[]
   leftOut: Record<string, string>
+  removals: Removal[]
   /** The distribution itself (RKE2 or KubeSolo), then the measured components. */
   memory: { clusterMib: number; componentsMib: number; unmeasured: number; hostMib: number }
   warnings: Warning[]

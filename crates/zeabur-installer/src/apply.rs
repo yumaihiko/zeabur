@@ -12,7 +12,7 @@ use zeabur_installer_host::kubectl::{self, Kubectl};
 use zeabur_installer_host::nodeprep::{self, Stage};
 use zeabur_installer_host::preflight::{self, Status};
 use zeabur_installer_host::{archive, chart, cmd, download, facts, files, systemd};
-use zeabur_installer_plan::catalog::Encoding;
+use zeabur_installer_plan::catalog::{Encoding, Index};
 use zeabur_installer_plan::config::{AccessMode, Config};
 use zeabur_installer_plan::plan::{
     self, ComponentPlan, Download, IDENTITY_NAMESPACE, IdentityPlan, LOCAL_ISSUER, MANAGER,
@@ -24,7 +24,7 @@ use zeabur_installer_plan::rke2::{
 };
 use zeabur_installer_plan::storage::{self, NodePrep, Storage};
 
-use crate::{InstallError, load, out, render};
+use crate::{InstallError, load, out, remove, render};
 
 /// Downloads and the local CA's copy.
 pub(crate) const STATE_DIR: &str = "/var/lib/rancher/zeabur-installer";
@@ -36,9 +36,10 @@ const RELOADS_METRIC: &str = "apiserver_authentication_config_controller_automat
 pub(crate) fn run(config_path: &Path) -> Result<(), InstallError> {
     let config = load::config(config_path)?;
     let index = load::catalog(config.sources.catalog.as_deref(), STATE_DIR)?;
-    let plan = plan::plan(&index, &config, &facts::read()?)?;
+    let running = systemd::is_active(UNIT);
+    let mut plan = make_plan(&index, &config)?;
     out::line(render::plan(&plan).trim_end());
-
+    remove::check(&plan.removals)?;
     check_host(
         UNIT,
         config.host.require_encrypted_disk,
@@ -64,6 +65,7 @@ pub(crate) fn run(config_path: &Path) -> Result<(), InstallError> {
             || crate::join::node_ready(&kubectl, &name, started).unwrap_or(false),
         )?;
     }
+    remove_components(&kubectl, &index, &config, &mut plan, !running)?;
 
     out::step("Namespaces and network policies");
     let nodes = node_addresses(&kubectl)?;
@@ -129,6 +131,45 @@ pub(crate) fn run(config_path: &Path) -> Result<(), InstallError> {
         out::line(&line);
     }
     Ok(())
+}
+
+/// The plan, with the removals read from the cluster when it runs.
+pub(crate) fn make_plan(index: &Index, config: &Config) -> Result<Plan, InstallError> {
+    let mut plan = plan::plan(index, config, &facts::read()?)?;
+    let kubectl = Kubectl::rke2();
+    plan.removals = remove::plan(
+        systemd::is_active(UNIT).then_some(&kubectl),
+        index,
+        &plan.components,
+        &config.profile,
+        &config.allow_data_loss,
+        &mut plan.warnings,
+    )?;
+    Ok(plan)
+}
+
+/// Removes the components the plan removes. With `read`, as when RKE2 was stopped while planning,
+/// it first reads them from the cluster.
+fn remove_components(
+    kubectl: &Kubectl,
+    index: &Index,
+    config: &Config,
+    plan: &mut Plan,
+    read: bool,
+) -> Result<(), InstallError> {
+    if read {
+        plan.removals = remove::plan(
+            Some(kubectl),
+            index,
+            &plan.components,
+            &config.profile,
+            &config.allow_data_loss,
+            &mut Vec::new(),
+        )?;
+        out::line(render::removals(&plan.removals).trim_end());
+        remove::check(&plan.removals)?;
+    }
+    remove::run(kubectl, &plan.removals)
 }
 
 /// The preflight checks; a failed one stops `apply`.

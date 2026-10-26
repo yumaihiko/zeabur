@@ -9,6 +9,7 @@ mod load;
 mod node;
 mod out;
 mod personal;
+mod remove;
 mod render;
 mod uninstall;
 
@@ -247,7 +248,7 @@ fn personal(cli: &Cli, config: &zeabur_installer_plan::config::PersonalConfig) -
 fn show_plan(cli: &Cli, json: bool) -> Result<(), InstallError> {
     let (config, defaults) = load::config_or_defaults(&cli.config)?;
     let index = load::catalog(config.sources.catalog.as_deref(), apply::STATE_DIR)?;
-    let plan = plan::plan(&index, &config, &facts::read()?)?;
+    let plan = apply::make_plan(&index, &config)?;
     if defaults && !json {
         out::line(&format!(
             "No configuration at {}; planning with the defaults: a test machine at {} and {}, \

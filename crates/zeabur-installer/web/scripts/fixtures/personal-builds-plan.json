@@ -271,7 +271,8 @@
         "values": []
       }
     ],
-    "zotClusterIp": "10.43.0.50"
+    "zotClusterIp": "10.43.0.50",
+    "removals": []
   },
   "text": "KubeSolo v1.2.2 (Kubernetes 1.35, pinned), for one person, on vps-1 (amd64, 7936 MiB)\nhelm-controller  v0.17.9 (its image pinned by digest; the Jobs' image checked by digest after they run)\nNode address     203.0.113.10; the kubeconfig names it\n\nComponents\n  ingress/traefik            preset    23 MiB\n      manifests gateway-api-crds (1 URLs)\n      chart traefik 41.7.1\n  certificates/cert-manager  preset    51 MiB\n      chart cert-manager v1.21.2\n      manifests issuers\n  container-registry/zot     dependency\n      manifests tls (1 manifests)\n      chart zot 0.1.128\n  builds/zeabur-builder      enabled   \n      chart zeabur-builder 0.0.1\n\nStorage          local-path (KubeSolo's local-path), the default\nZeabur           none on the server: run `zeaburctl ui` on your computer\n\nMemory at idle   about 774 MiB of 7936 (KubeSolo 700, components 74, plus 2 unmeasured)\nwarning: A personal install is for one person: whoever has the kubeconfig is cluster admin, and nothing isolates apps from each other (KubeSolo enforces no NetworkPolicy). For a team, install with RKE2 on a server with at least 4 GiB.\n",
   "yaml": "use: personal\nenable: [builds/zeabur-builder]\ndisable: []\ninputs: {}\nsecretFiles: {}\nhost:\n  tlsSan: []\n  requireEncryptedDisk: false\nsources:\n  catalog: null\n"

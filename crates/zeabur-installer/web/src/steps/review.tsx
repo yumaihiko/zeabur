@@ -3,7 +3,7 @@ import CaretRightIcon from "~icons/ph/caret-right"
 import DownloadIcon from "~icons/ph/download-simple"
 import WarningIcon from "~icons/ph/warning"
 
-import type { CatalogComponent, Plan, PlannedComponent } from "@/api"
+import type { CatalogComponent, Plan, PlannedComponent, Removal } from "@/api"
 import type { Wizard } from "@/app"
 import { Code, Panel, Row, Rows } from "@/components/bits"
 import { MemoryVerdict, memoryAdvice } from "@/components/memory"
@@ -15,6 +15,7 @@ import { CheckRow } from "@/steps/host"
 import { Alert, AlertDescription, AlertTitle } from "@zeabur/design-system/components/alert"
 import { Badge } from "@zeabur/design-system/components/badge"
 import { Button, buttonVariants } from "@zeabur/design-system/components/button"
+import { Checkbox } from "@zeabur/design-system/components/checkbox"
 import {
   Collapsible,
   CollapsibleContent,
@@ -54,11 +55,15 @@ export function ReviewStep({ wizard }: { wizard: Wizard }) {
     ([id, reason]) => [byId.get(id)?.displayName ?? id, leftOutReason(t, reason)] as const,
   )
   const many = (plan?.components.length ?? 0) > few
+  const removals = plan?.removals ?? []
+  const refused = removals.some((r) => r.usedBy.length > 0 || (r.losesData && !r.confirmed))
   const blocked = failed.length
     ? t("review.blocked")
     : fit?.verdict === "over"
       ? t("review.blockedMemory")
-      : null
+      : refused
+        ? t("review.blockedRemoval")
+        : null
   const advice = fit ? memoryAdvice(t, fit) : ""
   // The memory row already says what `memory.tight` says, and the access row the isolation.
   const repeated = ["memory.tight", "memory.personal.tight", "personal.isolation"]
@@ -196,6 +201,32 @@ export function ReviewStep({ wizard }: { wizard: Wizard }) {
         </Panel>
       ) : null}
 
+      {removals.length ? (
+        <Panel
+          title={t("review.removing")}
+          flush
+          action={<span className="text-xs text-secondary">{removals.length}</span>}
+        >
+          <p className="px-5 py-3 text-xs text-secondary">{t("review.removingHint")}</p>
+          {removals.map((removal) => (
+            <RemovalRow
+              key={removal.id}
+              removal={removal}
+              onConfirm={(on) => {
+                const { enable, disable, inputs, allowDataLoss = [] } = wizard.active
+                const others = allowDataLoss.filter((id) => id !== removal.id)
+                wizard.setChoices({
+                  enable,
+                  disable,
+                  inputs,
+                  allowDataLoss: on ? [...others, removal.id] : others,
+                })
+              }}
+            />
+          ))}
+        </Panel>
+      ) : null}
+
       {warnings.length ? (
         <Alert variant="warn">
           <WarningIcon aria-hidden="true" />
@@ -256,6 +287,49 @@ export function ReviewStep({ wizard }: { wizard: Wizard }) {
         </Panel>
       ) : null}
     </StepPage>
+  )
+}
+
+function RemovalRow({
+  removal,
+  onConfirm,
+}: {
+  removal: Removal
+  onConfirm: (on: boolean) => void
+}) {
+  const t = useT()
+  const stays = [
+    ...removal.namespaces.map((ns) => t("review.stays.namespace", ns)),
+    ...removal.leftovers.map((item) =>
+      item === "customresourcedefinitions"
+        ? t("review.stays.crds")
+        : item === "persistentvolumeclaims"
+          ? t("review.stays.volumes")
+          : item,
+    ),
+    ...removal.manifests.map((name) => t("review.stays.manifests", name)),
+  ]
+  const id = `remove-${removal.id}`
+  return (
+    <div className="flex flex-col gap-1 px-5 py-3 text-sm">
+      <span className="flex flex-wrap items-baseline gap-x-2">
+        <span className="font-medium text-main">{removal.displayName}</span>
+        <span className="font-mono text-xs text-tertiary">{removal.helmCharts.join(", ")}</span>
+      </span>
+      {stays.length ? (
+        <span className="text-xs text-secondary">{t("review.stays", stays)}</span>
+      ) : null}
+      {removal.usedBy.length ? (
+        <span className="text-xs text-fail-strong">{t("review.inUse", removal.usedBy)}</span>
+      ) : removal.losesData ? (
+        <span className="mt-1 flex items-center gap-2">
+          <Checkbox id={id} checked={removal.confirmed} onCheckedChange={onConfirm} />
+          <label htmlFor={id} className="text-xs text-warn-strong">
+            {t("review.losesData", removal.displayName)}
+          </label>
+        </span>
+      ) : null}
+    </div>
   )
 }
 

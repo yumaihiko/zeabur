@@ -4,6 +4,7 @@ use zeabur_installer_plan::config::{AccessMode, Role};
 use zeabur_installer_plan::join::{self, JoinPlan};
 use zeabur_installer_plan::personal::PersonalPlan;
 use zeabur_installer_plan::plan::{ComponentPlan, Plan, ReleasePlan};
+use zeabur_installer_plan::remove::Removal;
 use zeabur_installer_plan::rke2::JOIN_TOKEN_FILE;
 use zeabur_installer_plan::storage::NodePrep;
 
@@ -27,6 +28,7 @@ pub(crate) fn plan(plan: &Plan) -> String {
     push(&mut s, "");
     components(&mut s, &plan.components, &plan.left_out);
     push(&mut s, "");
+    s.push_str(&removals(&plan.removals));
     let exempt: Vec<String> = plan
         .namespaces
         .iter()
@@ -117,6 +119,49 @@ fn components(
     }
 }
 
+/// The components `apply` removes and what stays of them; empty when there are none.
+pub(crate) fn removals(removals: &[Removal]) -> String {
+    let mut s = String::new();
+    if removals.is_empty() {
+        return s;
+    }
+    push(&mut s, "Removed (helm-controller uninstalls the charts)");
+    for removal in removals {
+        push(
+            &mut s,
+            &format!(
+                "  {:<48} HelmChart {}",
+                removal.id,
+                removal.helm_charts.join(", ")
+            ),
+        );
+        let mut stays: Vec<String> = removal
+            .namespaces
+            .iter()
+            .map(|n| format!("namespace {n}"))
+            .collect();
+        stays.extend(removal.leftovers.iter().cloned());
+        stays.extend(removal.manifests.iter().map(|m| format!("manifests {m}")));
+        if !stays.is_empty() {
+            push(&mut s, &format!("      stays: {}", stays.join(", ")));
+        }
+        if let Some(why) = removal.refusal() {
+            push(&mut s, &format!("      refused: {why}"));
+        } else if removal.loses_data {
+            push(
+                &mut s,
+                "      deletes the data it keeps, as allowDataLoss allows",
+            );
+        }
+    }
+    push(
+        &mut s,
+        "  What stays is deleted by hand (docs/reference/installer.md#remove-a-component).",
+    );
+    push(&mut s, "");
+    s
+}
+
 /// The plan of a personal install as text.
 pub(crate) fn personal_plan(plan: &PersonalPlan) -> String {
     let mut s = String::new();
@@ -146,6 +191,7 @@ pub(crate) fn personal_plan(plan: &PersonalPlan) -> String {
     push(&mut s, "");
     components(&mut s, &plan.components, &plan.left_out);
     push(&mut s, "");
+    s.push_str(&removals(&plan.removals));
     push(
         &mut s,
         &format!(

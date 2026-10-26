@@ -49,7 +49,7 @@ const emptyPersonal: PersonalConfig = {
 }
 
 /** The choices the components page edits, in either kind of configuration. */
-export type Choices = Pick<Config, "enable" | "disable" | "inputs">
+export type Choices = Pick<Config, "enable" | "disable" | "inputs" | "allowDataLoss">
 
 export interface Wizard {
   server: ServerState

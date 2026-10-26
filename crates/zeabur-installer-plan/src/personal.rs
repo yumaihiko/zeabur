@@ -17,6 +17,7 @@ use crate::plan::{
     Choices, ComponentPlan, Download, Facts, Memory, Namespace, Warning, components, idle_memory,
     warning, zot_cluster_ip,
 };
+use crate::remove::Removal;
 use crate::rke2::HostFile;
 use crate::select::{self, BUILD_CAPABILITIES, PERSONAL_DISTRIBUTION, PERSONAL_PROFILE};
 use crate::storage::Storage;
@@ -58,6 +59,9 @@ pub struct PersonalPlan {
     pub components: Vec<ComponentPlan>,
     /// Catalog components named but left out, with the reason.
     pub left_out: BTreeMap<String, String>,
+    /// Installed components no longer planned; `apply` fills it from the cluster
+    /// ([`crate::remove`]).
+    pub removals: Vec<Removal>,
     /// zot's fixed `ClusterIP`, when zot is installed: containerd pulls its images through it.
     pub zot_cluster_ip: Option<String>,
     /// The storage class: `KubeSolo`'s local-path.
@@ -233,6 +237,7 @@ pub fn plan(
         namespaces: namespaces.into_values().collect(),
         components,
         left_out: selection.left_out,
+        removals: Vec::new(),
         zot_cluster_ip,
         storage: Storage {
             default_class: kubesolo::LOCAL_PATH_CLASS.to_owned(),

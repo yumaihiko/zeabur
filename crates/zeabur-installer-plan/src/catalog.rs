@@ -65,6 +65,24 @@ pub struct Component {
     /// Idle use measured by the catalog's CI, keyed `<profile>-<arch>-v<kubernetes>`.
     #[serde(default)]
     pub measured: BTreeMap<String, Measured>,
+    /// It keeps data of its own.
+    #[serde(default)]
+    pub persists_data: bool,
+    /// What `helm uninstall` leaves: `customresourcedefinitions`, `persistentvolumeclaims` or
+    /// `<resource>/<name>`.
+    #[serde(default)]
+    pub leftovers: Vec<String>,
+    /// How to find it in a cluster.
+    #[serde(default)]
+    pub detection: Detection,
+}
+
+/// The part of a component's `detection` the installer reads.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Detection {
+    /// The CRDs it serves, as `<plural>.<group>`.
+    #[serde(default)]
+    pub crds: Vec<String>,
 }
 
 /// The part of a component's `metadata` the installer reads.

@@ -7,6 +7,7 @@ pub mod kubesolo;
 pub mod personal;
 pub mod pins;
 pub mod plan;
+pub mod remove;
 pub mod rke2;
 pub mod select;
 pub mod storage;

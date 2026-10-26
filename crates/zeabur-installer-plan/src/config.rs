@@ -42,6 +42,10 @@ pub struct Config {
     /// Files holding secret catalog inputs, by component id then input name.
     #[serde(default)]
     pub secret_files: BTreeMap<String, BTreeMap<String, String>>,
+    /// Components `apply` may remove although that deletes the data they keep, such as
+    /// `replicated-storage/longhorn`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_data_loss: Vec<String>,
     /// An RKE2 release other than the pinned one, such as `v1.37.1+rke2r1`. Its downloads are
     /// checked only against the release's own checksum list, so the plan warns that it is
     /// unsupported.
@@ -97,6 +101,10 @@ pub struct PersonalConfig {
     /// Files holding secret catalog inputs, by component id then input name.
     #[serde(default)]
     pub secret_files: BTreeMap<String, BTreeMap<String, String>>,
+    /// Components `apply` may remove although that deletes the data they keep, such as
+    /// `replicated-storage/longhorn`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_data_loss: Vec<String>,
     /// Host settings.
     #[serde(default)]
     pub host: Host,
@@ -123,6 +131,7 @@ impl PersonalConfig {
             disable: Vec::new(),
             inputs: BTreeMap::new(),
             secret_files: BTreeMap::new(),
+            allow_data_loss: Vec::new(),
             host: Host::default(),
             sources: PersonalSources::default(),
         }
@@ -574,6 +583,7 @@ impl Config {
             zeabur: true,
             inputs: BTreeMap::new(),
             secret_files: BTreeMap::new(),
+            allow_data_loss: Vec::new(),
             rke2_version: None,
             host: Host::default(),
             sources: Sources::default(),

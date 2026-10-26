@@ -302,17 +302,14 @@ impl Server {
 
     fn plan(&self, body: &[u8]) -> Response {
         let planned = self.config(body).and_then(|(config, _)| {
-            let facts = facts::read()?;
             let (plan, text) = match &config {
                 Chosen::Team(config) => {
                     let index = load::catalog(config.sources.catalog.as_deref(), apply::STATE_DIR)?;
-                    let plan = plan::plan(&index, config, &facts)?;
+                    let plan = apply::make_plan(&index, config)?;
                     (json!(plan), render::plan(&plan))
                 }
                 Chosen::Personal(config) => {
-                    let index =
-                        load::catalog(config.sources.catalog.as_deref(), kubesolo::STATE_DIR)?;
-                    let plan = personal::plan(&index, config, &facts)?;
+                    let plan = crate::personal::make_plan(config)?;
                     (json!(plan), render::personal_plan(&plan))
                 }
             };

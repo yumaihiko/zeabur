@@ -269,6 +269,17 @@ export const zhTW: Messages = {
   "review.col.version": "版本",
   "review.col.memory": "閒置時用量",
   "review.manifests": "YAML 檔案",
+  "review.removing": "要移除的元件",
+  "review.removingHint": "helm-controller 會解除安裝它們的 chart。留下的東西之後可以手動刪除。",
+  "review.stays": (items) => `會留下：${listZh("zh-TW", items)}`,
+  "review.stays.namespace": (namespace) => `Namespace ${namespace}`,
+  "review.stays.crds": "CRD 和它們的物件",
+  "review.stays.volumes": "磁碟",
+  "review.stays.manifests": (name) => `${name} 建立的物件`,
+  "review.inUse": (items) =>
+    `還有東西在用：${listZh("zh-TW", items)}。先移除它們，或保留這個元件。`,
+  "review.losesData": (name) => `移除 ${name}，連同它保存的資料一起刪除`,
+  "review.blockedRemoval": "有要移除的元件還在使用中，或還沒確認。",
 
   "memory.fits": "夠用",
   "memory.tight": "快不夠了",

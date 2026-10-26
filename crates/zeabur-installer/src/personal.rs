@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use zeabur_installer_host::kubectl::{self, Kubectl};
 use zeabur_installer_host::preflight::{self, Node, Status};
 use zeabur_installer_host::{archive, cmd, download, facts, files, systemd};
+use zeabur_installer_plan::catalog::Index;
 use zeabur_installer_plan::config::PersonalConfig;
 use zeabur_installer_plan::kubesolo::{
     ADMIN_KUBECONFIG, BINARY, DATA_DIR, KUBECTL, PERSONAL_KUBECONFIG, STATE_DIR, UNIT,
@@ -19,15 +20,44 @@ use zeabur_installer_plan::kubesolo::{
 };
 use zeabur_installer_plan::personal::{self, PersonalPlan};
 use zeabur_installer_plan::pins::HELM_CONTROLLER;
-use zeabur_installer_plan::plan::{self, MANAGER, NAMESPACE_MANAGER};
+use zeabur_installer_plan::plan::{self, ComponentPlan, MANAGER, NAMESPACE_MANAGER, Warning};
+use zeabur_installer_plan::remove::Removal;
 use zeabur_installer_plan::rke2::ZOT_HOST;
+use zeabur_installer_plan::select::PERSONAL_PROFILE;
 
 use crate::apply::STATE_CONFIGMAP;
-use crate::{InstallError, doctor, load, out, render};
+use crate::{InstallError, doctor, load, out, remove, render};
 
-fn make_plan(config: &PersonalConfig) -> Result<PersonalPlan, InstallError> {
+/// The plan, with the removals read from the cluster when it runs.
+pub(crate) fn make_plan(config: &PersonalConfig) -> Result<PersonalPlan, InstallError> {
     let index = load::catalog(config.sources.catalog.as_deref(), STATE_DIR)?;
-    Ok(personal::plan(&index, config, &facts::read()?)?)
+    let mut plan = personal::plan(&index, config, &facts::read()?)?;
+    plan.removals = removals(
+        systemd::is_active(UNIT),
+        &index,
+        &plan.components,
+        &config.allow_data_loss,
+        &mut plan.warnings,
+    )?;
+    Ok(plan)
+}
+
+fn removals(
+    running: bool,
+    index: &Index,
+    planned: &[ComponentPlan],
+    allow_data_loss: &[String],
+    warnings: &mut Vec<Warning>,
+) -> Result<Vec<Removal>, InstallError> {
+    let kubectl = kubectl();
+    remove::plan(
+        running.then_some(&kubectl),
+        index,
+        planned,
+        PERSONAL_PROFILE,
+        allow_data_loss,
+        warnings,
+    )
 }
 
 pub(crate) fn show_plan(config: &PersonalConfig, json: bool) -> Result<(), InstallError> {
@@ -73,8 +103,10 @@ fn kubectl() -> Kubectl {
 }
 
 pub(crate) fn apply(config: &PersonalConfig) -> Result<(), InstallError> {
-    let plan = make_plan(config)?;
+    let mut plan = make_plan(config)?;
+    let running = systemd::is_active(UNIT);
     out::line(render::personal_plan(&plan).trim_end());
+    remove::check(&plan.removals)?;
     if show_checks(config) {
         return Err(InstallError::Message(
             "the host is not ready; fix what failed and run apply again".to_owned(),
@@ -97,6 +129,19 @@ pub(crate) fn apply(config: &PersonalConfig) -> Result<(), InstallError> {
     }
 
     helm_controller(&kubectl, &plan)?;
+    if !running {
+        let index = load::catalog(config.sources.catalog.as_deref(), STATE_DIR)?;
+        plan.removals = removals(
+            true,
+            &index,
+            &plan.components,
+            &config.allow_data_loss,
+            &mut Vec::new(),
+        )?;
+        out::line(render::removals(&plan.removals).trim_end());
+        remove::check(&plan.removals)?;
+    }
+    remove::run(&kubectl, &plan.removals)?;
 
     out::step("Namespaces");
     for namespace in &plan.namespaces {

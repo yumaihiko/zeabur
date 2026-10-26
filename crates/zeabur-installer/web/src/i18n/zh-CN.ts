@@ -269,6 +269,17 @@ export const zhCN: Messages = {
   "review.col.version": "版本",
   "review.col.memory": "空闲时用量",
   "review.manifests": "YAML 文件",
+  "review.removing": "要移除的组件",
+  "review.removingHint": "helm-controller 会卸载它们的 chart。留下的东西之后可以手动删除。",
+  "review.stays": (items) => `会保留：${listZh("zh-CN", items)}`,
+  "review.stays.namespace": (namespace) => `Namespace ${namespace}`,
+  "review.stays.crds": "CRD 和它们的对象",
+  "review.stays.volumes": "磁盘",
+  "review.stays.manifests": (name) => `${name} 创建的对象`,
+  "review.inUse": (items) =>
+    `还有东西在用：${listZh("zh-CN", items)}。先移除它们，或保留这个组件。`,
+  "review.losesData": (name) => `移除 ${name}，连同它保存的数据一起删除`,
+  "review.blockedRemoval": "有要移除的组件还在使用中，或还没确认。",
 
   "memory.fits": "够用",
   "memory.tight": "快不够了",
