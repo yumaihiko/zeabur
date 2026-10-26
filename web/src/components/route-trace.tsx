@@ -7,7 +7,7 @@ import XCircleFillIcon from "~icons/ph/x-circle-fill"
 import type { Schemas } from "@/api/client"
 import { CopyButton } from "@/components/bits"
 import { BrowserCheckLine } from "@/components/browser-check"
-import { DomainState } from "@/components/domain-setup"
+import { DomainSetup, DomainState } from "@/components/domain-setup"
 import { StatusDot } from "@/components/status"
 import { Badge } from "@zeabur/design-system/components/badge"
 import { Button } from "@zeabur/design-system/components/button"
@@ -18,6 +18,7 @@ import {
 } from "@zeabur/design-system/components/collapsible"
 import { useSentence, useT } from "@/i18n"
 import { cn } from "@/lib/utils"
+import { checkUrl } from "@/model/browser-check"
 import { needsSetup } from "@/model/domains"
 import { severity } from "@/model/severity"
 
@@ -67,6 +68,7 @@ export function RouteLine({
   const said = waiting
     ? { health: "idle" as const, text: waiting, tone: "text-secondary" }
     : { ...verdict[route.status], text: t(verdict[route.status].key) }
+  const lead = conclusion(route, waiting)
   return (
     <div className="flex flex-col gap-2 px-4 py-3">
       <div className="flex min-w-0 items-center">
@@ -97,21 +99,16 @@ export function RouteLine({
           </span>
         )}
       </div>
-      <div className="flex flex-col gap-1">
-        {route.domain && needsSetup(route.domain) ? (
-          <DomainState check={route.domain} size="text-sm" />
-        ) : null}
-        <span className={cn("flex items-center gap-1.5 text-sm", said.tone)}>
-          <StatusDot health={said.health} />
-          {said.text}
-        </span>
-        {route.kind === "domain" && route.status === "unknown" && !waiting ? (
-          <BrowserCheckLine
-            address={route.address}
-            tls={route.hops.some((h) => h.step === "certificate")}
-          />
-        ) : null}
-      </div>
+      {lead.kind === "setup" ? (
+        <div className="flex flex-col gap-2">
+          <DomainState check={lead.check} size="text-sm" />
+          <DomainSetup host={route.address} check={lead.check} />
+        </div>
+      ) : lead.kind === "browser" ? (
+        <BrowserCheckLine address={route.address} tls={lead.tls} />
+      ) : (
+        <Verdict said={said} />
+      )}
       {stop ? (
         <div className="flex flex-col gap-1 text-sm">
           <p>{write(stop.message)}</p>
@@ -135,10 +132,42 @@ export function RouteLine({
           {t("trace.showChecks")}
         </CollapsibleTrigger>
         <CollapsibleContent>
+          {lead.kind === "verdict" ? null : <Verdict said={said} className="pt-2" />}
           <Hops route={route} />
         </CollapsibleContent>
       </Collapsible>
     </div>
+  )
+}
+
+type Lead =
+  | { kind: "setup"; check: NonNullable<Route["domain"]> }
+  | { kind: "browser"; tls: boolean }
+  | { kind: "verdict" }
+
+/** One conclusion: the record or certificate to fix first, else the browser's check where the
+ * cluster could not tell, else the cluster's verdict. The rest waits in the checks. */
+function conclusion(route: Route, waiting: string | undefined): Lead {
+  if (waiting) return { kind: "verdict" }
+  if (route.domain && needsSetup(route.domain)) return { kind: "setup", check: route.domain }
+  const tls = route.hops.some((h) => h.step === "certificate")
+  const unverified = route.kind === "domain" && route.status === "unknown"
+  if (unverified && checkUrl(route.address, tls) !== undefined) return { kind: "browser", tls }
+  return { kind: "verdict" }
+}
+
+function Verdict({
+  said,
+  className,
+}: {
+  said: { health: Parameters<typeof StatusDot>[0]["health"]; text: string; tone: string }
+  className?: string
+}) {
+  return (
+    <span className={cn("flex items-center gap-1.5 text-sm", said.tone, className)}>
+      <StatusDot health={said.health} />
+      {said.text}
+    </span>
   )
 }
 

@@ -140,6 +140,8 @@ The **Networking** card on the service **Overview** has one row for each domain 
 
 A private address `<service>.<project>.svc.cluster.local` checks only the last three hops. Whether the program listens on `0.0.0.0` instead of `127.0.0.1` is visible only from inside the container, and this check doesn't cover it. When DNS finds nothing, or finds a different address, the row says **Not verified from inside the cluster**. A CDN or proxy in front, or DNS inside the cluster that differs from what is seen outside, both produce that result.
 
+Each row shows one conclusion. When a domain's DNS record or certificate isn't set up, the row shows the record to add. When the cluster can't verify a domain, the row shows whether your browser reaches it, and the cluster's result moves under **Show connection checks**.
+
 ![The Networking card on the service Overview, with the private address reachable. The connection check is expanded, every hop passes, and each hop lists expected and actual](https://oss.zeabur.com/shots/zeabur/en/light/service-connectivity.avif)
 
 ## Connection rules

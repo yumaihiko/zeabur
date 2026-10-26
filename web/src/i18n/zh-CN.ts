@@ -1781,6 +1781,7 @@ export const zhCN: Messages = {
   "data.binary": "二进制",
   "data.noChanges": "没有变更。",
   "net.addDomain": "添加域名",
+  "net.addDomainLater": "点击“检查变更”并应用后，域名才会生效。",
   "net.domain": "域名",
   "net.routeKind": "路由",
   "net.viaIngress": "Ingress（默认）",

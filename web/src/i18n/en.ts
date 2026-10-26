@@ -1934,6 +1934,7 @@ export const en = {
   "data.binary": "Binary",
   "data.noChanges": "No changes.",
   "net.addDomain": "Add domain",
+  "net.addDomainLater": "The domain takes effect after you click Review changes and apply them.",
   "net.domain": "Domain",
   "net.routeKind": "Route",
   "net.viaIngress": "Ingress (default)",

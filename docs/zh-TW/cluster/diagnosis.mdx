@@ -1,7 +1,7 @@
 ---
 title: 看懂狀態、警告與診斷
 description: 服務停擺或叢集出狀況時，去哪裡看原因，以及每個畫面讀的是哪些 Kubernetes 資料、用 kubectl 怎麼查到同樣的內容。
-source: "c883614d7f71"
+source: "f17da6de99a6"
 ---
 
 服務出問題時，先看 **首頁** 的 **需要你處理**，再點進服務的 **概覽** 看 **出了什麼問題**。這些畫面都只讀取叢集，不會修改任何東西。每一項都附有 **修正** 或 **怎麼處理**，要改設定時才會出現檢查變更的步驟。
@@ -138,6 +138,8 @@ kubectl get clusterpolicyreport falco-cluster-policy-report -o yaml
 | **就緒副本** | 至少一個副本已就緒 | `kubectl -n shop get pods -l app.kubernetes.io/name=web` |
 
 私有位址 `<服務>.<專案>.svc.cluster.local` 只檢查最後三步。程式有沒有聽在 `0.0.0.0` 而不是 `127.0.0.1`，要進容器才看得到，這裡不檢查。DNS 查不到或查到別的位址時會寫 **無法從叢集內確認**：前面有 CDN 或 Proxy，或叢集內的 DNS 和外面看到的不同，都會這樣。
+
+每一行只寫一個結論。網域的 DNS 紀錄或憑證還沒設好時，這一行會列出要新增的紀錄。叢集無法確認的網域，改寫你的瀏覽器連不連得到，叢集的結果收進 **顯示連線檢查**。
 
 ![服務概覽的網路卡片，私有位址可連線，展開連線檢查後，每一步都通過並列出預期和實際](https://oss.zeabur.com/shots/zeabur/zh-TW/light/service-connectivity.avif)
 

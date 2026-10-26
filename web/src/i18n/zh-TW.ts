@@ -1786,6 +1786,7 @@ export const zhTW: Messages = {
   "data.binary": "二進位",
   "data.noChanges": "沒有變更。",
   "net.addDomain": "新增網域",
+  "net.addDomainLater": "按「檢查變更」並套用後，網域才會生效。",
   "net.domain": "網域",
   "net.routeKind": "路由",
   "net.viaIngress": "Ingress（預設）",

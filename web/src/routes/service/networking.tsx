@@ -876,6 +876,7 @@ function HostForm({
   onReview: (host: string, choice: Choice) => void
 }) {
   const t = useT()
+  const drafting = useDraft() !== null
   const [issuer, setIssuer] = useState("")
   const [gateway, setGateway] = useState("")
   const gateways =
@@ -944,6 +945,9 @@ function HostForm({
             )
           }}
         </form.Subscribe>
+      ) : null}
+      {choices && drafting ? (
+        <p className="w-full type-meta text-muted-foreground">{t("net.addDomainLater")}</p>
       ) : null}
     </form>
   )
