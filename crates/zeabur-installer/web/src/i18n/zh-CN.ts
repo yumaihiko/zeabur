@@ -220,6 +220,11 @@ export const zhCN: Messages = {
   "capability.uptime-probes": "可用性探测",
   "capability.volume-backup": "卷备份",
   "capability.vulnerability-scanning": "漏洞扫描",
+  "capability.databases": "数据库",
+  "capability.external-secrets": "机密同步",
+  "capability.image-updates": "镜像自动更新",
+  "capability.object-storage": "对象存储",
+  "capability.replicated-storage": "复制式存储",
 
   "review.title": "确认",
   "review.description": (path) =>

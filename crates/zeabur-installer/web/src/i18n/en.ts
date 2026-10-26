@@ -241,6 +241,11 @@ export const en = {
   "capability.uptime-probes": "Uptime probes",
   "capability.volume-backup": "Volume backups",
   "capability.vulnerability-scanning": "Vulnerability scanning",
+  "capability.databases": "Databases",
+  "capability.external-secrets": "Secret sync",
+  "capability.image-updates": "Image updates",
+  "capability.object-storage": "Object storage",
+  "capability.replicated-storage": "Replicated storage",
 
   // Review
   "review.title": "Review",

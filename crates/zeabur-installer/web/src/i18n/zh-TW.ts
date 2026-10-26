@@ -220,6 +220,11 @@ export const zhTW: Messages = {
   "capability.uptime-probes": "可用性探測",
   "capability.volume-backup": "磁碟區備份",
   "capability.vulnerability-scanning": "弱點掃描",
+  "capability.databases": "資料庫",
+  "capability.external-secrets": "機密同步",
+  "capability.image-updates": "映像自動更新",
+  "capability.object-storage": "物件儲存",
+  "capability.replicated-storage": "複製式儲存",
 
   "review.title": "確認",
   "review.description": (path) =>
