@@ -29,6 +29,7 @@ import { databaseLink } from "@/lib/place"
 import { cn } from "@/lib/utils"
 import { edgesOf } from "@/model/connections"
 import { databaseEdges, databaseNodes, type DatabaseNode } from "@/model/database-parts"
+import type { Database } from "@/model/databases"
 import { edgeText } from "@/model/evidence"
 import { originOf } from "@/model/origin"
 import { troubleTone } from "@/model/severity"
@@ -117,6 +118,15 @@ const laneTitle: Record<Lane, `lane.${Lane}`> = {
   data: "lane.data",
 }
 
+/** The map: `data`'s services and the databases, with `whole` (before folding) for their edges. */
+export function mapLayout(data: Project, whole: Project, databases: Database[]) {
+  return layout(
+    data.services,
+    [...edgesOf(data), ...databaseEdges(whole, databases)],
+    databaseNodes(databases, claimsOf(whole)),
+  )
+}
+
 function Graph({
   project,
   data,
@@ -133,11 +143,7 @@ function Graph({
   const databaseList = useDatabases(project)
   const databases = databaseList.data?.items ?? []
   const whole = useQuery(projectQuery(project)).data ?? data
-  const graph = layout(
-    data.services,
-    [...edgesOf(data), ...databaseEdges(whole, databases)],
-    databaseNodes(databases, claimsOf(whole)),
-  )
+  const graph = mapLayout(data, whole, databases)
   const box = bounds(graph)
   const viewport = useRef<HTMLDivElement>(null)
   const [view, setViewState] = useState<Viewport>(

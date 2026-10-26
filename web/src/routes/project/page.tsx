@@ -14,6 +14,7 @@ import type { Schemas } from "@/api/client"
 import { projectGapsQuery, projectIncidentsQuery, projectQuery } from "@/api/queries"
 import { Segmented } from "@/components/bits"
 import { CopyText } from "@/components/copy-text"
+import { useDatabases } from "@/components/databases"
 import { AddMenu, useAddChoices } from "@/components/add/menu"
 import { Freshness } from "@/components/freshness"
 import { ProjectDeleting } from "@/components/project-deleting"
@@ -51,12 +52,11 @@ import { projectView } from "@/lib/stores"
 import { cn } from "@/lib/utils"
 import { groupProblems } from "@/model/attention"
 import { engineName } from "@/model/databases"
-import { edgesOf } from "@/model/connections"
-import { layout, mapReadable } from "@/model/layout"
+import { mapReadable } from "@/model/layout"
 import { suggestionsOf } from "@/model/overview"
 import { projectTitle } from "@/model/project"
 import { needsAttention, statusOf, summarise, type Project, type Service } from "@/model/service"
-import { ProjectMap } from "@/routes/project/architecture"
+import { mapLayout, ProjectMap } from "@/routes/project/architecture"
 import { ProjectData, refusedPlaces, useProjectEvents } from "@/routes/project/data"
 import { ServicesTable } from "@/routes/project/services-table"
 import {
@@ -92,25 +92,35 @@ export function ProjectPage() {
   )
 }
 
-/** The canvas the map would get on this screen, before it is drawn. */
-function mapCanvas(): [number, number] {
+/** The canvas the map would get on this screen, before it is drawn: beside the activity column it
+ * fills the window below the header and the problems; above the activity it keeps its least
+ * height (`min-h-140`). */
+function mapCanvas(broken: boolean): [number, number] {
   const main = document.querySelector("main")
   const width = main?.clientWidth ?? window.innerWidth
-  const aside = window.matchMedia(WIDE).matches ? 320 : 0
-  return [width - aside, Math.max(560, window.innerHeight - 160)]
+  if (!window.matchMedia(WIDE).matches) return [width, 560]
+  return [width - 320, Math.max(560, window.innerHeight - (broken ? 240 : 100))]
 }
 
 /**
  * The map when it can be read fitted to the screen, else the list. The view chosen last in this
- * project stands only where the map is readable; `?view` always does.
+ * project stands only where the map is readable; `?view` always does. Decided once the databases,
+ * which the map also draws, have loaded.
  */
 function useView(project: string, data: Project): ProjectView {
   const search = route.useSearch()
-  const [initial] = useState<ProjectView>(() => {
+  const databases = useDatabases(project)
+  const whole = useQuery(projectQuery(project)).data ?? data
+  const [decided, setDecided] = useState<ProjectView>()
+  const decide = (): ProjectView => {
     if (window.matchMedia(PHONE).matches) return "list"
-    if (!mapReadable(layout(data.services, edgesOf(data)), ...mapCanvas())) return "list"
+    const broken = data.services.some((s) => needsAttention(statusOf(s)))
+    const laid = mapLayout(data, whole, databases.data?.items ?? [])
+    if (!mapReadable(laid, ...mapCanvas(broken))) return "list"
     return projectView.get(project) ?? "map"
-  })
+  }
+  const initial = decided ?? decide()
+  if (decided === undefined && !databases.isPending) setDecided(initial)
   return search.view ?? initial
 }
 
