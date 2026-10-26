@@ -1,0 +1,8 @@
+description: "Removing the only hostname of an Ingress deletes the Ingress: without a rule it would be invalid. Review names the route that goes."
+operation: mutation.plan
+params:
+  request:
+    changes:
+      - op: removeDomain
+        route: {kind: Ingress, name: shop}
+        hostname: shop.example.test

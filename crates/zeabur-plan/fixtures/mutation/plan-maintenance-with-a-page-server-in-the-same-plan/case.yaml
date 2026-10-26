@@ -1,0 +1,22 @@
+description: "A page server created in the same plan serves maintenance: the maintenance Ingress sends to its maintenance port."
+operation: mutation.plan
+params:
+  kinds:
+    - {group: traefik.io, kind: Middleware, plural: middlewares, namespaced: true}
+    - {group: "", kind: Service, plural: services, namespaced: true}
+  request:
+    changes:
+      - op: maintenance
+        route: {kind: Ingress, name: shop}
+        hostname: www.shop.example.test
+        enabled: true
+      - op: create
+        object:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: error-pages
+            labels: {zeabur.com/page-server: "true"}
+          spec:
+            selector: {app.kubernetes.io/name: error-pages}
+            ports: [{name: pages, port: 8080}, {name: maintenance, port: 8081}]

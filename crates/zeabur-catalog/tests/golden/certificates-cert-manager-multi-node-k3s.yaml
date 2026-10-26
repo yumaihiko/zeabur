@@ -1,0 +1,84 @@
+# Profile: multi-node. Apply with kubectl, or save in /var/lib/rancher/k3s/server/manifests/
+# (K3s) or /var/lib/rancher/rke2/server/manifests/ (RKE2).
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cert-manager
+  namespace: kube-system
+spec:
+  chart: oci://quay.io/jetstack/charts/cert-manager
+  version: v1.21.3
+  targetNamespace: cert-manager
+  createNamespace: true
+  valuesContent: |-
+    cainjector:
+      image:
+        repository: quay.io/jetstack/cert-manager-cainjector
+        tag: v1.21.3@sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f
+      podDisruptionBudget:
+        enabled: true
+      replicaCount: 2
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      enableGatewayAPI: true
+      kind: ControllerConfiguration
+    crds:
+      enabled: true
+      keep: true
+    enableCertificateOwnerRef: true
+    image:
+      repository: quay.io/jetstack/cert-manager-controller
+      tag: v1.21.3@sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc
+    podDisruptionBudget:
+      enabled: true
+    replicaCount: 2
+    startupapicheck:
+      image:
+        repository: quay.io/jetstack/cert-manager-startupapicheck
+        tag: v1.21.3@sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1
+    webhook:
+      image:
+        repository: quay.io/jetstack/cert-manager-webhook
+        tag: v1.21.3@sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458
+      podDisruptionBudget:
+        enabled: true
+      replicaCount: 2
+---
+# issuers (namespace cert-manager)
+# Try here first; production rate limits are far lower. Staging
+# certificates are not trusted by browsers.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # No email: ACME accounts need no contact, and Let's Encrypt sends
+    # no expiry emails since 2025. Setting spec.acme.email later updates
+    # the registered account.
+    # Account key, created by cert-manager in its own namespace.
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      # HTTP-01 through Traefik's Ingress support; needs no Gateway, and
+      # also answers for names served by Gateway listeners. The name
+      # must reach port 80 of the cluster from the internet.
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+# Trusted certificates; same settings as staging.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

@@ -1,0 +1,120 @@
+import { describe, test, expect } from "bun:test"
+
+import type { Problem } from "@/api/client"
+import {
+  execRole,
+  nextState,
+  parseFrame,
+  terminalUrl,
+  toolsTerminalUrl,
+  type TerminalEvent,
+  type TerminalState,
+} from "@/model/terminal"
+
+const run = (...events: TerminalEvent[]): TerminalState =>
+  events.reduce<TerminalState>(nextState, { phase: "connecting" })
+
+const frame = (text: string): TerminalEvent => {
+  const parsed = parseFrame(text)
+  if (!parsed) throw new Error(text)
+  return { type: "frame", frame: parsed }
+}
+
+const refused: Problem = {
+  type: "/problems/forbidden",
+  title: "You do not have permission",
+  status: 403,
+  detail: "The cluster does not let you read or change a terminal in pod web-1.",
+  kind: "forbidden",
+  summary: { key: "problem.summary.forbidden" },
+  fix: "Ask a cluster administrator for access.",
+  denied: { verb: "get", group: "", resource: "pods/exec", name: "web-1", namespace: "shop" },
+}
+
+describe("terminal states", () => {
+  test("ready opens the terminal; exit ends it and the close after it changes nothing", () => {
+    const ready = frame(`{"type":"ready","container":"web"}`)
+    expect(run(ready)).toStrictEqual({ phase: "open", container: "web" })
+    expect(
+      run(ready, frame(`{"type":"exit","code":3}`), { type: "close", code: 1000 }),
+    ).toStrictEqual({
+      phase: "exited",
+      code: 3,
+      reason: undefined,
+      message: undefined,
+    })
+  })
+
+  test("an image without a shell ends without a code", () => {
+    const state = run(
+      frame(`{"type":"ready","container":"web"}`),
+      frame(`{"type":"exit","reason":"command-not-found"}`),
+    )
+    expect(state.phase === "exited" && state.reason).toBe("command-not-found")
+  })
+
+  test("an error keeps its problem through the close", () => {
+    const error = frame(JSON.stringify({ type: "error", problem: refused }))
+    expect(run(error, { type: "close", code: 1000 })).toStrictEqual({
+      phase: "error",
+      problem: refused,
+    })
+  })
+
+  test("the server's own closes say why; any other close is a lost connection", () => {
+    const ready = frame(`{"type":"ready","container":"web"}`)
+    expect(run(ready, { type: "close", code: 4001 })).toStrictEqual({
+      phase: "closed",
+      why: "idle",
+    })
+    expect(run({ type: "close", code: 1006 })).toStrictEqual({ phase: "closed", why: "lost" })
+  })
+
+  test("unknown or malformed frames are ignored", () => {
+    expect(parseFrame(`{"type":"later-addition"}`)).toBe(undefined)
+    expect(parseFrame("not json")).toBe(undefined)
+    expect(parseFrame("3")).toBe(undefined)
+  })
+})
+
+describe("terminal address and access", () => {
+  test("the address is the page's origin, ws or wss by its scheme", () => {
+    expect(
+      terminalUrl({ protocol: "https:", host: "zeabur.example" }, "shop", "web-1", "web"),
+    ).toBe("wss://zeabur.example/api/v1/projects/shop/pods/web-1/exec?container=web")
+    expect(
+      terminalUrl({ protocol: "http:", host: "127.0.0.1:8080" }, "a b", "p/1", undefined),
+    ).toBe("ws://127.0.0.1:8080/api/v1/projects/a%20b/pods/p%2F1/exec")
+    expect(
+      terminalUrl({ protocol: "https:", host: "z" }, "shop", "pg-1", "postgres", ["psql", "app"]),
+    ).toBe(
+      "wss://z/api/v1/projects/shop/pods/pg-1/exec?container=postgres&command=psql&command=app",
+    )
+  })
+
+  test("the Role to ask for grants get and create on pods/exec in the namespace only", () => {
+    const yaml = execRole("shop", "alice@example.com")
+    expect(yaml).toMatch(/kind: Role\n/)
+    expect(yaml).toMatch(/resources: \["pods\/exec"\]\n {4}verbs: \["get", "create"\]/)
+    expect(yaml).toMatch(/namespace: shop/)
+    expect(yaml).toMatch(/name: "alice@example.com"/)
+    expect(yaml).not.toMatch(/ClusterRole/)
+  })
+})
+
+describe("the dock", () => {
+  test("a reconnect starts over from connecting", () => {
+    const closed = run({ type: "close", code: 4001 })
+    expect(closed).toStrictEqual({ phase: "closed", why: "idle" })
+    expect(nextState(closed, { type: "connect" })).toStrictEqual({ phase: "connecting" })
+  })
+
+  test("a kubectl terminal's address", () => {
+    expect(toolsTerminalUrl({ protocol: "https:", host: "z.example" }, "shop", "tools-ada")).toBe(
+      "wss://z.example/api/v1/projects/shop/tools/tools-ada/terminal",
+    )
+    expect(toolsTerminalUrl({ protocol: "http:", host: "z.local" }, undefined, "tools-ada")).toBe(
+      "ws://z.local/api/v1/cluster/tools/tools-ada/terminal",
+    )
+  })
+})

@@ -1,0 +1,84 @@
+# On K3s, first turn off the packaged traefik: add it to `disable` in
+# /etc/rancher/k3s/config.yaml on every server, then restart k3s.
+# On RKE2, set `ingress-controller: none` in /etc/rancher/rke2/config.yaml on
+# every server, then restart rke2-server.
+# That deletes the Traefik CRDs and any IngressRoute or Middleware objects;
+# Ingress traffic stops until this one runs.
+# https://docs.k3s.io/installation/packaged-components
+# https://docs.rke2.io/advanced
+# Profile: multi-node. Apply with kubectl, or save in /var/lib/rancher/k3s/server/manifests/
+# (K3s) or /var/lib/rancher/rke2/server/manifests/ (RKE2).
+# gateway-api-crds: apply with `kubectl apply --server-side -f`, or vendor into your repository:
+#   https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.3/standard-install.yaml
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  chart: oci://ghcr.io/traefik/helm/traefik
+  version: 42.1.3
+  targetNamespace: traefik
+  createNamespace: true
+  valuesContent: |-
+    accessLog:
+      enabled: true
+      fields:
+        defaultMode: drop
+        headers:
+          defaultMode: drop
+        names:
+          ClientHost: keep
+          DownstreamContentSize: keep
+          DownstreamStatus: keep
+          Duration: keep
+          RequestContentSize: keep
+          RequestHost: keep
+          RequestMethod: keep
+          RequestPath: keep
+          RequestProtocol: keep
+          RouterName: keep
+          StartUTC: keep
+        queryParameters:
+          defaultMode: drop
+      format: json
+    api:
+      dashboard: false
+    deployment:
+      kind: DaemonSet
+    gateway:
+      enabled: false
+    gatewayClass:
+      enabled: true
+      name: traefik
+    image:
+      repository: traefik
+      tag: v3.7.16@sha256:c8a121e4bb1347e8fd52657fab12f2cb70b68f8a018895e2068f92c9e519b9c2
+    metrics:
+      prometheus:
+        service:
+          enabled: true
+    providers:
+      kubernetesCRD:
+        allowCrossNamespace: false
+        defaultTLSResourcesNamespace: traefik
+        enabled: true
+      kubernetesGateway:
+        enabled: true
+      kubernetesIngress:
+        enabled: true
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    service:
+      spec:
+        externalTrafficPolicy: Local
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Exists
+    - key: CriticalAddonsOnly
+      operator: Exists

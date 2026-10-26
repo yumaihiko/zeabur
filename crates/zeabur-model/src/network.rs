@@ -1,0 +1,219 @@
+//! How a workload is reached.
+
+use serde::{Deserialize, Serialize};
+
+use crate::provenance::Provenance;
+use crate::source::Origin;
+
+/// The application protocol a Service port speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum PortProtocol {
+    /// HTTP.
+    #[serde(rename = "HTTP")]
+    Http,
+    /// HTTP over TLS.
+    #[serde(rename = "HTTPS")]
+    Https,
+    /// gRPC.
+    #[serde(rename = "gRPC")]
+    Grpc,
+    /// Plain TCP (also SCTP, which clients treat the same way).
+    #[serde(rename = "TCP")]
+    Tcp,
+    /// UDP.
+    #[serde(rename = "UDP")]
+    Udp,
+}
+
+/// Which signal decided a [`PortProtocol`], so a client can tell a declared protocol from a
+/// guessed one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum InferredFrom {
+    /// The port's `appProtocol`.
+    AppProtocol,
+    /// The port name's convention, such as `http` or `grpc-…`.
+    Name,
+    /// The transport protocol.
+    Protocol,
+}
+
+/// A port's application protocol and how it was decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolInference {
+    /// The protocol.
+    pub protocol: PortProtocol,
+    /// The signal that decided it.
+    pub inferred_from: InferredFrom,
+}
+
+/// One port of a Kubernetes Service.
+#[expect(
+    clippy::struct_field_names,
+    reason = "the field names are the Kubernetes ones"
+)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct Port {
+    /// The port's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The Service port.
+    pub port: i32,
+    /// The target port, a number or a container port name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_port: Option<String>,
+    /// The node port, for `NodePort` and `LoadBalancer` Services.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_port: Option<i32>,
+    /// The application protocol and how it was inferred.
+    #[serde(flatten)]
+    pub protocol: ProtocolInference,
+    /// The port in its Service.
+    pub origin: Origin,
+}
+
+/// A Kubernetes Service selecting workloads' pods: how they are reached inside the cluster.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct Endpoint {
+    /// The Service's name.
+    pub name: String,
+    /// The Service type, such as `ClusterIP`.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub type_: Option<String>,
+    /// The cluster IP.
+    #[serde(default, rename = "clusterIP", skip_serializing_if = "Option::is_none")]
+    pub cluster_ip: Option<String>,
+    /// The ports.
+    pub ports: Vec<Port>,
+    /// For a `LoadBalancer` Service, the addresses its load balancer reports in
+    /// `status.loadBalancer.ingress`, an IP or a hostname each; empty while it has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_addresses: Vec<String>,
+    /// The tool that manages the Service, if any.
+    pub provenance: Provenance,
+    /// The Service object.
+    pub origin: Origin,
+}
+
+/// An Ingress or a Gateway API `HTTPRoute` routing to workloads' Services: how they are reached
+/// from outside.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct Route {
+    /// The Ingress's or `HTTPRoute`'s name.
+    pub name: String,
+    /// The hosts its rules match.
+    pub hostnames: Vec<String>,
+    /// The Services it routes to, sorted, without duplicates.
+    pub backends: Vec<String>,
+    /// Its class: `spec.ingressClassName`, else the older `kubernetes.io/ingress.class`
+    /// annotation [k8s-ingress-class].
+    ///
+    /// [k8s-ingress-class]: https://kubernetes.io/docs/concepts/services-networking/ingress/#deprecated-annotation
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
+    /// Which requests reach which Service port: the default backend first, then each rule's
+    /// paths in order. Every rule of the Ingress is listed, also those for other workloads'
+    /// Services, so a client filters by `service`.
+    pub rules: Vec<RouteRule>,
+    /// The hosts its `spec.tls` serves over HTTPS, sorted, without duplicates. It says HTTPS is
+    /// configured, not that the certificate is valid.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tls_hosts: Vec<String>,
+    /// The hosts that Traefik redirects to another host, with the middleware Zeabur makes,
+    /// sorted by host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub redirects: Vec<RouteMiddleware>,
+    /// The middleware Zeabur makes for Traefik to ask for a user name and password; its Secret
+    /// of users has the same name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basic_auth: Option<RouteMiddleware>,
+    /// The Traefik `ipAllowList` middleware Zeabur makes to limit the client addresses that reach
+    /// the Ingress's hosts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_allow: Option<RouteMiddleware>,
+    /// The Traefik `errors` middleware Zeabur makes to show the project's error pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_pages: Option<RouteMiddleware>,
+    /// The hosts that show the maintenance page instead of their workload, sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub maintenance: Vec<String>,
+    /// The cert-manager issuer the Ingress names in `cert-manager.io/cluster-issuer` or
+    /// `cert-manager.io/issuer`: cert-manager issues a certificate for each of its `spec.tls`
+    /// entries [cm-ingress].
+    ///
+    /// [cm-ingress]: https://cert-manager.io/docs/usage/ingress/
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    /// The Secret that holds each HTTPS host's certificate, from `spec.tls`, sorted by host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tls: Vec<RouteTls>,
+    /// The tool that manages the Ingress, if any.
+    pub provenance: Provenance,
+    /// The Ingress object.
+    pub origin: Origin,
+}
+
+/// The Secret an Ingress names for one HTTPS host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct RouteTls {
+    /// The host.
+    pub host: String,
+    /// The `kubernetes.io/tls` Secret; absent when the entry names none and the controller's
+    /// default certificate serves the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
+}
+
+/// A Traefik `Middleware` an Ingress lists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct RouteMiddleware {
+    /// The host it acts on; absent when it acts on every host of the Ingress.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// The `Middleware`'s name; on an `HTTPRoute`, which redirects with a filter, the route's.
+    pub middleware: String,
+    /// The host a redirect sends to, when the route says it: an `HTTPRoute`'s `RequestRedirect`
+    /// filter. A Traefik redirect says it in its `Middleware`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// Whether that redirect is permanent (status 301 or 308).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permanent: Option<bool>,
+}
+
+/// One backend of an Ingress: the requests that reach a Service port.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct RouteRule {
+    /// The host it matches; absent matches every host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// The path it matches; absent for the default backend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// `Prefix`, `Exact` or `ImplementationSpecific`; absent for the default backend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_type: Option<String>,
+    /// The backend Service's name.
+    pub service: String,
+    /// The backend Service port, a number or a port name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<String>,
+    /// The backend in its Ingress.
+    pub origin: Origin,
+}

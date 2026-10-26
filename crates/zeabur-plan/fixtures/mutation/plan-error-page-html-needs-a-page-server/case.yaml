@@ -1,0 +1,7 @@
+description: "Without a page server from the error-pages template, a change to a page is refused."
+operation: mutation.plan
+params:
+  request:
+    changes:
+      - op: errorPageHtml
+        maintenance: "<p>Back soon</p>"

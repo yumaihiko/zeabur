@@ -1,0 +1,298 @@
+{{- $issuer := .Values.issuer }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zeabur.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zeabur.labels" . | nindent 4 }}
+spec:
+  # One replica, replaced rather than rolled: sign-in sessions live in the process's memory (their
+  # refresh tokens must not rest in etcd), so a second replica would not know them, and two
+  # versions side by side would split people's sessions between them.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "zeabur.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "zeabur.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "zeabur.fullname" . }}
+      automountServiceAccountToken: false
+      # No Service environment variables: Zeabur reads none, and they grow with the namespace.
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        # Secret volume files belong to root with mode 0440; the kubelet gives them this group.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: zeabur
+          {{- if .Values.image.digest }}
+          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          {{- else }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          {{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # IPv4 and IPv6, so the pod answers in single-stack and dual-stack clusters alike.
+            - name: ZEABUR_LISTEN
+              value: "[::]:8080"
+            - name: ZEABUR_PUBLIC_URL
+              value: {{ required "publicUrl is required" .Values.publicUrl | quote }}
+            {{- with .Values.clusterName }}
+            - name: ZEABUR_CLUSTER_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.domains.suffixes }}
+            - name: ZEABUR_DOMAIN_SUFFIXES
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .Values.domains.clusterIssuer }}
+            - name: ZEABUR_CLUSTER_ISSUER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.builds.registry }}
+            - name: ZEABUR_BUILD_REGISTRY
+              value: {{ . | quote }}
+            {{- if $.Values.builds.caBundle.configMap }}
+            - name: ZEABUR_BUILD_REGISTRY_CA_FILE
+              value: /etc/zeabur/registry-ca/{{ $.Values.builds.caBundle.key }}
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.extraTrustedCA.configMap .Values.extraTrustedCA.secret }}
+            - name: ZEABUR_EXTRA_CA_FILE
+              value: /etc/zeabur/extra-ca/{{ .Values.extraTrustedCA.key }}
+            {{- end }}
+            - name: ZEABUR_ISSUER_URL
+              value: {{ required "issuer.url is required" $issuer.url | quote }}
+            - name: ZEABUR_CLIENT_ID
+              value: {{ $issuer.clientId | quote }}
+            - name: ZEABUR_CLIENT_SECRET_FILE
+              value: /etc/zeabur/client/{{ $issuer.clientSecret.key }}
+            - name: ZEABUR_PLAN_KEY_FILE
+              value: /etc/zeabur/plan-key/{{ .Values.planKey.key }}
+            - name: ZEABUR_MEMBER_ROLES
+              value: {{ .Values.memberRoles.enabled | quote }}
+            # Where the settings people choose are kept: the ConfigMap zeabur-settings here.
+            - name: ZEABUR_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- with .Values.metricsStore.service }}
+            - name: ZEABUR_METRICS_SERVICE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.terminal }}
+            {{- with .debugImage }}
+            - name: ZEABUR_DEBUG_IMAGE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .toolsImage }}
+            - name: ZEABUR_TOOLS_IMAGE
+              value: {{ . | quote }}
+            {{- end }}
+            - name: ZEABUR_TERMINAL_NAMESPACE
+              value: {{ .namespace | quote }}
+            - name: ZEABUR_TERMINAL_TOKEN_FILE
+              value: /var/run/zeabur/terminal-token/token
+            - name: ZEABUR_TOOLS_DEADLINE_MINUTES
+              value: {{ .toolsDeadlineMinutes | int | quote }}
+            - name: ZEABUR_TOOLS_GRACE_SECONDS
+              value: {{ .toolsGraceSeconds | int | quote }}
+            {{- with .toolsResources.requests }}
+            - name: ZEABUR_TOOLS_REQUESTS
+              value: {{ include "zeabur.quantities" . | quote }}
+            {{- end }}
+            {{- with .toolsResources.limits }}
+            - name: ZEABUR_TOOLS_LIMITS
+              value: {{ include "zeabur.quantities" . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if $issuer.caBundle.configMap }}
+            - name: ZEABUR_ISSUER_CA_FILE
+              value: /etc/zeabur/issuer-ca/{{ $issuer.caBundle.key }}
+            {{- end }}
+            {{- with $issuer.accountUrl }}
+            - name: ZEABUR_ACCOUNT_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.proxy.enabled }}
+            - name: ZEABUR_PROXY_URL
+              value: "https://{{ include "zeabur.proxyName" . }}.{{ .Release.Namespace }}.svc"
+            - name: ZEABUR_PROXY_CA_FILE
+              value: /etc/zeabur/proxy-ca/ca.crt
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: kube-api
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            - name: client-secret
+              mountPath: /etc/zeabur/client
+              readOnly: true
+            - name: plan-key
+              mountPath: /etc/zeabur/plan-key
+              readOnly: true
+            - name: terminal-token
+              mountPath: /var/run/zeabur/terminal-token
+              readOnly: true
+            {{- if $issuer.caBundle.configMap }}
+            - name: issuer-ca
+              mountPath: /etc/zeabur/issuer-ca
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.builds.registry .Values.builds.caBundle.configMap }}
+            - name: registry-ca
+              mountPath: /etc/zeabur/registry-ca
+              readOnly: true
+            {{- end }}
+            {{- if or .Values.extraTrustedCA.configMap .Values.extraTrustedCA.secret }}
+            - name: extra-ca
+              mountPath: /etc/zeabur/extra-ca
+              readOnly: true
+            {{- end }}
+            {{- if .Values.proxy.enabled }}
+            - name: proxy-ca
+              mountPath: /etc/zeabur/proxy-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        # What a client needs to find kube-apiserver and trust it, at the path in-cluster clients
+        # read (the CA and the namespace), without the token automounting would add: every request
+        # carries the signed-in person's token instead. `kube-root-ca.crt` is published into every
+        # namespace by kube-controller-manager
+        # (https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/#root-ca-certificate-configmap).
+        - name: kube-api
+          projected:
+            defaultMode: 0444
+            sources:
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
+        - name: client-secret
+          secret:
+            secretName: {{ required "issuer.clientSecret.existingSecret is required" $issuer.clientSecret.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ $issuer.clientSecret.key }}
+                path: {{ $issuer.clientSecret.key }}
+        - name: plan-key
+          secret:
+            secretName: {{ include "zeabur.planKeySecret" . }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.planKey.key }}
+                path: {{ .Values.planKey.key }}
+        # Zeabur's own token, for tools pods in the terminal namespace only (templates/terminals.yaml).
+        # It is apart from the path in-cluster clients read, so nothing else uses it by default.
+        # https://kubernetes.io/docs/concepts/storage/projected-volumes/#serviceaccounttoken
+        - name: terminal-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+        {{- if $issuer.caBundle.configMap }}
+        - name: issuer-ca
+          configMap:
+            name: {{ $issuer.caBundle.configMap }}
+            items:
+              - key: {{ $issuer.caBundle.key }}
+                path: {{ $issuer.caBundle.key }}
+        {{- end }}
+        {{- if and .Values.builds.registry .Values.builds.caBundle.configMap }}
+        - name: registry-ca
+          configMap:
+            name: {{ .Values.builds.caBundle.configMap }}
+            items:
+              - key: {{ .Values.builds.caBundle.key }}
+                path: {{ .Values.builds.caBundle.key }}
+        {{- end }}
+        {{- with .Values.extraTrustedCA }}
+        {{- if .configMap }}
+        - name: extra-ca
+          configMap:
+            name: {{ .configMap }}
+            items:
+              - key: {{ .key }}
+                path: {{ .key }}
+        {{- else if .secret }}
+        - name: extra-ca
+          secret:
+            secretName: {{ .secret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .key }}
+                path: {{ .key }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.proxy.enabled }}
+        # Only the CA of Zeabur Proxy's certificate, not its key.
+        - name: proxy-ca
+          secret:
+            secretName: {{ include "zeabur.proxyTlsSecret" . }}
+            defaultMode: 0440
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

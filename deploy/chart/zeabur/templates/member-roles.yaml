@@ -1,0 +1,93 @@
+{{- if .Values.memberRoles.enabled }}
+# The roles Zeabur gives members: zeabur-member to each one cluster-wide, a project role in each
+# project they are given. Zeabur binds them as the admin who invites or edits the member; the
+# chart binds nothing. Rules: files/member-roles.yaml.
+#
+# A project role aggregates the ClusterRoles labelled `zeabur.com/aggregate-to-<role>`: the rule
+# sets files/member-role-sets.yaml names for it (its own rules are `<role>-rules`) and those of
+# components installed next to it, such as Zeabur Proxy's zeabur-proxy-logs-reader and
+# zeabur-proxy-metrics-reader.
+# kube-controller-manager writes the aggregate's rules, so the chart leaves the field out
+# (with it, a server-side apply upgrade conflicts with the controller)
+# (https://kubernetes.io/docs/reference/access-authn-authz/rbac/#aggregated-clusterroles).
+{{- $sets := .Files.Get "files/member-role-sets.yaml" | fromYaml }}
+{{- range $name, $rules := .Files.Get "files/member-roles.yaml" | fromYaml }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}{{ if hasKey $sets $name }}-rules{{ end }}
+  labels:
+    {{- include "zeabur.labels" $ | nindent 4 }}
+    {{- range $role, $members := $sets }}
+    {{- if has $name $members }}
+    zeabur.com/aggregate-to-{{ $role }}: "true"
+    {{- end }}
+    {{- end }}
+rules:
+  {{- toYaml $rules | nindent 2 }}
+{{- end }}
+{{- range $role, $members := $sets }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $role }}
+  labels:
+    {{- include "zeabur.labels" $ | nindent 4 }}
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        zeabur.com/aggregate-to-{{ $role }}: "true"
+{{- end }}
+{{- end }}
+{{- if or .Values.memberRoles.enabled .Values.proxy.enabled }}
+---
+# Reading a project's log history through Zeabur Proxy, which asks kube-apiserver whether the
+# person may `get` this resource in the namespace. The developer has it, and so does
+# Kubernetes' view (and through it edit and admin): both already read the same pods' logs
+# (`pods/log`). The viewer reads no logs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: zeabur-proxy-logs-reader
+  labels:
+    {{- include "zeabur.labels" . | nindent 4 }}
+    zeabur.com/aggregate-to-zeabur-project-developer: "true"
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - apiGroups: [proxy.zeabur.com]
+    resources: [logs]
+    verbs: [get]
+---
+# Reading a project's usage history through Zeabur Proxy, which holds every query to the
+# namespace. Viewers and developers have it, and so does Kubernetes' view (and through it edit and
+# admin): all of them already read the same pods' current usage (`pods.metrics.k8s.io`).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: zeabur-proxy-metrics-reader
+  labels:
+    {{- include "zeabur.labels" . | nindent 4 }}
+    zeabur.com/aggregate-to-zeabur-project-developer: "true"
+    zeabur.com/aggregate-to-zeabur-project-viewer: "true"
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - apiGroups: [proxy.zeabur.com]
+    resources: [metrics]
+    verbs: [get]
+---
+# Gateway API ships no aggregated roles, so Kubernetes' view (and through it edit and admin)
+# cannot read routes; whoever may read a project's Ingresses may read its HTTPRoutes too.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: zeabur-gateway-routes-reader
+  labels:
+    {{- include "zeabur.labels" . | nindent 4 }}
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch]
+{{- end }}

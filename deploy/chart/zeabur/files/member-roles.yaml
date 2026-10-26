@@ -1,0 +1,262 @@
+# The rules of the member roles (templates/member-roles.yaml); Zeabur binds them per member
+# (crates/zeabur-api/src/members/access.rs, which also tests these rules). A project role gathers
+# the rule sets files/member-role-sets.yaml names for it.
+#
+# Every verb and resource is named: no `*`. Neither role has RBAC objects, namespace create or
+# delete, nodes/proxy, or the escalate, bind and impersonate verbs, so no member can widen their
+# own rights or reach a kubelet.
+# https://kubernetes.io/docs/concepts/security/rbac-good-practices/#privilege-escalation-risks
+#
+# No role has `velero.io`. Velero writes a Restore's objects with its own service account
+# (`cluster-admin` by default) into each namespace the Restore names, RoleBindings and Secrets
+# included. RBAC on the Restore cannot limit those namespaces, so restores stay with cluster admins.
+# https://velero.io/docs/main/rbac/
+#
+# The Developer may create K8up Restores in the project's namespace. Two warnings apply. An
+# in-place restore overwrites the volume and removes files added after the backup. Whoever may
+# restore can read every backup in the repository the project's Schedule names. Give each project
+# its own backup path and password.
+
+# Everyone signed in: node names and status, the names of every project, the StorageClasses a
+# new volume can use, and the PersistentVolume behind a claim (where its data is). `get` without
+# `list`: a provisioned volume is named after its claim's uid, which only readers of the claim see.
+zeabur-member:
+  - apiGroups: [""]
+    resources: [nodes, namespaces]
+    verbs: [get, list]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get]
+
+# Read what a project runs. Like the built-in `view`, without Secrets (a list returns their
+# values) or logs (they often carry what Secrets hold).
+# https://kubernetes.io/docs/concepts/security/rbac-good-practices/#listing-secrets
+zeabur-project-viewer:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - services
+      - endpoints
+      - configmaps
+      - persistentvolumeclaims
+      - events
+      - replicationcontrollers
+      - serviceaccounts
+      - resourcequotas
+      - limitranges
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets, daemonsets, controllerrevisions]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch]
+  # Traefik middlewares on an Ingress: redirects, passwords and error pages.
+  - apiGroups: [traefik.io]
+    resources: [middlewares]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
+  # Databases: CloudNativePG, its Barman Cloud plugin, the Percona Operator for MongoDB, MOCO,
+  # mariadb-operator and the Dragonfly Operator. Granted whether or not they are installed; RBAC
+  # rules may name resources not yet served.
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters, backups, scheduledbackups]
+    verbs: [get, list, watch]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [get, list, watch]
+  - apiGroups: [psmdb.percona.com]
+    resources: [perconaservermongodbs, perconaservermongodbbackups, perconaservermongodbrestores]
+    verbs: [get, list, watch]
+  - apiGroups: [moco.cybozu.com]
+    resources: [mysqlclusters, backuppolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [k8s.mariadb.com]
+    resources: [mariadbs, backups, restores]
+    verbs: [get, list, watch]
+  - apiGroups: [dragonflydb.io]
+    resources: [dragonflies]
+    verbs: [get, list, watch]
+  # Object storage: the SeaweedFS Operator's stores, buckets and access keys. The keys themselves
+  # are in Secrets.
+  - apiGroups: [seaweed.seaweedfs.com]
+    resources: [seaweeds, buckets, s3identities, s3credentials, s3policies, s3policybindings]
+    verbs: [get, list, watch]
+  # Volume backups with K8up.
+  - apiGroups: [k8up.io]
+    resources: [schedules, backups, podconfigs, snapshots, restores]
+    verbs: [get, list, watch]
+  # Notification channels: which events go where. Their URLs and tokens stay in Secrets.
+  - apiGroups: [operator.victoriametrics.com]
+    resources: [vmalertmanagerconfigs]
+    verbs: [get, list, watch]
+
+# Run and change a project: the viewer's reads and logs, plus what deploying, variables, restarts and
+# terminals write. Narrower than the built-in `edit`: no ServiceAccount writes or impersonation,
+# no service or pod proxy, no deletecollection.
+zeabur-project-developer:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - persistentvolumeclaims
+      - events
+      - replicationcontrollers
+      - serviceaccounts
+      - resourcequotas
+      - limitranges
+    verbs: [get, list, watch]
+  # Reading a Secret reveals its values.
+  # https://kubernetes.io/docs/concepts/security/rbac-good-practices/#listing-secrets
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [services, configmaps, persistentvolumeclaims]
+    verbs: [create, update, patch, delete]
+  # Creating a pod runs it as any ServiceAccount of the project, with that account's rights.
+  # https://kubernetes.io/docs/concepts/security/rbac-good-practices/#workload-creation
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, delete]
+  # A shell in a container: everything the container can read, its mounted Secrets and token
+  # included. kube-apiserver checks `create` on WebSockets since 1.30, `get` before.
+  # https://kubernetes.io/docs/concepts/security/rbac-good-practices/#workload-creation
+  - apiGroups: [""]
+    resources: [pods/exec, pods/attach, pods/portforward]
+    verbs: [get, create]
+  # A debug container next to the app's, the same reach as exec.
+  - apiGroups: [""]
+    resources: [pods/ephemeralcontainers]
+    verbs: [patch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets, daemonsets, controllerrevisions]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments/scale, statefulsets/scale]
+    verbs: [update, patch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Traefik reads a Middleware only from its own namespace (`allowCrossNamespace: false`), so it
+  # changes only this project's routers.
+  - apiGroups: [traefik.io]
+    resources: [middlewares]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
+  # Databases and their backups. A database's pods run the operator's image as the operator
+  # configures them, under the namespace's Pod Security level like any pod the role may create.
+  # Zeabur restores a backup only into a new database. A Percona restore needs its own object,
+  # so developers may create one; they may delete the database anyway. mariadb-operator restores
+  # stay read only: `MariaDB.spec.bootstrapFrom` restores into a new server.
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters, backups, scheduledbackups]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [psmdb.percona.com]
+    resources: [perconaservermongodbs, perconaservermongodbbackups, perconaservermongodbrestores]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [moco.cybozu.com]
+    resources: [mysqlclusters, backuppolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [k8s.mariadb.com]
+    resources: [mariadbs, backups]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [k8s.mariadb.com]
+    resources: [restores]
+    verbs: [get, list, watch]
+  - apiGroups: [dragonflydb.io]
+    resources: [dragonflies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [seaweed.seaweedfs.com]
+    resources: [seaweeds, buckets, s3identities, s3credentials, s3policies, s3policybindings]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Volume backups with K8up. Its backup and prune pods run under the namespace's Pod Security
+  # level like any pod the role may create; a PodConfig sets their security context. PreBackupPods
+  # stay out: Zeabur does not make them.
+  - apiGroups: [k8up.io]
+    resources: [schedules, backups, podconfigs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [k8up.io]
+    resources: [snapshots]
+    verbs: [get, list, watch]
+  # A Restore writes into a volume of this namespace, and with `delete: true` it removes files that
+  # the backup does not hold. Whoever may create one can restore from every backup in the
+  # repository the namespace's Schedule names, so each project needs its own path and password.
+  - apiGroups: [k8up.io]
+    resources: [restores]
+    verbs: [get, list, watch, create, delete]
+  # Notification channels. A channel's receivers only see alerts of this namespace: the operator
+  # adds that matcher to every config.
+  - apiGroups: [operator.victoriametrics.com]
+    resources: [vmalertmanagerconfigs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # The project's own Namespace, through the RoleBinding. templates/namespace-policy.yaml lets
+  # this change only the project's details: name, description and icon.
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, patch]
+
+# Zeabur Builder: see a project's builds and their runs.
+zeabur-project-builds-read:
+  - apiGroups: [builder.zeabur.com]
+    resources: [builds, buildruns]
+    verbs: [get, list, watch]
+
+# Zeabur Builder: deploy a service from Git (create the Build), build again and tell Keel of new
+# images (both patch it), and remove it with its service.
+zeabur-project-builds-write:
+  - apiGroups: [builder.zeabur.com]
+    resources: [builds]
+    verbs: [create, patch, delete]

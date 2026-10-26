@@ -1,0 +1,1133 @@
+import type { Page } from "@playwright/test"
+
+import { expect, test } from "./fixtures.ts"
+
+// Runs on a real cluster (scripts/e2e-ui.sh) or the demo server. ZEABUR_E2E_URL: see
+// playwright.config.ts.
+//
+//   ZEABUR_E2E_NAMESPACE     the project
+//   ZEABUR_E2E_POD           a pod of the healthy Deployment, logging ZEABUR_E2E_LOG_LINE
+//   ZEABUR_E2E_SERVICE       that Deployment                       (default talker)
+//   ZEABUR_E2E_LOG_LINE      text its log contains                 (default zeabur-e2e-line)
+//   ZEABUR_E2E_FAILING       a crash-looping Deployment            (default crasher)
+//   ZEABUR_E2E_SECRET        a Secret the healthy Deployment reads (default talker-secret)
+//   ZEABUR_E2E_SECRET_VALUE  one of its values                     (default zeabur-e2e-secret)
+//   ZEABUR_E2E_UNCHECKED     a service with no traffic check, as Kind/name (optional)
+//   ZEABUR_E2E_OTHER         another project with a service        (default zeabur-e2e-second)
+//
+// The demo server: ZEABUR_E2E_NAMESPACE=shop ZEABUR_E2E_SERVICE=api
+// ZEABUR_E2E_POD=api-5f6b7-k2m4p ZEABUR_E2E_LOG_LINE="GET /products" ZEABUR_E2E_FAILING=worker
+// ZEABUR_E2E_SECRET=db-credentials ZEABUR_E2E_SECRET_VALUE=correct-horse-battery-staple
+// ZEABUR_E2E_UNCHECKED=StatefulSet/db ZEABUR_E2E_OTHER=analytics
+const env = (name: string, fallback = "") => process.env[name] ?? fallback
+const namespace = env("ZEABUR_E2E_NAMESPACE")
+const pod = env("ZEABUR_E2E_POD")
+const healthy = env("ZEABUR_E2E_SERVICE", "talker")
+const logLine = env("ZEABUR_E2E_LOG_LINE", "zeabur-e2e-line")
+const failing = env("ZEABUR_E2E_FAILING", "crasher")
+const secret = env("ZEABUR_E2E_SECRET", "talker-secret")
+const secretValue = env("ZEABUR_E2E_SECRET_VALUE", "zeabur-e2e-secret")
+const unchecked = env("ZEABUR_E2E_UNCHECKED")
+const otherProject = env("ZEABUR_E2E_OTHER", "zeabur-e2e-second")
+const project = `/projects/${encodeURIComponent(namespace)}`
+
+test.beforeAll(() => {
+  if (!namespace) throw new Error("ZEABUR_E2E_NAMESPACE is not set")
+  if (!pod) throw new Error("ZEABUR_E2E_POD is not set")
+})
+
+const logsPod = (page: Page) =>
+  page.getByRole("tabpanel", { name: "Logs" }).getByRole("button", { name: /^Replica / })
+
+/** The URL of a tab: `?tab=<tab>`. */
+const tabUrl = (tab: string) => new RegExp(`[?&]tab=${tab}(&|#|$)`)
+const modeUrl = (tab: string, mode: string) => (url: URL) =>
+  url.searchParams.get("tab") === tab && url.searchParams.get("mode") === mode
+
+test("Home names the failing service across projects and lists the project", async ({ page }) => {
+  await page.goto("/")
+  await expect(page).toHaveURL((url) => url.pathname === "/")
+  const nav = page.getByRole("navigation", { name: "Main" })
+  await expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page")
+  const status = page.getByRole("region", { name: "Status" })
+  await expect(status).toContainText(/[1-9]\d* problems? needs? attention/)
+  await expect(status.getByRole("link").first()).toHaveAttribute("href", "/cluster")
+
+  const attention = page.getByRole("region", { name: "What needs you" })
+  const row = attention.getByRole("listitem").filter({ hasText: `${namespace}/${failing}` })
+  // The kubelet reports `CrashLoopBackOff`, `Error`, or briefly "Running" with its last exit.
+  await expect(row).toContainText("Keeps crashing")
+  await expect(row).toContainText(/CrashLoopBackOff|Error|last exit 1/)
+  // Grouped by where it comes from; who fixes it is said only when it is not the reader.
+  await expect(attention).toContainText("Errors in the app")
+  await expect(row).not.toContainText("cluster administrator")
+  if (!namespace.startsWith("kube-")) {
+    // Failing projects sort first.
+    const projects = page.getByRole("list", { name: "Projects" })
+    await expect(
+      projects.getByRole("link", { name: new RegExp(`^${namespace}\\b`) }).first(),
+    ).toBeVisible()
+    const cards = await projects.getByRole("listitem").allInnerTexts()
+    const mine = cards.findIndex((text) => text.includes(namespace))
+    for (const text of cards.slice(0, mine)) {
+      const [healthy, total] = (text.match(/(\d+)\/(\d+) healthy/) ?? []).slice(1).map(Number)
+      expect(healthy).toBeLessThan(total ?? 0)
+    }
+  }
+
+  await row.getByRole("link", { name: new RegExp(`^Logs of ${failing}`) }).click()
+  await expect(page).toHaveURL(new RegExp(`/services/Deployment/${failing}\\?.*tab=logs`))
+  await expect(page.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true")
+
+  await page.goto("/projects")
+  if (namespace.startsWith("kube-")) {
+    await page.getByRole("switch", { name: "Show system namespaces" }).click()
+  }
+  await expect(
+    page.getByRole("link", { name: new RegExp(`^${namespace}\\b`) }).first(),
+  ).toBeVisible()
+})
+
+test("a popup pressed before its code arrives opens when it does, by click and by key", async ({
+  page,
+}) => {
+  // Holds back the popups' code (@zeabur/design-system's popup.tsx) until `release`.
+  const hold = async () => {
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    await page.unrouteAll()
+    await page.route(/\/assets\/popup-parts-[^/]*\.js$/, async (route) => {
+      await held
+      await route.continue()
+    })
+    return release
+  }
+  const language = page.getByRole("button", {
+    name: /^Cluster .*, signed in as /,
+  })
+  const english = page.getByRole("menuitem", { name: "English" })
+
+  let release = await hold()
+  await page.goto("/")
+  await expect(language).toHaveAttribute("aria-haspopup", "menu")
+  await expect(language).toHaveAttribute("aria-expanded", "false")
+  await language.click()
+  await expect(english).toBeHidden()
+  release()
+  await expect(english).toBeVisible()
+  await expect(language).toHaveAttribute("aria-expanded", "true")
+  await page.keyboard.press("Escape")
+  await expect(language).toBeFocused()
+
+  release = await hold()
+  await page.reload()
+  await language.focus()
+  await page.keyboard.press("Enter")
+  release()
+  await expect(english).toBeVisible()
+  await page.unrouteAll()
+})
+
+test("the palette jumps to a service by keyboard, and Enter while composing does nothing", async ({
+  page,
+}) => {
+  await page.goto("/")
+  const palette = page.getByRole("dialog", { name: "Command palette" })
+  const search = palette.getByRole("combobox", { name: /^Jump to/ })
+  // The shortcut listens once the shell has rendered; a key pressed before that is lost, so
+  // press again until the palette opens.
+  await expect(async () => {
+    if (!(await palette.isVisible())) await page.keyboard.press("ControlOrMeta+k")
+    await expect(search).toBeFocused({ timeout: 1_000 })
+  }).toPass()
+  await search.fill(healthy)
+  const option = palette.getByRole("option", { name: new RegExp(`in ${namespace}$`) }).first()
+  await expect(option).toBeVisible()
+  // An IME's Enter (keyCode 229) confirms the composed text, not the highlighted item.
+  await search.evaluate((input) => {
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      isComposing: true,
+    })
+    Object.defineProperty(event, "keyCode", { value: 229 })
+    Object.defineProperty(event, "which", { value: 229 })
+    input.dispatchEvent(event)
+  })
+  await expect(palette).toBeVisible()
+  await expect(page).toHaveURL((url) => url.pathname === "/")
+  while ((await option.getAttribute("data-highlighted")) === null)
+    await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Enter")
+  await expect(page).toHaveURL(new RegExp(`/projects/${namespace}/services/[^/]+/${healthy}$`))
+  await expect(palette).toBeHidden()
+
+  await page.keyboard.press("ControlOrMeta+k")
+  await expect(search).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(palette).toBeHidden()
+})
+
+test("the cluster page shows the cluster itself, and its components on their own tab", async ({
+  page,
+}) => {
+  await page.goto("/cluster")
+  await expect(page.getByRole("heading", { level: 1, name: "Cluster" })).toBeVisible()
+  await expect(page.getByText(/^v1\.\d+\.\d+/).first()).toBeVisible()
+  await expect(page.getByRole("region", { name: "Projects" })).toHaveCount(0)
+  const nodes = page.getByRole("region", { name: "Nodes" })
+  await expect(
+    nodes.getByRole("list", { name: "Nodes" }).getByRole("listitem").first(),
+  ).toContainText(/Ready|Not ready|Cordoned|Out of|nearly full|over-reserved|No network|Unknown/)
+  await expect(nodes.getByRole("img", { name: /^CPU/ }).first()).toBeVisible()
+  await expect(page.getByRole("region", { name: "Warnings in the last hour" })).toBeVisible()
+
+  await page.getByRole("tab", { name: "Components" }).click()
+  await expect(page).toHaveURL(/\/cluster\/components$/)
+  const installed = page.getByRole("region", { name: "Installed" })
+  await expect(installed.getByRole("listitem").first()).toBeVisible()
+  await expect(page.getByRole("region", { name: "Catalog" })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(/\/cluster$/)
+})
+
+test("the project page puts the failing service first, with a link to its failing pod's logs", async ({
+  page,
+}) => {
+  await page.goto(project)
+  await expect(page.getByRole("heading", { level: 1, name: namespace })).toBeVisible()
+  const attention = page.getByRole("region", { name: "Needs attention" })
+  const row = attention.getByRole("listitem").filter({ hasText: failing })
+  await expect(row).toContainText("Keeps crashing")
+  await expect(row).toContainText(/CrashLoopBackOff|Error|last exit 1/)
+  await expect(row).toContainText(/restart/)
+  const logs = row.getByRole("link", { name: /^Logs of / })
+  const label = (await logs.getAttribute("aria-label")) ?? ""
+  const failingPod = label.replace(/^Logs of /, "")
+  expect(failingPod.startsWith(failing)).toBe(true)
+  await logs.click()
+  await expect(page).toHaveURL(new RegExp(`/services/Deployment/${failing}\\?`))
+  await expect(page).toHaveURL(tabUrl("logs"))
+  await expect(page).toHaveURL(new RegExp(`pod=${failingPod}`))
+  await expect(page.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true")
+  await expect(logsPod(page)).toHaveAccessibleName(`Replica ${failingPod}`)
+
+  await page.goto(`${project}?view=list`)
+  const services = page.getByRole("table", { name: "Services" })
+  // Wait for the rows to render before reading them all at once.
+  await expect(services.getByRole("row").filter({ hasText: failing })).toBeVisible()
+  await expect(services.getByRole("row").filter({ hasText: healthy })).toBeVisible()
+  const names = await services.getByRole("row").allInnerTexts()
+  const failingRow = names.findIndex((text) => text.includes(failing))
+  const healthyRow = names.findIndex((text) => text.includes(healthy))
+  expect(failingRow).toBeGreaterThan(0)
+  expect(failingRow).toBeLessThan(healthyRow)
+})
+
+test("the map draws the services; the quick look opens the service page and Back restores it", async ({
+  page,
+}) => {
+  await page.goto(`${project}?view=map`)
+  const card = page.getByRole("button", { name: new RegExp(`^${healthy}\\b`) })
+  await expect(card).toBeVisible()
+  await expect(page.getByRole("button", { name: new RegExp(`^${failing}\\b`) })).toBeVisible()
+  await card.click()
+  await expect(page).toHaveURL(
+    new RegExp(`service=Deployment%2F${healthy}|service=Deployment/${healthy}`),
+  )
+  const quickLook = page.getByRole("complementary", {
+    name: `Quick look: ${healthy}`,
+  })
+  await expect(quickLook).toBeVisible()
+  await quickLook.getByRole("link", { name: "Open service page" }).click()
+  await expect(page).toHaveURL(new RegExp(`/services/Deployment/${healthy}$`))
+  await expect(page.getByRole("heading", { level: 1, name: healthy })).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole("complementary", { name: `Quick look: ${healthy}` })).toBeVisible()
+})
+
+test("the services list filters, sorts, and leads from a pod to its logs", async ({ page }) => {
+  await page.goto(`${project}?view=list`)
+  const table = page.getByRole("table", { name: "Services" })
+  await expect(table.getByRole("link", { name: new RegExp(`^${healthy}\\b`) })).toBeVisible()
+
+  await page.getByRole("button", { name: /^Needs attention/ }).click()
+  await expect(page).toHaveURL(/status=attention/)
+  await expect(table.getByRole("link", { name: new RegExp(`^${failing}\\b`) })).toBeVisible()
+  await expect(table.getByRole("link", { name: new RegExp(`^${healthy}\\b`) })).toHaveCount(0)
+  await page.getByRole("button", { name: "All", exact: true }).click()
+
+  await page.getByRole("searchbox", { name: "Filter services" }).fill(healthy)
+  await expect(page).toHaveURL(new RegExp(`q=${healthy}`))
+  await expect(table.getByRole("link", { name: new RegExp(`^${failing}\\b`) })).toHaveCount(0)
+  await page.getByRole("searchbox", { name: "Filter services" }).fill("")
+
+  await table.getByRole("button", { name: "Restarts" }).click()
+  await expect(page).toHaveURL(/sort=restarts/)
+  await expect(table.getByRole("columnheader", { name: "Restarts" })).toHaveAttribute(
+    "aria-sort",
+    "descending",
+  )
+  await expect(table.getByRole("row").nth(1)).toContainText(failing)
+
+  await table.getByRole("link", { name: `Logs of ${pod}` }).click()
+  await expect(page).toHaveURL(tabUrl("logs"))
+  await expect(page).toHaveURL(new RegExp(`pod=${pod}`))
+  await expect(logsPod(page)).toHaveAccessibleName(`Replica ${pod}`)
+})
+
+test("the service page has eight tabs and an actions menu, and Logs follows a pod", async ({
+  page,
+}) => {
+  await page.goto(`${project}/services/Deployment/${healthy}`)
+  await expect(page.getByRole("heading", { level: 1, name: healthy })).toBeVisible()
+  const tabs = page.getByRole("tablist", { name: "Service sections" })
+  const names = await tabs.getByRole("tab").allInnerTexts()
+  expect(names.map((n) => n.trim())).toEqual([
+    "Overview",
+    "Logs",
+    "Deployments",
+    "Usage",
+    "Networking",
+    "Variables",
+    "Files",
+    "Settings",
+  ])
+  const header = page.locator("main header").first()
+  await header.getByRole("button", { name: "More", exact: true }).click()
+  // The menu holds actions; the views are in their tabs.
+  await expect(page.getByRole("menuitem")).toHaveText([
+    "Copy diagnosis",
+    "Copy name for kubectl",
+    "Delete service",
+  ])
+  await page.keyboard.press("Escape")
+  await expect(tabs.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true")
+  const overview = page.getByRole("tabpanel", { name: "Overview" })
+  await expect(overview.getByRole("region", { name: "Status" })).toContainText("Source")
+  await overview.getByRole("button", { name: /^Replicas \d+\/\d+$/ }).click()
+  await expect(page.getByRole("dialog")).toContainText(pod)
+  await page.keyboard.press("Escape")
+  // A tab is never a header button too.
+  await expect(header.getByRole("link", { name: "Logs", exact: true })).toHaveCount(0)
+  await expect(header.getByRole("button", { name: "Restart" })).toBeEnabled()
+  await expect(header.getByRole("button", { name: "Terminal", exact: true })).toBeEnabled()
+  const sections = page.getByRole("navigation", { name: "Project sections" })
+  await expect(sections.getByRole("link", { name: "Projects" })).toHaveAttribute(
+    "href",
+    "/projects",
+  )
+  await expect(header.getByText(`Deployment/${healthy}`, { exact: true })).toHaveCount(0)
+  await expect(header.getByText(/^Namespace/)).toHaveCount(0)
+
+  await tabs.getByRole("tab", { name: "Logs" }).click()
+  await expect(page).toHaveURL(tabUrl("logs"))
+  await logsPod(page).click()
+  await page.getByRole("button", { name: new RegExp(`^${pod}`) }).click()
+  await expect(logsPod(page)).toHaveAccessibleName(`Replica ${pod}`)
+  const follow = page.getByRole("button", { name: "Follow" })
+  await follow.click()
+  await expect(follow).toHaveAttribute("aria-pressed", "true")
+  await expect(page.getByRole("log", { name: "Log lines" })).toContainText(logLine, {
+    timeout: 30_000,
+  })
+
+  // The terminal opens in the dock under the page; Logs stays.
+  const logs = page.getByRole("tabpanel", { name: "Logs" })
+  await logs.getByRole("button", { name: "Terminal", exact: true }).click()
+  await expect(page.getByRole("region", { name: "Terminal" })).toBeVisible()
+  await expect(page).toHaveURL(tabUrl("logs"))
+  await expect(tabs.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true")
+
+  await tabs.getByRole("tab", { name: "Settings" }).click()
+  await expect(page).toHaveURL(tabUrl("settings"))
+  const settings = page.getByRole("tabpanel", { name: "Settings" })
+  await settings.getByRole("group", { name: "Views" }).getByRole("button", { name: "YAML" }).click()
+  await expect(page).toHaveURL(modeUrl("settings", "yaml"))
+  await expect(page.getByRole("figure", { name: `YAML of ${healthy}` })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.get("tab") === "settings" && !url.searchParams.has("mode"),
+  )
+})
+
+const canvasZoom = (page: Page) => page.getByText(/^\d+%$/)
+
+test("each project keeps its own map zoom", async ({ page }) => {
+  await page.goto(`${project}?view=map`)
+  await expect(page.getByRole("button", { name: new RegExp(`^${healthy}\\b`) })).toBeVisible()
+  const before = await canvasZoom(page).textContent()
+  await page.getByRole("button", { name: "Zoom in" }).click()
+  await expect(canvasZoom(page)).not.toHaveText(before ?? "")
+  const mine = (await canvasZoom(page).textContent()) ?? ""
+
+  await page.getByRole("button", { name: "Switch project" }).first().click()
+  await page.getByRole("button", { name: new RegExp(`^${otherProject}\\b`) }).click()
+  await expect(page).toHaveURL(new RegExp(`/projects/${otherProject}`))
+  // A project with many services opens as a list.
+  if (!(await canvasZoom(page).isVisible()))
+    await page.getByRole("button", { name: "Map", exact: true }).click()
+  await expect(canvasZoom(page)).toBeVisible()
+  // The zoom buttons sit on the canvas, so a wheel over one reaches it.
+  await page.getByRole("button", { name: "Zoom in" }).hover()
+  await page.mouse.wheel(0, -600)
+  await expect(canvasZoom(page)).not.toHaveText(mine)
+
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`${project}\\?view=map`))
+  await expect(canvasZoom(page)).toHaveText(mine)
+})
+
+test("a Secret's values appear only when revealed; they and the log filter stay with their service", async ({
+  page,
+}) => {
+  await page.goto(`${project}/services/Deployment/${healthy}?tab=logs`)
+  const column = page.getByRole("navigation", { name: "Project sections" })
+  await page.getByRole("textbox", { name: "Filter lines" }).fill("zeabur-e2e-nothing-matches")
+  await column.getByRole("link", { name: new RegExp(`^${failing}\\b`) }).click()
+  await expect(page).toHaveURL(new RegExp(`/services/Deployment/${failing}\\?`))
+  await expect(page).toHaveURL(tabUrl("logs"))
+  await expect(page.getByRole("textbox", { name: "Filter lines" })).toHaveValue("")
+
+  await page.goto(`${project}/services/Deployment/${healthy}?tab=variables`)
+  const panel = page.getByRole("tabpanel", { name: "Variables" })
+  await expect(panel).not.toContainText(secretValue)
+  await panel
+    .getByRole("button", { name: `Show values in ${secret}` })
+    .first()
+    .click()
+  await expect(panel).toContainText(secretValue)
+  await panel
+    .getByRole("button", { name: `Hide values in ${secret}` })
+    .first()
+    .click()
+  await expect(panel).not.toContainText(secretValue)
+  await panel
+    .getByRole("button", { name: `Show values in ${secret}` })
+    .first()
+    .click()
+  await expect(panel).toContainText(secretValue)
+  await column.getByRole("link", { name: new RegExp(`^${failing}\\b`) }).click()
+  await expect(page).toHaveURL(new RegExp(`/services/Deployment/${failing}\\?.*tab=variables`))
+  await column.getByRole("link", { name: new RegExp(`^${healthy}\\b`) }).click()
+  await expect(page).toHaveURL(new RegExp(`/services/Deployment/${healthy}\\?.*tab=variables`))
+  await expect(panel).not.toContainText(secretValue)
+})
+
+test("the services search box follows the URL on Back and Forward", async ({ page }) => {
+  await page.goto(`${project}?view=list`)
+  const box = page.getByRole("searchbox", { name: "Filter services" })
+  const table = page.getByRole("table", { name: "Services" })
+  const healthyRow = table.getByRole("link", {
+    name: new RegExp(`^${healthy}\\b`),
+  })
+  await box.fill(failing)
+  await expect(page).toHaveURL(new RegExp(`q=${failing}`))
+  await expect(healthyRow).toHaveCount(0)
+
+  await page.goto(`${project}?view=list`)
+  await expect(page).not.toHaveURL(/q=/)
+  await expect(box).toHaveValue("")
+  await expect(healthyRow).toBeVisible()
+
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`q=${failing}`))
+  await expect(box).toHaveValue(failing)
+  await expect(healthyRow).toHaveCount(0)
+
+  await page.goForward()
+  await expect(page).not.toHaveURL(/q=/)
+  await expect(box).toHaveValue("")
+})
+
+test("Refresh next to the update time asks the cluster again, also after a failed read", async ({
+  page,
+}) => {
+  await page.clock.install()
+  await page.goto(project)
+  const header = page.locator("main header").first()
+  const status = header.getByRole("status")
+  await expect(status).toContainText("Updated just now")
+
+  const document = new RegExp(`/api/v1/projects/${namespace}$`)
+  await page.route(document, (route) => route.abort())
+  await page.clock.fastForward("03:00")
+  // The failed read is retried a few times before it counts.
+  await expect(async () => {
+    await page.clock.runFor(10_000)
+    await expect(status).toContainText("Couldn't refresh", { timeout: 500 })
+  }).toPass()
+  await expect(status).toContainText("Updated 3m ago")
+
+  await page.unroute(document)
+  const refresh = status.getByRole("button", { name: "Refresh" })
+  const asked = page.waitForResponse(document)
+  await refresh.click()
+  await expect(refresh).toBeDisabled()
+  await asked
+  await expect(status).toContainText("Updated just now")
+  await expect(status).not.toContainText("Couldn't refresh")
+  await expect(refresh).toBeEnabled()
+})
+
+test("a service with no traffic check reads Running, explained on its page and folded in Suggestions", async ({
+  page,
+}) => {
+  test.skip(!unchecked, "ZEABUR_E2E_UNCHECKED is not set")
+  const [, name] = unchecked.split("/")
+  await page.goto(`${project}?view=list`)
+  const row = page
+    .getByRole("table", { name: "Services" })
+    .getByRole("row")
+    .filter({ hasText: name })
+  await expect(row.first()).toContainText("Running")
+  await expect(row.first()).not.toContainText("traffic check")
+
+  await page.getByRole("button", { name: /^\d+ suggestions?$/ }).click()
+  const drawer = page.getByRole("dialog")
+  const folded = drawer
+    .getByRole("listitem")
+    .filter({ hasText: /services? ha(s|ve) no traffic check/ })
+  await expect(folded).toHaveCount(1)
+  await expect(folded).not.toContainText("Warning")
+  await folded.getByRole("button", { name: "Show services" }).click()
+  await expect(folded.getByRole("link", { name, exact: true })).toBeVisible()
+  await page.keyboard.press("Escape")
+
+  await page.goto(`${project}/services/${unchecked}`)
+  const hint = page.getByRole("button", { name: /^No traffic check is set/ })
+  await hint.focus()
+  await expect(hint).toBeFocused()
+  await hint.hover()
+  // Base UI's tooltip popup carries no tooltip role.
+  await expect(
+    page.getByText("Running only means the container started", { exact: false }).last(),
+  ).toBeVisible()
+})
+
+// The writes touch only `editor` and its ConfigMap, so the tests above see the same project.
+// They expect a fresh namespace: scripts/e2e-ui.sh recreates it before a run.
+const editor = "editor"
+
+test("Objects lists the project's objects and opens one as YAML", async ({ page }) => {
+  await page.goto(`${project}/objects`)
+  await expect(page.getByRole("heading", { level: 1, name: "Objects" })).toBeVisible()
+  const list = page.getByRole("list", { name: "Objects" })
+  await list.getByRole("button", { name: /^editor-config/ }).click()
+  await expect(page).toHaveURL(/object=core(%2F|\/)v1(%2F|\/)configmaps(%2F|\/)editor-config/)
+  const panel = page.getByRole("dialog").filter({ hasText: "editor-config" })
+  await panel.getByRole("button", { name: "YAML", exact: true }).click()
+  await expect(panel.getByRole("figure", { name: "YAML of editor-config" })).toContainText(
+    /mode: (blue|green)/,
+  )
+  await page.keyboard.press("Escape")
+  await expect(page).not.toHaveURL(/object=/)
+})
+
+test("Objects reads every served kind when it opens", async ({ page }) => {
+  await page.goto(`${project}/objects`)
+  const list = page.getByRole("list", { name: "Objects" })
+  const filter = page.getByRole("searchbox", { name: "Filter objects" })
+  // The list is virtual, so find the kind by name. Reading every kind, CRDs included, is slow on
+  // a slow runner.
+  await page.getByRole("button", { name: /^Generated/ }).click()
+  await filter.fill("Lease")
+  await expect(list.getByText("Lease", { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText("Scanning…")).toBeHidden({ timeout: 30_000 })
+  await filter.fill("")
+  await page.getByRole("button", { name: "Refresh" }).click()
+  await expect(list.getByRole("button", { name: /^editor-config/ })).toBeVisible()
+})
+
+test("YAML never shows a Secret's values", async ({ page }) => {
+  await page.goto(`${project}/objects?object=core/v1/secrets/${secret}`)
+  await page.getByRole("button", { name: "YAML", exact: true }).click()
+  const yaml = page.getByRole("figure", { name: `YAML of ${secret}` })
+  await expect(yaml).toContainText("kind: Secret")
+  await expect(yaml).toContainText("greeting")
+  await expect(yaml).not.toContainText(secretValue)
+
+  await page.goto(`${project}/services/Deployment/${healthy}?tab=settings&mode=yaml`)
+  const workload = page.getByRole("figure", { name: `YAML of ${healthy}` })
+  await expect(workload).toContainText("kind: Deployment")
+  await expect(workload).toContainText(secret)
+  await expect(workload).not.toContainText(secretValue)
+})
+
+const toast = (page: Page, title: string) =>
+  page
+    .getByRole("region", { name: /^Notifications/ })
+    .getByRole("listitem")
+    .filter({ hasText: title })
+    .first()
+
+async function confirmPlan(
+  page: Page,
+  title: string | RegExp,
+  action: string | RegExp,
+  expectText?: string | RegExp,
+) {
+  const dialog = page.getByRole("dialog", { name: title })
+  await expect(dialog).toBeVisible()
+  if (expectText) await expect(dialog).toContainText(expectText)
+  await dialog.getByRole("button", { name: action, exact: typeof action === "string" }).click()
+  await expect(dialog).toHaveCount(0)
+  const applied = toast(page, "Applied")
+  await expect(applied).toBeVisible({ timeout: 15_000 })
+  return applied
+}
+
+/** Sends the service page's pending changes to review. */
+const review = (page: Page) =>
+  page.getByRole("button", { name: "Review changes", exact: true }).click()
+
+async function editorReplicas(page: Page): Promise<number | undefined> {
+  const answer = await page.request.get(`/api/v1/projects/${namespace}`)
+  const body = (await answer.json()) as {
+    services: { kind: string; name: string; replicas?: { desired: number } }[]
+  }
+  return body.services.find((s) => s.kind === "Deployment" && s.name === editor)?.replicas?.desired
+}
+
+async function applyNow(page: Page, change: Record<string, unknown>) {
+  // As src/auth/session.ts sends them.
+  const headers = { Origin: new URL(page.url()).origin, "zeabur-request": "1" }
+  const plan = await page.request.post(`/api/v1/projects/${namespace}/plan`, {
+    headers,
+    data: { changes: [change] },
+  })
+  expect(plan.status()).toBe(200)
+  const { token } = (await plan.json()) as { token: string }
+  const applied = await page.request.post(`/api/v1/projects/${namespace}/apply`, {
+    headers,
+    data: { token },
+  })
+  expect(applied.status()).toBe(200)
+}
+
+/** Pastes text into the focused field, as a clipboard paste does. */
+const paste = (page: Page, text: string) =>
+  page.evaluate((data) => {
+    const transfer = new DataTransfer()
+    transfer.setData("text/plain", data)
+    document.activeElement?.dispatchEvent(
+      new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }),
+    )
+  }, text)
+
+test("variables are edited, added by pasting lines, and saved as one plan", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=variables`)
+  const panel = page.getByRole("tabpanel", { name: "Variables" })
+  await panel.getByRole("button", { name: "Edit", exact: true }).click()
+  await panel.getByRole("textbox", { name: "Value of NOTE" }).fill("second")
+  await panel.getByRole("button", { name: "Add a variable" }).click()
+  const names = panel.getByRole("textbox", { name: "Name", exact: true })
+  await names.last().focus()
+  await paste(page, 'E2E_ADDED=added-1\nexport E2E_QUOTED="two words"\n# a comment\n\nbad name=1')
+  await expect(panel.getByRole("textbox", { name: "Value of E2E_QUOTED" })).toHaveValue("two words")
+  await expect(panel).toContainText("Use letters, digits")
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled()
+  await names.last().fill("E2E_FIXED")
+  await expect(page.getByText("4 changes pending")).toBeVisible()
+  await page.getByRole("button", { name: "Save", exact: true }).click()
+  await confirmPlan(
+    page,
+    `Save changes to ${editor}`,
+    "Save variables",
+    `Change NOTE and add E2E_ADDED, E2E_QUOTED, and E2E_FIXED on ${editor}.`,
+  )
+  await expect(panel).toContainText("E2E_QUOTED", { timeout: 15_000 })
+  await expect(panel).toContainText("two words")
+})
+
+test("variables are removed with an undo and rewritten as .env, in one plan", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=variables`)
+  const panel = page.getByRole("tabpanel", { name: "Variables" })
+  await expect(panel).toContainText("E2E_FIXED", { timeout: 15_000 })
+  await panel.getByRole("button", { name: "Edit", exact: true }).click()
+  await panel.getByRole("button", { name: "Remove E2E_ADDED" }).click()
+  await panel.getByRole("button", { name: "Remove E2E_FIXED" }).click()
+  await panel.getByRole("button", { name: "Undo" }).last().click()
+  await expect(page.getByText("1 change pending")).toBeVisible()
+  await panel.getByText(".env", { exact: true }).click()
+  const text = panel.getByRole("textbox", { name: "Variables as .env" })
+  await expect(text).not.toHaveValue(/E2E_ADDED/)
+  await text.fill(
+    `${await text.inputValue()}\n# from a file\nexport E2E_DOTENV='a # b'\nE2E_MULTI="one\\ntwo"\n`,
+  )
+  await expect(page.getByText("3 changes pending")).toBeVisible()
+  await page.getByRole("button", { name: "Save", exact: true }).click()
+  await confirmPlan(
+    page,
+    `Save changes to ${editor}`,
+    "Save variables",
+    `Remove E2E_ADDED and add E2E_DOTENV and E2E_MULTI on ${editor}.`,
+  )
+  await expect(panel).toContainText("E2E_DOTENV", { timeout: 15_000 })
+  await expect(panel).not.toContainText("E2E_ADDED")
+})
+
+test("leaving with unsaved variables asks first", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=variables`)
+  const panel = page.getByRole("tabpanel", { name: "Variables" })
+  await panel.getByRole("button", { name: "Edit", exact: true }).click()
+  await panel.getByRole("textbox", { name: "Value of NOTE" }).fill("unsaved")
+  await page
+    .getByRole("navigation", { name: "Project sections" })
+    .getByRole("link", { name: "Projects" })
+    .click()
+  const ask = page.getByRole("dialog", { name: "Leave without saving?" })
+  await expect(ask).toBeVisible()
+  await ask.getByRole("button", { name: "Stay" }).click()
+  await expect(panel.getByRole("textbox", { name: "Value of NOTE" })).toHaveValue("unsaved")
+})
+
+test("a ConfigMap value is edited where it lives, its key highlighted", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=variables`)
+  const panel = page.getByRole("tabpanel", { name: "Variables" })
+  await panel.getByRole("button", { name: "mode in config file editor-config" }).click()
+  const sheet = page.getByRole("dialog").filter({ hasText: "editor-config" })
+  await expect(sheet.locator("li[data-highlight]")).toContainText("mode")
+  await sheet.getByRole("textbox", { name: "mode", exact: true }).fill("green")
+  await sheet.getByRole("button", { name: "Add to changes" }).click()
+  await review(page)
+  await confirmPlan(
+    page,
+    `Save changes to ${editor}`,
+    "Save values",
+    `${editor} reads editor-config and keeps the old value until restarted.`,
+  )
+  await expect(panel).toContainText("green", { timeout: 15_000 })
+})
+
+test("restart of a single pod is confirmed in full, then reported in a toast", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}`)
+  await page.locator("main header").first().getByRole("button", { name: "Restart" }).click()
+  const dialog = page.getByRole("dialog", { name: `Restart ${editor}` })
+  await expect(dialog.getByRole("note")).toContainText(
+    `${editor} has one replica, so it may be down for a few seconds while it restarts.`,
+  )
+  await expect(dialog).not.toContainText("restartedAt")
+  await dialog.getByRole("button", { name: "YAML", exact: true }).click()
+  await expect(dialog).toContainText("restartedAt")
+  const applied = await confirmPlan(page, `Restart ${editor}`, "Restart")
+  await expect(applied).toContainText(`Restart ${editor}`)
+  await applied.getByRole("button", { name: "View" }).click()
+  await expect(page).toHaveURL(tabUrl("deployments"))
+})
+
+test("a change made meanwhile is planned again in the review, and saved from there", async ({
+  page,
+}) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=variables`)
+  const panel = page.getByRole("tabpanel", { name: "Variables" })
+  await panel.getByRole("button", { name: "Edit", exact: true }).click()
+  await panel.getByRole("button", { name: "Add a variable" }).click()
+  await panel.getByRole("textbox", { name: "Name", exact: true }).last().fill("E2E_REVIEWED")
+  await panel.getByRole("textbox", { name: "Value of E2E_REVIEWED" }).fill("reviewed-1")
+  await page.getByRole("button", { name: "Save", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: `Save changes to ${editor}` })
+  await expect(dialog).toContainText("Add E2E_REVIEWED")
+  await applyNow(page, {
+    op: "env",
+    workload: { kind: "Deployment", name: editor },
+    changes: [{ name: "E2E_MEANWHILE", op: "set", value: "x" }],
+  })
+
+  await dialog.getByRole("button", { name: "Save variables" }).click()
+  await expect(dialog.getByRole("status")).toContainText(
+    "Something changed after you reviewed this.",
+    { timeout: 15_000 },
+  )
+  await confirmPlan(page, `Save changes to ${editor}`, "Save variables", "Add E2E_REVIEWED")
+  await expect(panel).toContainText("E2E_REVIEWED", { timeout: 15_000 })
+})
+
+test("scaling goes through a plan from Compute, and is undone from its toast", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=settings#compute`)
+  const panel = page.getByRole("region", { name: "Compute" })
+  const replicas = panel.getByRole("textbox", { name: /^Replicas/ })
+  const before = await editorReplicas(page)
+  if (before === undefined) throw new Error(`${editor} reports no replicas`)
+  const more = before + 1
+  await replicas.fill(String(more))
+  await review(page)
+  const applied = await confirmPlan(
+    page,
+    `Save changes to ${editor}`,
+    `Scale to ${more}`,
+    `Scale ${editor} from ${before} to ${more} replicas.`,
+  )
+  await expect.poll(() => editorReplicas(page), { timeout: 15_000 }).toBe(more)
+  await applied.getByRole("button", { name: "Undo" }).click()
+  await expect(toast(page, "Undone")).toBeVisible({ timeout: 15_000 })
+  await expect.poll(() => editorReplicas(page), { timeout: 15_000 }).toBe(before)
+})
+
+test("a readiness probe is set through a plan", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=settings#health-checks`)
+  const form = page.getByRole("form", { name: "Traffic check" })
+  // The Select's list is portalled to the page's root, outside the form.
+  await form.getByRole("combobox", { name: "Check" }).click()
+  await page.getByRole("option", { name: "Command" }).click()
+  await form.getByRole("textbox", { name: "Command" }).fill("true")
+  await review(page)
+  await confirmPlan(
+    page,
+    `Save changes to ${editor}`,
+    "Save health checks",
+    "A replica gets no traffic until running true succeeds (checked every 10 s).",
+  )
+})
+
+test("volumes are added, changed and removed in one list under Storage", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=settings#storage`)
+  const part = page.locator("#storage")
+  await expect(part).toContainText(`${editor} has no volume`)
+  await part.getByRole("button", { name: "Add a volume" }).click()
+  const list = part.getByRole("group", { name: "Volumes" })
+  await list.getByRole("textbox", { name: "Mount path of the new volume" }).fill("/e2e-data")
+  await list.getByRole("button", { name: "Add a volume" }).click()
+  await list
+    .getByRole("textbox", { name: "Mount path of the new volume" })
+    .last()
+    .fill("/e2e-cache")
+  await page.getByRole("button", { name: "Save", exact: true }).click()
+  await confirmPlan(page, `Save changes to ${editor}`, "Save volumes", `${editor} gets a new`)
+  await expect(list.getByText("/e2e-cache")).toBeVisible({ timeout: 15_000 })
+
+  await part.getByRole("button", { name: "Edit", exact: true }).click()
+  // k3d's local-path class cannot grow a claim, so the kept volume turns read-only instead.
+  await list.getByRole("switch", { name: "/e2e-data read-only" }).click()
+  await list.getByRole("button", { name: "Remove /e2e-cache" }).click()
+  await expect(list).toContainText("Removed")
+  await page.getByRole("button", { name: "Save", exact: true }).click()
+  await confirmPlan(page, `Save changes to ${editor}`, "Save volumes", "stops mounting /e2e-cache")
+  await expect(list.getByText("/e2e-cache")).toHaveCount(0, { timeout: 15_000 })
+  await expect(list.getByText("/e2e-data")).toBeVisible()
+  await expect(list.getByRole("listitem").filter({ hasText: "/e2e-data" })).toContainText(
+    "Read-only",
+  )
+})
+
+test("Deployments lists the releases and rolls back to one through a plan", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=deployments`)
+  // Guarantees a second template to roll back to.
+  await applyNow(page, {
+    op: "restart",
+    workload: { kind: "Deployment", name: editor },
+  })
+  const panel = page.getByRole("tabpanel", { name: "Deployments" })
+  const list = panel.getByRole("list", { name: "Deployment history" })
+  // The Deployment controller writes the new ReplicaSet a moment after the apply.
+  await expect(async () => {
+    await page.reload()
+    await expect(list.getByRole("listitem").first()).toBeVisible()
+    expect(await list.getByRole("listitem").count()).toBeGreaterThan(1)
+  }).toPass({ timeout: 15_000 })
+  await expect(list).toContainText("Running")
+  await list.getByRole("button", { name: "Compare" }).first().click()
+  await expect(list.getByText(/^#\d+ → #\d+$/)).toBeVisible()
+  await list.getByRole("button", { name: "Roll back" }).first().click()
+  await confirmPlan(
+    page,
+    new RegExp(`^Roll back ${editor} to #\\d+$`),
+    /^Roll back to revision \d+$/,
+    "A rollback leaves config file and secret contents as they are.",
+  )
+})
+
+// CodeMirror and Sonner insert <style> elements at run time, which the CSP must allow; the
+// fixture fails on a reported violation.
+test("an object's YAML is edited and planned", async ({ page }) => {
+  await page.goto(`${project}/objects?object=core/v1/configmaps/editor-config`)
+  const panel = page.getByRole("dialog").filter({ hasText: "editor-config" })
+  await panel.getByRole("button", { name: "YAML", exact: true }).click()
+  await panel.getByRole("button", { name: "Edit" }).click()
+  const text = panel.getByRole("textbox", { name: "YAML of editor-config" })
+  await expect(panel.locator(".cm-editor")).toHaveCSS("display", "flex")
+  await text.getByText("untouched").dblclick()
+  await page.keyboard.type("edited")
+  await panel.getByRole("button", { name: "Review changes" }).click()
+  await confirmPlan(page, "Edit editor-config", "Save YAML", "Zeabur writes the YAML as it is")
+  await expect(page.locator("[data-sonner-toaster]")).toHaveCSS("position", "fixed")
+  await expect(panel.getByRole("figure", { name: "YAML of editor-config" })).toContainText(
+    "other: edited",
+    { timeout: 15_000 },
+  )
+})
+
+test("a crash-looping service says why, with its fix and evidence", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${failing}`)
+  const diagnosis = page
+    .getByRole("tabpanel", { name: "Overview" })
+    .getByRole("region", { name: "What's wrong" })
+  await expect(diagnosis).toContainText(`${failing} keeps crashing and restarting.`, {
+    timeout: 60_000,
+  })
+  await expect(diagnosis).toContainText(/It has restarted \d+ times/)
+  await expect(diagnosis).toContainText("The error is in the logs of the run before the restart.")
+  await diagnosis
+    .getByRole("button", { name: /Evidence/ })
+    .first()
+    .click()
+  await expect(diagnosis).toContainText(/Pod\//)
+  await diagnosis.getByRole("button", { name: "Raw error" }).first().click()
+  await expect(diagnosis).toContainText("Exit code")
+  await expect(diagnosis).toContainText("What to do")
+  await diagnosis.getByRole("link", { name: "Open logs" }).first().click()
+  await expect(page).toHaveURL(tabUrl("logs"))
+  await expect(logsPod(page)).toHaveAccessibleName(new RegExp(`^Replica ${failing}`))
+})
+
+test("the project's suggestions list what it misses, and a fix is planned and applied", async ({
+  page,
+}) => {
+  await page.goto(project)
+  await page.getByRole("button", { name: /^\d+ suggestions?$/ }).click()
+  const missing = page.getByRole("dialog", { name: "Missing setup" })
+  const limits = missing
+    .getByRole("listitem")
+    .filter({ hasText: `${editor} sets no CPU or memory` })
+  await expect(limits).toBeVisible({ timeout: 30_000 })
+  await expect(limits.getByRole("link", { name: /Resource Management/ })).toHaveAttribute(
+    "href",
+    /^https:\/\/kubernetes\.io\//,
+  )
+  await limits.getByRole("button", { name: "Fix" }).click()
+  await confirmPlan(
+    page,
+    `Set CPU and memory for ${editor}`,
+    "Save resources",
+    /Reserved CPU \S+, Reserved memory \S+, Maximum memory \S+\./,
+  )
+  await expect(limits).toHaveCount(0, { timeout: 15_000 })
+})
+
+test("an install is Helm commands to copy, or objects a plan creates for the cluster's controller", async ({
+  page,
+}) => {
+  await page.goto("/cluster/components?component=certificates/cert-manager")
+  const sheet = page.getByRole("dialog", { name: /cert-manager/ })
+  // The texts are tested server-side (crates/zeabur-catalog/tests/golden).
+  const text = (form: string) => sheet.getByRole("figure", { name: new RegExp(` ${form}$`) })
+  await expect(text("Helm")).toContainText("cert-manager")
+  await expect(sheet.getByRole("button", { name: /terminal/ })).toHaveCount(0)
+  await sheet.getByRole("button", { name: /Several nodes/ }).click()
+  await expect(page).toHaveURL(/profile=multi-node/)
+  // Part of cert-manager is plain manifests: the k3s form is text to apply yourself.
+  await sheet.getByRole("tab", { name: "K3s/RKE2 HelmChart" }).click()
+  await expect(text("K3s/RKE2 HelmChart")).toContainText("cert-manager")
+  await expect(sheet).toContainText("Zeabur doesn't install this one itself")
+  await expect(sheet.getByRole("button", { name: "Review and install" })).toHaveCount(0)
+
+  // Reloader is only a chart: the K3s/RKE2 Helm controller installs it from objects a plan creates.
+  await page.goto("/cluster/components?component=config-reload/reloader")
+  const reloader = page.getByRole("dialog", { name: /Reloader/ })
+  await reloader.getByRole("button", { name: "Review and install" }).click()
+  const plan = page.getByRole("dialog", { name: "Install Stakater Reloader" })
+  await expect(plan).toContainText("HelmChart")
+})
+
+const noShell = env("ZEABUR_E2E_NO_SHELL")
+
+test("a service without a shell opens a debug terminal through a plan", async ({ page }) => {
+  test.skip(!noShell, "ZEABUR_E2E_NO_SHELL is not set")
+  await page.goto(`${project}/services/Deployment/${noShell}?tab=logs`)
+  await page
+    .getByRole("tabpanel", { name: "Logs" })
+    .getByRole("button", { name: "Terminal", exact: true })
+    .click()
+  const dock = page.getByRole("region", { name: "Terminal" })
+  await expect(dock.getByText("This container has no shell")).toBeVisible({ timeout: 20_000 })
+  await dock.getByRole("button", { name: "Open debug terminal" }).click()
+  const dialog = page.getByRole("dialog", { name: "Open debug terminal" })
+  await expect(dialog).toContainText("Adds a debug container with a shell")
+  await dialog.getByRole("button", { name: "Open debug terminal" }).click()
+  await expect(dock.getByText("Connected to the debug container")).toBeVisible({ timeout: 30_000 })
+})
+
+test("Networking shows the short address and the full one", async ({ page }) => {
+  await page.goto(`${project}/services/Deployment/${healthy}?tab=networking`)
+  const panel = page.getByRole("tabpanel", { name: "Networking" })
+  const network = panel.getByRole("region", { name: "Private network" })
+  await expect(network.getByText(`${healthy}:80`, { exact: true })).toBeVisible()
+  await expect(network).toContainText(`${healthy}.${namespace}.svc.cluster.local:80`)
+})
+
+test("a domain waiting in the draft shows in the list, in the review, and goes with Undo", async ({
+  page,
+}) => {
+  const host = "e2e-pending.example.test"
+  await page.goto(`${project}/services/Deployment/${healthy}?tab=networking`)
+  const domains = page
+    .getByRole("tabpanel", { name: "Networking" })
+    .getByRole("region", { name: "Public domains" })
+  await expect(domains).toContainText(`${healthy} has no public domain yet`)
+  await domains.getByRole("button", { name: "Add domain" }).click()
+  await domains.getByRole("textbox", { name: "Domain" }).fill(host)
+  await domains.getByRole("button", { name: "Add to changes" }).click()
+  await expect(page.getByText("1 change pending")).toBeVisible()
+  const added = domains.getByRole("row").filter({ hasText: host })
+  await expect(added).toContainText("New")
+  await expect(domains).not.toContainText("has no public domain yet")
+  await review(page)
+  const dialog = page.getByRole("dialog", { name: `Save changes to ${healthy}` })
+  await expect(dialog).toContainText(host, { timeout: 15_000 })
+  await dialog.getByRole("button", { name: "Cancel" }).click()
+  await expect(dialog).toHaveCount(0)
+  await added.getByRole("button", { name: "Undo" }).click()
+  await expect(domains).toContainText(`${healthy} has no public domain yet`)
+  await expect(page.getByText("1 change pending")).toHaveCount(0)
+})
+
+test("Networking shows who may reach a service, and a ready-made policy isolates it", async ({
+  page,
+}) => {
+  await page.goto(`${project}/services/Deployment/${editor}?tab=networking`)
+  const panel = page.getByRole("tabpanel", { name: "Networking" })
+  await expect(panel.getByRole("heading", { name: /^Connection rules/ })).toBeVisible()
+  await expect(panel).toContainText("network plugin (CNI)")
+  await panel.getByRole("button", { name: "Add rule" }).click()
+  await page.getByRole("menuitem", { name: "Isolate this service" }).click()
+  await confirmPlan(
+    page,
+    `Isolate ${editor}`,
+    "Isolate",
+    `${editor} then accepts and sends only what this and other policies allow`,
+  )
+  await expect(panel).toContainText(`zeabur-isolate-${editor}`, {
+    timeout: 15_000,
+  })
+  await expect(panel).toContainText("Blocked")
+})
+
+test("a ready-made policy is undone from its toast, and deleted from Objects once its name is typed", async ({
+  page,
+}) => {
+  const policy = `zeabur-allow-ingress-${editor}`
+  const allowIngress = async () => {
+    await page.goto(`${project}/services/Deployment/${editor}?tab=networking`)
+    const panel = page.getByRole("tabpanel", { name: "Networking" })
+    await panel.getByRole("button", { name: "Add rule" }).click()
+    await page.getByRole("menuitem", { name: "Allow traffic from public domains" }).click()
+    const applied = await confirmPlan(page, `Let public domains reach ${editor}`, "Allow")
+    await expect(panel).toContainText(policy, { timeout: 15_000 })
+    return { panel, applied }
+  }
+
+  const { panel, applied } = await allowIngress()
+  await applied.getByRole("button", { name: "Undo" }).click()
+  await expect(toast(page, "Undone")).toBeVisible({ timeout: 15_000 })
+  await expect(panel).not.toContainText(policy, { timeout: 15_000 })
+
+  await allowIngress()
+  const address = `networking.k8s.io/v1/networkpolicies/${policy}`
+  await page.goto(`${project}/objects?object=${encodeURIComponent(address)}`)
+  await page.getByRole("button", { name: "YAML", exact: true }).click()
+  await page.getByRole("button", { name: "Delete", exact: true }).click()
+  const dialog = page.getByRole("dialog", {
+    name: `Delete NetworkPolicy ${policy}`,
+  })
+  await expect(dialog).toContainText(`Delete ${policy}. This can't be undone.`)
+  const confirm = dialog.getByRole("button", { name: "Delete", exact: true })
+  await expect(confirm).toBeDisabled()
+  await dialog.getByRole("textbox", { name: `Type ${policy} to confirm` }).fill(policy)
+  await confirm.click()
+  await expect(toast(page, "Applied")).toBeVisible({ timeout: 15_000 })
+  const gone = await page.request.get(
+    `/api/v1/projects/${namespace}/objects/networking.k8s.io/v1/networkpolicies/${policy}`,
+  )
+  expect(gone.status()).toBe(404)
+})
+
+test("a namespace is adopted, named, and let go, through plans", async ({ page }) => {
+  // Set by scripts/e2e-ui.sh; the demo server has no such namespace.
+  const other = env("ZEABUR_E2E_ADOPT")
+  test.skip(!other, "ZEABUR_E2E_ADOPT is not set")
+  await page.goto("/projects")
+  const row = page.getByRole("listitem").filter({ hasText: other })
+  await row.getByRole("button", { name: `More for ${other}` }).click()
+  await page.getByRole("menuitem", { name: "Use this namespace" }).click()
+  await confirmPlan(
+    page,
+    `Use the existing namespace ${other}`,
+    "Use this namespace",
+    "Nothing in it changes.",
+  )
+  await expect(row.getByRole("button", { name: `More for ${other}` })).toHaveCount(0, {
+    timeout: 15_000,
+  })
+
+  await page.goto(`/projects/${other}/settings`)
+  await page.getByRole("textbox", { name: "Project name" }).fill("Adopted in a test")
+  await page.getByRole("button", { name: "Change icon" }).click()
+  await page.getByRole("button", { name: "Rocket" }).click()
+  await page.keyboard.press("Escape")
+  await page.getByRole("button", { name: "Save details" }).click()
+  await confirmPlan(page, `${other} details`, "Save details")
+  await page.goto(`/projects/${other}`)
+  await expect(page.getByRole("navigation", { name: "Project sections" })).toContainText(
+    "Adopted in a test",
+    { timeout: 15_000 },
+  )
+
+  await page.goto(`/projects/${other}/settings`)
+  await page.getByRole("button", { name: "Remove", exact: true }).click()
+  await confirmPlan(
+    page,
+    `Stop showing ${other} as a project`,
+    "Stop showing as a project",
+    "Nothing in it is deleted.",
+  )
+  await page.goto("/projects")
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: other })
+      .getByRole("button", { name: `More for ${other}` }),
+  ).toBeVisible({ timeout: 15_000 })
+})
+
+test("a Deployment and a Service are created from templates and drawn on the map", async ({
+  page,
+}) => {
+  await page.goto(`${project}/objects`)
+  await page.getByRole("link", { name: "Create", exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`${project}/create$`))
+  await expect(page.locator(".cm-content")).toContainText("kind: Deployment")
+  await page.getByRole("button", { name: "Add a template" }).click()
+  await page.getByRole("menuitem", { name: "Service", exact: true }).click()
+  await expect(page.getByText("2 documents")).toBeVisible()
+  await page.getByRole("button", { name: "Review changes", exact: true }).click()
+  await confirmPlan(page, `Create 2 objects in ${namespace}`, "Create 2 objects", "Service hello")
+  await expect(page).toHaveURL(new RegExp(`${project}/objects`))
+  await page.goto(`${project}?view=map`)
+  await expect(page.getByRole("button", { name: /^hello\b/ })).toBeVisible({ timeout: 15_000 })
+})
+
+test("a create the cluster refuses points at its document and line", async ({ page }) => {
+  await page.goto(`${project}/create`)
+  const editor = page.locator(".cm-content")
+  await expect(editor).toContainText("kind: Deployment")
+  await editor.click()
+  await page.keyboard.press("ControlOrMeta+a")
+  await page.keyboard.insertText(
+    "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: refused-config\n---\n" +
+      "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: refused\nspec:\n  replicas: -1\n" +
+      "  selector:\n    matchLabels: {app: refused}\n  template:\n    metadata:\n" +
+      "      labels: {app: refused}\n    spec:\n      containers:\n        - name: app\n" +
+      "          image: busybox:1.37\n",
+  )
+  await expect(page.getByText("2 documents")).toBeVisible()
+  await page.getByRole("button", { name: "Review changes", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: `Create 2 objects in ${namespace}` })
+  await expect(dialog).toContainText("Document 2, line 11")
+  await dialog.getByRole("button", { name: "Show in YAML" }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.locator(".cm-line.cm-mark-fail")).toContainText("replicas: -1")
+  const answer = await page.request.get(
+    `/api/v1/projects/${namespace}/objects/core/v1/configmaps/refused-config`,
+  )
+  expect(answer.status(), "nothing was created").toBe(404)
+})

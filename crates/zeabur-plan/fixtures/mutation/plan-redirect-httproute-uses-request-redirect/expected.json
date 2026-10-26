@@ -1,0 +1,57 @@
+{
+  "objects": [
+    {
+      "target": {
+        "kind": "HTTPRoute",
+        "name": "web-www"
+      },
+      "write": {
+        "type": "patch",
+        "operations": [
+          {
+            "op": "test",
+            "path": "/metadata/resourceVersion",
+            "value": "5"
+          },
+          {
+            "op": "add",
+            "path": "/spec/rules/0",
+            "value": {
+              "filters": [
+                {
+                  "requestRedirect": {
+                    "hostname": "shop.example.test",
+                    "scheme": "https",
+                    "statusCode": 302
+                  },
+                  "type": "RequestRedirect"
+                }
+              ],
+              "matches": [
+                {
+                  "headers": [
+                    {
+                      "name": "x-version",
+                      "value": "2"
+                    }
+                  ],
+                  "path": {
+                    "type": "PathPrefix",
+                    "value": "/api"
+                  }
+                },
+                {
+                  "path": {
+                    "type": "PathPrefix",
+                    "value": "/"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "warnings": []
+}

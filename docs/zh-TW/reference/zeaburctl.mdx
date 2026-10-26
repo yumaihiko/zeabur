@@ -1,0 +1,156 @@
+---
+title: zeaburctl
+description: 用目前的 kubeconfig 開啟 Zeabur、上傳資料夾，或檢查叢集。
+---
+
+已有能連線到叢集的 kubeconfig 時，執行 `zeaburctl ui` 就會在本機開啟 Zeabur。讀取、**檢查變更**與確認後的套用都使用該 context 的權限，叢集裡不需要先安裝 Zeabur 伺服器。
+
+先依[發行檔與驗證](./releases.mdx)下載符合作業系統和處理器的執行檔。
+
+## 指令
+
+```sh
+zeaburctl --version
+zeaburctl ui
+zeaburctl ui --context production --no-browser
+zeaburctl doctor --context production --output json
+zeaburctl up ./site --project shop --service site
+```
+
+`ui`、`doctor`、`up` 各自接受 `--context`。省略時使用 kubeconfig 的目前 context，指令不會改動 kubeconfig。
+
+| 指令 | 成果 | 會變更什麼 |
+|---|---|---|
+| `ui` | 在本機瀏覽器開啟 Zeabur | 不在叢集安裝元件，在介面套用的變更直接寫入叢集 |
+| `doctor` | 檢查叢集版本、元件和 Zeabur Identity 設定 | 只讀取，不修改設定 |
+| `up` | 把資料夾上傳到從資料夾建立的服務，並開始建置 | 修改該服務的 Build，把資料夾推到 registry |
+
+## `ui`
+
+| 選項 | 預設與用途 |
+|---|---|
+| `--context <name>` | kubeconfig 的目前 context |
+| `--no-browser` | 不自動開啟瀏覽器，仍會印出連結 |
+| `--metrics-service <namespace/name:port>` | 指定支援 Prometheus HTTP API 的 Kubernetes Service，也可用 `ZEABUR_METRICS_SERVICE` 環境變數 |
+
+例如改從既有的 Prometheus 讀取用量歷史：
+
+```sh
+zeaburctl ui --context production \
+  --metrics-service monitoring/prometheus:9090
+```
+
+不指定時，讀取 Zeabur Catalog 的 VictoriaMetrics：`observability/vmsingle-vm-victoria-metrics-k8s-stack:8428`。Zeabur 透過 Kubernetes API 的 Service proxy 讀取，所以你還需要這個 Service 的 `get services/proxy` 權限。即時 CPU 和記憶體來自 metrics-server。
+
+`zeaburctl ui` 只監聽 `127.0.0.1`，連接埠由作業系統分配。終端機印出的連結帶一次性權杖，第一次開啟後換成瀏覽器工作階段，之後同一個連結就不能再用。
+
+按 `Ctrl-C` 關閉本機介面。已套用的變更留在叢集，還沒套用的草稿不會寫入。再次執行 `zeaburctl ui` 時，用新印出的連結開啟。
+
+## `doctor`
+
+```sh
+zeaburctl doctor
+zeaburctl doctor --context production --output json
+```
+
+| 選項 | 值 |
+|---|---|
+| `--context <name>` | 指定 kubeconfig context |
+| `--output <format>` | `text`（預設）或 `json` |
+
+JSON 最外層是 `checks` 陣列，每一項有 `name`、`status`、`findings` 和 `fix`。`status` 是 `ok`、`warning`、`critical`、`skipped` 或 `error`。讀不到某項資料時，會列出缺少的權限。
+
+| 結束碼 | 意義 |
+|---|---|
+| `0` | 沒有要處理的問題，可能有 `skipped` |
+| `1` | 有警告 |
+| `2` | 有嚴重問題，或指令參數錯誤 |
+| `3` | 連不到叢集，或檢查無法執行 |
+
+多種結果同時出現時，依嚴重問題、警告、無法執行的順序決定結束碼。`skipped` 不影響結束碼，監控程式要另外讀 `checks` 才知道哪些項目沒檢查。
+
+kube-apiserver 是否信任 Zeabur Identity 的 issuer，寫在控制平面的 `AuthenticationConfiguration` 檔案裡，RBAC 讀不到，所以這一項會標示未檢查。要在主機上檢查，用 [`zeabur-installer doctor`](./installer.mdx)。
+
+## `up`
+
+```sh
+zeaburctl up [資料夾] [--project <專案>] [--service <服務>]
+```
+
+把資料夾上傳到叢集，開始建置。資料夾省略時用目前的資料夾。如果服務還不存在，指令會建立它。專案必須已存在，指令不會建立專案。
+
+指令從叢集的 `kube-public` 命名空間裡的 `zeabur-info` ConfigMap 讀到 Zeabur 的網址和 Zeabur Identity 的位址，不用另外設定。登入叢集的人都能讀這個 ConfigMap，沒登入的人讀不到。要改用別的網址時，加上 `--server`，或設定環境變數 `ZEABUR_SERVER`。
+
+指令和網頁用同一組 API 和同樣的變更計畫，你不需要知道 registry 的位址。
+
+### 伺服器模式與本機模式
+
+指令開始時會印一行，告訴你這次用哪一種模式。
+
+| 模式 | 什麼時候用 | 資料夾怎麼送 |
+|---|---|---|
+| 伺服器模式 | kubeconfig 用 Zeabur Identity 的權杖登入，而且叢集有 `zeabur-info` | 交給叢集裡的 Zeabur，由 Zeabur 推到 registry |
+| 本機模式 | 其他情況，例如安裝程式給的管理員 kubeconfig、雲端服務的權杖、ServiceAccount 權杖，或叢集裡沒有 Zeabur 伺服器 | 和 `zeaburctl ui` 一樣，在你的電腦上跑同樣的步驟，再從這台電腦推到 registry |
+
+本機模式用你 kubeconfig 的憑證直接連 Kubernetes API，憑證不會送到別的地方。拿安裝程式給的管理員 kubeconfig，就能直接執行 `up`，不用另外設定。
+
+本機模式還需要：
+
+- 叢集裝了 Zeabur Builder。沒裝時，指令在上傳前就會停下來。[自己用的安裝](../get-started/personal.mdx)預設沒有 Zeabur Builder，要勾選才會裝；沒裝時請改用映像檔部署。
+- 連得到 registry。registry 在叢集裡時（例如 `zot.zot.svc:5000`），指令會透過 Kubernetes API 自動轉發連接埠，就像 `kubectl port-forward`。你要在 registry 的命名空間有 `get services`、`list endpointslices` 和 `create pods/portforward` 權限，也要能讀 registry 憑證的 CA ConfigMap。管理員都有這些權限，專案的 Developer 沒有。
+- 叢集有 `zeabur-info`。指令從這裡知道 registry 在哪裡。叢集裡沒有 Zeabur 伺服器時，指令不能建立新服務，也不會自動轉發連接埠。
+
+### 登入與權限
+
+指令用 kubeconfig 的目前 context 登入，也可以用 `--context` 指定其他 context。兩種模式都用你的權限處理上傳和變更，無法做你沒有權限的事。
+
+指令只會把 Zeabur Identity 發的權杖送給叢集裡的 Zeabur。雲端服務的權杖（例如 GKE、EKS）、ServiceAccount 權杖、固定的權杖和用戶端憑證都不會送出，指令會改用本機模式。Zeabur 也只接受 Zeabur Identity 發的權杖，其他權杖會當成沒登入。
+
+伺服器模式下，Zeabur 的網址必須用 `https://`。只有在自己電腦上測試時（`localhost`、`127.0.0.1`、`::1`），才能用 `http://`。
+
+### 選擇專案與服務
+
+在終端機執行時，如果沒給 `--project`，指令會讓你從清單選專案。如果沒給 `--service`，指令會詢問服務名稱，預設用資料夾名稱。
+
+如果服務不存在，指令會在建立前詢問一次。加上 `--yes` 可以跳過這次確認。
+
+在腳本或 CI 裡執行時，指令不會詢問。你必須用 `--project` 和 `--service` 指定專案與服務。如果服務不存在，指令會直接建立，不需要加 `--yes`。
+
+新服務的內容和網頁「上傳資料夾」建立的相同，包含 Build 和 Deployment。如果有給 `--port`，也會建立 Service，並設定 `PORT` 環境變數。如果沒給連接埠，服務就不接受連線。建置方式預設是 `railpack`，也可以用 `--method dockerfile` 改用 Dockerfile。
+
+如果服務已存在，指令會沿用原本的建置設定。如果服務從 Git 建置，指令會拒絕上傳，不修改任何東西。
+
+### 打包與上傳
+
+打包規則和[網頁上傳](../deploy/upload.mdx)相同，會略過 `.gitignore`、`.dockerignore` 排除的檔案和 `.git`。上限是打包後 256 MiB、解開後 1 GiB。
+
+指令送出 `tar.gz` 壓縮檔，保留檔案的可執行權限，也保留指向上傳資料夾內的符號連結。
+
+上傳依序分成三步：
+
+1. 向 Build 要上傳權杖。這是一個變更計畫，直接套用。
+2. 把壓縮檔推到 registry。伺服器模式由 Zeabur 推，本機模式由這台電腦推。
+3. 把 digest 寫進 Build，開始建置。這也是變更計畫，直接套用。
+
+這些變更計畫和網頁用的一樣。執行指令就是你對套用的確認，指令不會再詢問。如果要建立新服務，建立服務的變更計畫就已包含上傳權杖的要求。
+
+### 選項
+
+| 選項 | 預設與用途 |
+|---|---|
+| `--server <位址>` | 伺服器模式用的網址，預設讀 `zeabur-info` 裡的網址。要用別的網址時指定，例如 `https://zeabur.example.com`，也可以用環境變數 `ZEABUR_SERVER` |
+| `--project <專案>` | 服務所在的既有專案。省略時在終端機從清單選擇，腳本與 CI 必填 |
+| `--service <服務>` | 服務名稱。省略時在終端機詢問，預設用資料夾名稱，腳本與 CI 必填 |
+| `--context <名稱>` | 預設用 kubeconfig 的目前 context |
+| `--method railpack\|dockerfile` | 新服務的建置方式，預設是 `railpack` |
+| `--port <連接埠>` | 新服務接收連線的連接埠，同時設定 Service 和 `PORT` 環境變數。省略時不接受連線 |
+| `--yes` | 在終端機建立新服務前，跳過建立確認 |
+
+## 連線與權限問題
+
+- 找不到 context 或連不到 Kubernetes API：檢查 kubeconfig 的 context、API 位址與網路連線，再用同一個 `--context` 重試。
+- 瀏覽器顯示 `This link was already used or is not valid.`：重新執行 `zeaburctl ui`，開啟新印出的完整連結。
+- 部分清單讀不到：依畫面列出的 verb、resource 和 Namespace 申請權限。要換 context，結束指令後用新的 `--context` 重新執行。
+- 沒有用量歷史：確認 metrics store 位址、Service 連接埠和 `services/proxy` 權限。用量歷史從 metrics store 開始收集時算起，之前的時段是空的。
+
+權限範圍和終端機的安全邊界見[權限](./permissions.mdx)和[安全性](./security.mdx)。

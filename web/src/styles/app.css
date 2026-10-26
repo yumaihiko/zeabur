@@ -1,0 +1,70 @@
+@import "tailwindcss";
+@import "@zeabur/design-system";
+
+/* Until src/theme.ts picks a class, the page follows the system, so a dark one never starts white.
+   A stored choice that differs from the system applies once the script runs. */
+:root:not(.light, .dark) {
+  color-scheme: light dark;
+}
+
+/* Markup carries no arbitrary values (shadcn/lint no-arbitrary-values); each variable here makes
+   its utility (`grid-cols-settings`). */
+@theme {
+  --container-content: 60rem;
+  --grid-template-columns-settings: 12rem 1fr;
+  --grid-template-columns-pairs: auto 1fr;
+  --grid-template-columns-event: 0.75rem minmax(0, 1fr) auto;
+  --grid-template-columns-variable: minmax(10rem, 14rem) 1fr;
+  --grid-template-columns-variable-actions: minmax(10rem, 14rem) 1fr auto;
+  --grid-template-columns-variable-edit: minmax(10rem, 14rem) 1fr 4rem auto;
+  --grid-template-columns-volume: minmax(0, 1fr) 7rem 7rem 7rem 1.75rem;
+  --grid-template-columns-attention: minmax(12rem, 1.3fr) minmax(10rem, 1fr) minmax(10rem, 1fr) auto;
+  --grid-template-columns-warning: minmax(10rem, 1fr) minmax(0, 2fr) auto;
+  --grid-template-columns-member: minmax(0, 3fr) minmax(8rem, 2fr) 8rem 9rem 4.5rem;
+  --grid-template-columns-member-phone: minmax(0, 1fr) auto auto;
+  --grid-template-columns-invitation-phone: minmax(0, 1fr) auto;
+  --grid-template-columns-record: 4rem minmax(0, 1fr) minmax(0, 1fr);
+  --grid-template-columns-record-phone: 4rem minmax(0, 1fr);
+  --grid-template-columns-drain: minmax(0, 10rem) minmax(0, 1fr);
+  --grid-template-columns-evicted: minmax(0, 1fr) auto;
+  --translate-tooltip: calc(100% + 0.5rem);
+  --height-palette: min(60vh, 420px);
+  --height-frame: max(60vh, 420px);
+  /* A sticky table head's rule, which a collapsed border would leave behind. */
+  --shadow-rule: inset 0 -1px 0 var(--color-border);
+}
+
+@utility flex-main {
+  flex: 999 1 35rem;
+}
+@utility flex-side {
+  flex: 1 1 18.75rem;
+}
+/* The list overview inside an `@container`: main column, side column, then what goes under the
+   main column. Narrow, the three stack in that order. */
+@utility overview-columns {
+  display: grid;
+  align-items: start;
+  gap: calc(var(--spacing) * 7) calc(var(--spacing) * 8);
+  @container (min-width: 56rem) {
+    grid-template-columns: minmax(0, 1fr) 18.75rem;
+    grid-template-rows: auto 1fr;
+    & > :nth-child(2) {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+    }
+  }
+}
+/* Centres a size-4 inline box on 0.4em above the baseline: the middle of both the ideographic
+   em box and Latin capitals, where `middle` (half the x-height) sits low beside Chinese. */
+@utility align-glyph-middle {
+  vertical-align: calc(0.4em - var(--spacing) * 2);
+}
+
+/* Sonner inserts its own <style> after this sheet, so these rules carry one more type selector. */
+html [data-sonner-toaster] {
+  font-family: inherit;
+}
+html [data-sonner-toast][data-styled="true"] [data-description] {
+  color: var(--muted-foreground);
+}

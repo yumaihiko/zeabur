@@ -1,0 +1,4 @@
+description: A failing pod that no diagnosis explains still gets one, saying what was seen (its container waits in RunContainerError) rather than "unknown".
+operation: gaps.diagnose
+params:
+  now: "2026-10-15T12:00:00Z"

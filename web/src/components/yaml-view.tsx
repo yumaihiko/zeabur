@@ -1,0 +1,176 @@
+import { lazy, Suspense, useState } from "react"
+import PencilSimpleIcon from "~icons/ph/pencil-simple"
+import TrashIcon from "~icons/ph/trash"
+
+import type { ObjectAddress } from "@/api/queries"
+import { GateTip, useGates } from "@/components/gate"
+import { usePlanner } from "@/components/plan/planner"
+import { Button } from "@zeabur/design-system/components/button"
+import { Skeleton } from "@zeabur/design-system/components/skeleton"
+import { Tooltip } from "@zeabur/design-system/components/tooltip"
+import { YamlBlock } from "@/components/yaml"
+import { useT } from "@/i18n"
+import { kindName } from "@/i18n/kind-name"
+import { rightOfResource, type Gate } from "@/model/rights"
+
+const YamlEditor = lazy(() =>
+  import("@/components/yaml-editor").then((m) => ({ default: m.YamlEditor })),
+)
+
+/** Kinds Kubernetes makes on its own or that a plan cannot edit as a whole. */
+const open: Gate = { open: true }
+const readOnlyResources = new Set(["pods", "events", "replicasets", "controllerrevisions"])
+
+/** Recreated when deleted; the server refuses one a tool or a controller would make again. */
+const undeletableResources = new Set([
+  "events",
+  "replicasets",
+  "controllerrevisions",
+  "endpoints",
+  "endpointslices",
+])
+
+export function YamlView({
+  project,
+  address,
+  yaml,
+  managedBy,
+  kind,
+  onDeleted,
+}: {
+  project: string
+  address: ObjectAddress
+  yaml: string
+  managedBy?: string | null
+  kind?: string
+  /** Offers Delete when given. */
+  onDeleted?: () => void
+}) {
+  const t = useT()
+  const [draft, setDraft] = useState<string | null>(null)
+  const planner = usePlanner(project, () => setDraft(null))
+  const deleter = usePlanner(project, onDeleted)
+  const label = t("yaml.label", address.name)
+  const gates = useGates(project)
+  const gateOf = (change: "edit" | "delete") => {
+    const right = rightOfResource(address.resource, change)
+    return right ? gates(right) : open
+  }
+  const editGate = gateOf("edit")
+  const deleteGate = gateOf("delete")
+  const blocked = managedBy
+    ? t("common.managedByDetail", managedBy)
+    : readOnlyResources.has(address.resource)
+      ? t("yaml.notEditable")
+      : undefined
+  const undeletable = managedBy
+    ? t("common.managedByDetail", managedBy)
+    : undeletableResources.has(address.resource)
+      ? t("yaml.notDeletable")
+      : undefined
+  const planDeletion = () =>
+    deleter.plan({
+      title: t("title.delete", kind ? kindName(t, kind) : address.resource, address.name),
+      changes: [
+        {
+          op: "delete",
+          resource: { group: address.group, version: address.version, resource: address.resource },
+          name: address.name,
+        },
+      ],
+    })
+
+  if (draft === null)
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="min-w-0 basis-full type-meta text-muted-foreground sm:basis-0 sm:flex-1">
+            {t("yaml.intro", address.name)}
+            {address.resource === "secrets" ? ` ${t("yaml.hidden")}` : ""}
+          </p>
+          <span className="flex shrink-0 gap-1.5 sm:ml-auto">
+            {onDeleted ? (
+              undeletable ? (
+                <Tooltip content={undeletable}>
+                  <span>
+                    <Button variant="outline" size="xs" disabled>
+                      <TrashIcon aria-hidden="true" data-icon="inline-start" />
+                      {t("yaml.delete")}
+                    </Button>
+                  </span>
+                </Tooltip>
+              ) : (
+                <GateTip gate={deleteGate}>
+                  <Button variant="outline" size="xs" onClick={planDeletion}>
+                    <TrashIcon aria-hidden="true" data-icon="inline-start" />
+                    {t("yaml.delete")}
+                  </Button>
+                </GateTip>
+              )
+            ) : null}
+            {blocked ? (
+              <Tooltip content={blocked}>
+                <span>
+                  <Button variant="outline" size="xs" disabled>
+                    <PencilSimpleIcon aria-hidden="true" data-icon="inline-start" />
+                    {t("yaml.edit")}
+                  </Button>
+                </span>
+              </Tooltip>
+            ) : (
+              <GateTip gate={editGate}>
+                <Button variant="outline" size="xs" onClick={() => setDraft(yaml)}>
+                  <PencilSimpleIcon aria-hidden="true" data-icon="inline-start" />
+                  {t("yaml.edit")}
+                </Button>
+              </GateTip>
+            )}
+          </span>
+        </div>
+        <YamlBlock yaml={yaml} label={label} />
+        {deleter.dialog}
+      </div>
+    )
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {address.resource === "secrets" ? (
+          <p className="type-meta text-muted-foreground">{t("yaml.editSecret")}</p>
+        ) : null}
+        <span className="ml-auto flex gap-1.5">
+          <Button variant="ghost" size="xs" onClick={() => setDraft(null)}>
+            {t("edit.cancel")}
+          </Button>
+          <Button
+            size="xs"
+            disabled={draft === yaml}
+            onClick={() =>
+              planner.plan({
+                title: t("title.editYaml", address.name),
+                changes: [
+                  {
+                    op: "edit",
+                    resource: {
+                      group: address.group,
+                      version: address.version,
+                      resource: address.resource,
+                    },
+                    name: address.name,
+                    yaml: draft,
+                  },
+                ],
+              })
+            }
+          >
+            {t("edit.review")}
+          </Button>
+        </span>
+      </div>
+      <Suspense fallback={<Skeleton variant="card" className="h-96 w-full" />}>
+        <YamlEditor initial={yaml} label={label} onChange={setDraft} />
+      </Suspense>
+      {planner.dialog}
+    </div>
+  )
+}

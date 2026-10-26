@@ -1,0 +1,21 @@
+# The pages the site publishes, in this order. index.md is the home page and is always published.
+# A group's pages are files in docs/<group>/, named without .md. The group id is stable: the
+# translations' nav.yaml refers to it, and it is part of each page's URL.
+- group: get-started
+  label: Get started
+  pages: [quickstart, advanced-install, personal, install, first-project, how-it-works]
+- group: deploy
+  label: Deploy
+  pages: [git, upload, image, compose, templates, databases, object-storage, cron-jobs]
+- group: configure
+  label: Configure
+  pages: [projects, service-settings, restart-rollback, variables, domains, dns, networking, ip-limits, maintenance, volumes, logs-terminal, objects-yaml, delete-project]
+- group: cluster
+  label: Operate the cluster
+  pages: [settings, members, github-app, notifications, backups, nodes, components, external-secrets, s3-destinations, diagnosis]
+- group: reference
+  label: Reference
+  pages: [zeaburctl, installer-configuration, installer, permissions, architecture, releases, security]
+- group: leave
+  label: Leave Zeabur
+  pages: [uninstall]

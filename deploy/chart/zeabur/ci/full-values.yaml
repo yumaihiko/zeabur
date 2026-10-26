@@ -1,0 +1,54 @@
+# Every optional part switched on (scripts/check-chart.sh).
+image:
+  repository: registry.example.test/zeabur
+  tag: v0.0.0-test
+publicUrl: https://zeabur.example.test
+clusterName: shop-prod
+issuer:
+  url: https://identity.example.test:8443
+  clientId: zeabur-test
+  clientSecret:
+    existingSecret: zeabur-oidc
+    key: secret
+  caBundle:
+    configMap: zeabur-identity-ca
+  accountUrl: https://identity.example.test:8443/account
+extraTrustedCA:
+  secret: corp-ca
+domains:
+  suffixes: [apps.example.test, example.test]
+  clusterIssuer: letsencrypt
+terminal:
+  debugImage: registry.example.test/busybox:1.37.0
+  toolsImage: registry.example.test/k8s:1.36.5
+  namespace: ops-terminals
+  toolsDeadlineMinutes: 15
+  toolsGraceSeconds: 30
+  toolsResources:
+    requests:
+      cpu: 20m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+planKey:
+  existingSecret: zeabur-plan-key
+ingress:
+  enabled: true
+  className: traefik
+  tls:
+    secretName: zeabur-tls
+proxy:
+  enabled: true
+  image:
+    repository: registry.example.test/proxy
+    tag: v0.0.0-test
+  tls:
+    existingSecret: zeabur-proxy-cert
+  apiServer:
+    - 192.0.2.10/32
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: public
+      namespace: gateway

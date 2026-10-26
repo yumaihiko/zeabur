@@ -1,0 +1,27 @@
+[
+  {
+    "gap": {
+      "rule": "volume-without-backup",
+      "severity": "advice",
+      "subject": { "kind": "PersistentVolumeClaim", "name": "uploads" },
+      "message": { "key": "gap.volumeWithoutBackup", "params": { "claim": "uploads" } },
+      "fix": { "kind": "plan", "id": "backups.k8upSchedule", "params": { "claim": "uploads" } }
+    }
+  },
+  {
+    "gap": {
+      "rule": "database-without-backup",
+      "severity": "warning",
+      "subject": { "kind": "Cluster", "name": "analytics-pg" },
+      "message": {
+        "key": "gap.databaseWithoutBackup",
+        "params": { "database": "analytics-pg" }
+      },
+      "fix": {
+        "kind": "plan",
+        "id": "backups.scheduledBackup",
+        "params": { "database": "analytics-pg" }
+      }
+    }
+  }
+]

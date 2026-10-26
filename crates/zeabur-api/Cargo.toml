@@ -1,0 +1,65 @@
+[package]
+name = "zeabur-api"
+description = "zeabur: the HTTP API and its OpenAPI description"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+zeabur-core.workspace = true
+zeabur-gaps.workspace = true
+zeabur-graph.workspace = true
+zeabur-kube.workspace = true
+zeabur-model = { workspace = true, features = ["openapi"] }
+zeabur-modules.workspace = true
+zeabur-plan = { workspace = true, features = ["openapi"] }
+zeabur-catalog.workspace = true
+axum.workspace = true
+base64.workspace = true
+bytes.workspace = true
+# Reads a Velero backup's list of objects and its archive (`cluster::backup_download`).
+flate2.workspace = true
+form_urlencoded.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+http-body-util.workspace = true
+# The registry client of `images`: the HTTPS stack kube-rs already ships.
+hyper-rustls.workspace = true
+hyper-util.workspace = true
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# Reads the vendored error-pages template.
+serde-saphyr.workspace = true
+secrecy.workspace = true
+sha2.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tracing.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+
+[dev-dependencies]
+# A fake GitHub's App key in the GitHub App tests.
+aws-lc-rs.workspace = true
+zeabur-kube = { workspace = true, features = ["memory"] }
+zeabur-test-support = { workspace = true, features = ["sandbox"] }
+zeabur-ui.workspace = true
+http-body-util.workspace = true
+tokio-tungstenite.workspace = true
+# YAML output of the OpenAPI document, for the committed copy only.
+serde-saphyr = { workspace = true, features = ["serialize"] }
+zeabur-core.workspace = true
+kube.workspace = true
+serde.workspace = true
+tower.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

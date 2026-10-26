@@ -1,0 +1,109 @@
+// Where the person is (the open project, entry, service and section) for the shell, and the links
+// every page uses to reach a project entry or a place on a service.
+import { useMatches, type RegisteredRouter, type RouteIds } from "@tanstack/react-router"
+
+import { servicePlace, type ServicePlace } from "@/routes/search"
+
+export type ProjectEntry = "overview" | "objects" | "settings"
+
+type RouteId = RouteIds<RegisteredRouter["routeTree"]>
+
+export interface Place {
+  /** The route the page belongs to (`__root__` when no route matched). */
+  route: RouteId
+  project?: string
+  entry?: ProjectEntry
+  /** `Kind/name` of the service on the service page, or in the project's quick look. */
+  service?: string
+  /** The tab, or the tab's view, that a link to another service keeps. */
+  tab?: ServicePlace
+  /** `engine/name` of the database on its page. */
+  database?: string
+  /** The object store on its page. */
+  objectStorage?: string
+}
+
+const entries: Partial<Record<RouteId, ProjectEntry>> = {
+  "/projects/$project": "overview",
+  "/projects/$project/objects": "objects",
+  "/projects/$project/create": "objects",
+  "/projects/$project/settings": "settings",
+}
+
+/** The place, from the route the router matched (the deepest match). */
+export function usePlace(): Place {
+  return useMatches({
+    select: (matches): Place => {
+      const match = matches.at(-1)
+      if (!match) return { route: "__root__" }
+      const route = match.routeId
+      if (match.routeId === "/projects/$project/services/$kind/$name") {
+        const { project, kind, name } = match.params
+        const { tab, mode } = match.search
+        return { route, project, service: `${kind}/${name}`, tab: mode ?? tab }
+      }
+      if (match.routeId === "/projects/$project/databases/$engine/$name") {
+        const { project, engine, name } = match.params
+        return { route, project, database: `${engine}/${name}` }
+      }
+      if (match.routeId === "/projects/$project/object-storage/$name") {
+        const { project, name } = match.params
+        return { route, project, objectStorage: name }
+      }
+      const entry = entries[route]
+      if (!entry || !("project" in match.params)) return { route }
+      return {
+        route,
+        project: match.params.project,
+        entry,
+        service: match.routeId === "/projects/$project" ? match.search.service : undefined,
+      }
+    },
+    structuralSharing: true,
+  })
+}
+
+export function serviceLink(
+  project: string,
+  service: { kind: string; name: string },
+  { tab, pod }: { tab?: ServicePlace; pod?: string } = {},
+) {
+  const place = servicePlace(tab)
+  return {
+    to: "/projects/$project/services/$kind/$name" as const,
+    params: { project, kind: service.kind, name: service.name },
+    search: { tab: place.tab, mode: place.mode, pod },
+    hash: place.hash,
+  }
+}
+
+export function databaseLink(
+  project: string,
+  database: { engine: string; name: string },
+  tab?: "backups",
+) {
+  return {
+    to: "/projects/$project/databases/$engine/$name" as const,
+    params: { project, engine: database.engine, name: database.name },
+    search: { tab },
+  }
+}
+
+export const objectStorageLink = (project: string, store: { name: string }) => ({
+  to: "/projects/$project/object-storage/$name" as const,
+  params: { project, name: store.name },
+  search: {},
+})
+
+/** The service's logs with one replica chosen. */
+export const podLogsLink = (
+  project: string,
+  service: { kind: string; name: string },
+  pod: string,
+) => serviceLink(project, service, { tab: "logs", pod })
+
+export const podEventsLink = (
+  project: string,
+  service: { kind: string; name: string },
+  pod: string,
+) => serviceLink(project, service, { tab: "events", pod })

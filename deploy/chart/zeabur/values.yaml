@@ -1,0 +1,226 @@
+# Zeabur's in-cluster server. docs/get-started/install.md walks through an installation; values.schema.json
+# checks these values.
+
+image:
+  # Published for linux/amd64 and linux/arm64 by the release workflow, signed (docs/reference/releases.md).
+  repository: ghcr.io/zeabur-oss/zeabur
+  # Defaults to the chart's appVersion. Ignored when digest is set.
+  tag: ""
+  # The image by content: sha256:<64 hex digits>. A released chart sets it to the image index
+  # published with it, so the chart installs exactly the image that was signed.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# The address people open, with no path: https://zeabur.example.com. Required. Sign-in comes
+# back to <publicUrl>/auth/callback, the redirect URI registered at Zeabur Identity; Ingress and HTTPRoute
+# take their host name from it.
+publicUrl: ""
+
+# What the interface calls this cluster, so people with several can tell them apart, such as
+# shop-prod. An administrator can rename it in Settings. Empty: publicUrl's host.
+clusterName: ""
+
+issuer:
+  # Zeabur Identity's public URL (its issuer), exactly as Zeabur Identity's discovery document states it.
+  # Required.
+  url: ""
+  # The client registered with `zeabur-identityctl client create`.
+  clientId: zeabur
+  clientSecret:
+    # The Secret holding the client secret `zeabur-identityctl client create` printed. Required; create
+    # it before installing (docs/get-started/install.md). The chart never takes the secret as a value, so it
+    # stays out of Helm's release records.
+    existingSecret: ""
+    key: client-secret
+  # A ConfigMap with extra CA certificates (PEM) to trust for the issuer only. zeabur-installer
+  # sets it to its local CA; set extraTrustedCA for your own private CA. Empty: extraTrustedCA
+  # and the image's Mozilla CA bundle.
+  caBundle:
+    configMap: ""
+    key: ca.crt
+  # Where people manage their passkeys and linked accounts; the Account page links there. Empty:
+  # the `manage` URL the issuer publishes at /.well-known/passkey-endpoints, else no link.
+  accountUrl: ""
+
+# New public URLs. suffixes: the domains a new service's URL is suggested under, as
+# <service>-<project>.<suffix>, such as apps.example.com, the first by default; point a wildcard
+# DNS record (*.apps.example.com) at the cluster's ingress. An administrator can change them on
+# the cluster page. Empty: people type the whole host.
+# clusterIssuer: the cert-manager ClusterIssuer that signs a new URL's certificate; Zeabur adds its
+# annotation and a tls block to the Ingress, shown in the plan. Empty: new URLs are HTTP only.
+domains:
+  suffixes: []
+  clusterIssuer: ""
+
+# Services deployed from Git. registry: where Zeabur Builder pushes and nodes pull, the same as the
+# Builder's default registry; a new service runs <registry>/<project>/<service>. The default is the
+# catalog's Zot. Empty: "Deploy from Git" is turned off.
+# caBundle: a ConfigMap in this namespace with the CA (PEM) that signed the registry's certificate,
+# which Zeabur trusts when it reads an image from the registry. Zot serves HTTPS, so without it
+# the image form cannot read the registry. zeabur-installer copies zot's CA here. Empty: the
+# image's Mozilla CA bundle only.
+builds:
+  registry: zot.zot.svc:5000
+  caBundle:
+    configMap: ""
+    key: ca.crt
+
+# Extra CA certificates (PEM) Zeabur trusts, on top of the image's Mozilla CA bundle, for every
+# HTTPS connection it makes: signing in with the issuer, reading images from registries, reading
+# backups from object stores, and GitHub. Use it when one of them, or a proxy that inspects TLS, presents a certificate a
+# private CA signed. Name a ConfigMap or a Secret in this namespace, not both; Zeabur reads it when
+# it starts. issuer.caBundle and builds.caBundle, which zeabur-installer sets, are trusted on top. Empty: the Mozilla CA bundle only.
+extraTrustedCA:
+  configMap: ""
+  secret: ""
+  key: ca.crt
+
+# Members who are not admins: the ClusterRoles zeabur-member (node names and status, every
+# project's name), zeabur-project-developer and zeabur-project-viewer (files/member-roles.yaml).
+# Zeabur binds them per member when an admin invites or edits one. With them, the
+# ValidatingAdmissionPolicy zeabur-project-namespace (Kubernetes 1.30+) keeps a Developer's patch
+# of their project's Namespace to its details. Off: neither, and Members offers only admin or no
+# rights.
+memberRoles:
+  enabled: true
+
+# The key that signs plan tokens. Empty `existingSecret`: the chart creates a Secret with a random
+# key on install and keeps it on upgrades. A new key only invalidates plans not yet applied.
+planKey:
+  existingSecret: ""
+  key: plan-key
+
+# The metrics store usage history, node disk and volume use are read from, until someone
+# chooses another in Settings (kept in the ConfigMap zeabur-settings of this namespace, by
+# whoever may change it): a Service port serving the Prometheus HTTP API, namespace/name:port.
+# Empty: where Zeabur Catalog installs VictoriaMetrics
+# (observability/vmsingle-vm-victoria-metrics-k8s-stack:8428).
+metricsStore:
+  service: ""
+  # Let everyone signed in read the setting (a Role with `get` on that one ConfigMap, bound to
+  # system:authenticated), so every page uses the store chosen in Settings. Off: whoever cannot
+  # read the ConfigMap gets the default store, and the page says why.
+  everyoneReads: true
+
+# Terminals in containers without a shell, and the tools pod with kubectl and helm. Zeabur adds a
+# debug container as the person who asks. It creates tools pods with its own service account, in
+# the terminal namespace only, after kube-apiserver says the person may run commands in the
+# project's pods.
+terminal:
+  # The debug container added to a pod for a terminal; it needs `sh`. Empty: busybox 1.37.0,
+  # pinned by digest.
+  debugImage: ""
+  # The tools pod's image; it needs `sh`, `sleep`, `kubectl` and `helm`, for amd64 and arm64.
+  # Empty: alpine/k8s 1.36.5 (kubectl 1.36.5, helm 4.3.0), pinned by digest.
+  toolsImage: ""
+  # The namespace all tools pods go in, for projects and for the whole cluster. The chart creates
+  # it and lets Zeabur's service account create, run commands in and delete pods there, and
+  # nothing else. Each pod holds its person's token, so give no one else rights in it.
+  namespace: zeabur-terminals
+  # A tools pod stops after this many minutes in any case.
+  toolsDeadlineMinutes: 30
+  # A tools pod is deleted this many seconds after its last terminal closes.
+  toolsGraceSeconds: 60
+  toolsResources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# Zeabur Proxy (crates/zeabur-proxy): lets members read their project's log history from the shared
+# VictoriaLogs Zeabur Catalog installs. Every query goes as the person, who must be allowed `get`
+# on `logs.proxy.zeabur.com` in the project's namespace (the ClusterRole zeabur-proxy-logs-reader,
+# aggregated into the project roles and into view, edit and admin), and reads that namespace only.
+# Off: the Logs tab shows what the kubelet still has.
+proxy:
+  enabled: false
+  image:
+    # Published next to Zeabur's image, from the same commit.
+    repository: ghcr.io/zeabur-oss/proxy
+    # Defaults to the chart's appVersion. Ignored when digest is set.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  logs:
+    # Off when the cluster has no VictoriaLogs: the proxy then serves usage history only.
+    enabled: true
+    # VictoriaLogs' HTTP API, http://host:port.
+    url: http://vlsingle-victoria-logs.observability.svc:9428
+    # The pods behind that URL, for the proxy's NetworkPolicy; Zeabur Catalog's VLSingle by default.
+    namespace: observability
+    podLabels:
+      app.kubernetes.io/name: vlsingle
+      app.kubernetes.io/instance: victoria-logs
+    port: 9428
+    # The most lines one query returns, and the longest range it covers in hours.
+    maxLimit: 1000
+    maxHours: 168
+  # Usage history for project members: the proxy reads the metrics store Zeabur reads by default
+  # (metricsStore.service, or Zeabur Catalog's VictoriaMetrics) for one namespace at a time. Its
+  # Service port must be a number, the same as its pods' port. A store chosen later in Settings
+  # is read directly, so only people who may reach that store see its history.
+  metrics:
+    enabled: true
+    # The store's pods, for the proxy's NetworkPolicy; Zeabur Catalog's VMSingle by default.
+    podLabels:
+      app.kubernetes.io/name: vmsingle
+      app.kubernetes.io/instance: vm-victoria-metrics-k8s-stack
+    # The longest range one query covers, in hours.
+    maxHours: 168
+  # Zeabur reaches the proxy over TLS. Empty `existingSecret`: the chart makes a CA and a
+  # certificate for the proxy's Service (ten years), keeps them on upgrades, and gives Zeabur the
+  # CA; to replace them, delete the Secret, upgrade and restart both Deployments. Otherwise a
+  # Secret with tls.crt, tls.key and ca.crt, such as a cert-manager Certificate's for
+  # <release>-proxy.<namespace>.svc: the proxy picks up a renewed certificate by itself, and
+  # Zeabur reads the CA when it starts.
+  tls:
+    existingSecret: ""
+  # kube-apiserver's addresses for the proxy's egress (CIDRs). Empty: the endpoints of the
+  # Service default/kubernetes when installing, else TCP 443 and 6443 to anywhere.
+  apiServer: []
+  replicas: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 64Mi
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  tls:
+    # A TLS Secret for the public URL's host name (for example from cert-manager). Empty: the
+    # Ingress has no `tls` section, and TLS ends in front of it.
+    secretName: ""
+
+# A Gateway API route (gateway.networking.k8s.io/v1) instead of, or next to, the Ingress.
+httpRoute:
+  enabled: false
+  annotations: {}
+  # The Gateway listeners to attach to, for example [{name: public, namespace: gateway}].
+  parentRefs: []
+
+# The budget is 30 MiB working set when idle (scripts/e2e-l2.sh checks it). The limit leaves
+# room for open terminals and large projects.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

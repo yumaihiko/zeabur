@@ -1,0 +1,47 @@
+# On K3s, first turn off the packaged metrics-server: add it to `disable` in
+# /etc/rancher/k3s/config.yaml on every server, then restart k3s.
+# On RKE2, add rke2-metrics-server to `disable` in /etc/rancher/rke2/config.yaml on
+# every server, then restart rke2-server.
+# The metrics API is unavailable until this one runs.
+# https://docs.k3s.io/installation/packaged-components
+# https://docs.rke2.io/advanced
+# Profile: single-node. Commit to the repository Flux reconciles.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://kubernetes-sigs.github.io/metrics-server
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 1h
+  releaseName: metrics-server
+  targetNamespace: kube-system
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: metrics-server
+      version: 3.14.0
+      sourceRef:
+        kind: HelmRepository
+        name: metrics-server
+  values:
+    args:
+    - --metric-resolution=15s
+    image:
+      repository: registry.k8s.io/metrics-server/metrics-server
+      tag: v0.9.0@sha256:d9862115e7c7881280d3d75ca26bda8ffc0fc213315979575bf23ce9826205c0
+    resources:
+      limits:
+        memory: 128Mi
+      requests:
+        cpu: 20m
+        memory: 48Mi

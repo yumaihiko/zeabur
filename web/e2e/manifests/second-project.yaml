@@ -1,0 +1,29 @@
+# A second project: the roles test (web/e2e/l2/roles.spec.ts) gives its Developer none here and
+# its Viewer only this one; ui.spec.ts switches to it. Applied by scripts/dev-cluster.sh and
+# scripts/e2e-ui.sh.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zeabur-e2e-second
+  labels:
+    zeabur.com/project: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: talker
+  namespace: zeabur-e2e-second
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: talker
+  template:
+    metadata:
+      labels:
+        app: talker
+    spec:
+      containers:
+        - name: talker
+          image: busybox:1.37
+          command: ["sh", "-c", "while true; do echo zeabur-e2e-second; sleep 5; done"]

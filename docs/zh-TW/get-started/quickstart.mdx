@@ -1,0 +1,200 @@
+---
+title: 在一台伺服器安裝 Zeabur
+description: 用 Zeabur Installer 的網頁介面檢查伺服器、選元件並安裝，最後註冊第一位管理員的通行密鑰。
+---
+
+用 Zeabur Installer 的網頁介面完成五個步驟，就能開啟 Zeabur 並註冊第一位管理員的通行密鑰。按下「安裝」之前，installer 不會改動伺服器。
+
+這一頁是給團隊用的安裝。只有自己要用，或機器記憶體不到 4 GiB，見[自己用：在小機器上安裝](personal.mdx)。
+
+## 先準備伺服器
+
+準備一台符合以下條件的伺服器：
+
+- 使用 systemd 的 Linux，架構為 amd64 或 arm64。
+- 具備 root 權限。
+- 記憶體至少 4 GiB。
+- `/var/lib/rancher` 至少有 10 GiB 可用空間。低於 30 GiB 時，installer 會顯示提醒。
+- TCP 連接埠 80、443、6443、9345、10250 沒有被占用。
+- 沒有安裝 k3s、kubeadm、k0s 或 MicroK8s。
+
+從 [GitHub Releases](https://github.com/zeabur-oss/zeabur/releases) 下載符合伺服器架構的 `zeabur-installer-v<version>-linux-<arch>.tar.gz`。驗證方式見[發行檔與驗證](../reference/releases.mdx)。
+
+發行版的 installer 釘選 RKE2、Zeabur Catalog、Zeabur Identity 與 Zeabur 的版本。安裝所需的下載檔案會放在 `/var/lib/rancher/zeabur-installer/downloads`，並核對 SHA-256。
+
+## 開啟安裝介面
+
+在伺服器執行：
+
+```sh
+sudo zeabur-installer gui
+```
+
+installer 預設只監聽 `127.0.0.1:8085`，終端機會印出含權杖的連結，例如：
+
+```text
+http://127.0.0.1:8085/?token=…
+```
+
+在自己的電腦開啟另一個終端機，建立 SSH tunnel：
+
+```sh
+ssh -L 8085:127.0.0.1:8085 root@<伺服器>
+```
+
+接著在自己電腦的瀏覽器開啟剛才的含權杖連結。
+
+介面右上角可以切換語言和主題。頁面上方依序是「伺服器」「連線方式」「元件」「確認」「安裝」五個步驟。按「繼續」往下，按「上一步」回去修改。
+
+## 1. 檢查伺服器
+
+在「檢查伺服器」確認主機名稱、架構、記憶體和位址，再處理未通過的檢查項目。在「給誰用」選「團隊用」。記憶體不到 4 GiB 時只能選「自己用」，見[自己用：在小機器上安裝](personal.mdx)。
+
+![「檢查伺服器」顯示主機資訊與檢查結果](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-host.avif)
+
+檢查項目包括管理員權限、systemd、時鐘、Swap、其他 Kubernetes、連接埠、磁碟空間和磁碟加密。未通過的項目要先修正，修正後按「重新檢查」。
+
+警告可以繼續。例如，磁碟沒有加密時會出現警告。Secret 會加密，磁碟區不會，測試機可以繼續安裝。
+
+頁尾會說明你的選擇存到 `/etc/zeabur-installer/config.yaml`。
+
+## 2. 選擇連線方式
+
+在「大家怎麼連到 Zeabur」設定兩個不同的網域：
+
+- 「Zeabur」：大家開啟 Zeabur 的網址，例如 `zeabur.example.com`。
+- 「登入」：Zeabur Identity 的網址，例如 `login.example.com`。大家會在這裡用通行密鑰登入。
+
+![「大家怎麼連到 Zeabur」的憑證與網域設定](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-access.avif)
+
+在「憑證」選擇「公開網域」或「測試機」。
+
+頁面下方的「應用程式網域」決定新服務的建議網址。先不填也可以，之後每個服務自己填完整網域，也能到**叢集**頁再設定。
+
+### 公開網域
+
+使用自己的網域時，選「公開網域」。兩個網域都要有 DNS 紀錄指向這台伺服器，網際網路也要能連到伺服器的 TCP 80 和 443 連接埠。
+
+憑證由 Let's Encrypt 簽發。欄位下方會顯示網域是否指向這台伺服器。
+
+### 測試機
+
+測試時，選「測試機」，再按「使用 sslip.io 網域」，填入：
+
+- `zeabur.<位址>.sslip.io`
+- `login.<位址>.sslip.io`
+
+這樣不用設定 DNS。憑證由伺服器上建立的憑證授權單位簽發，安裝完成後需要把憑證匯入瀏覽器或系統並設為信任。
+
+## 3. 選擇元件
+
+在「選擇元件」先選「預設組合」，再依需求勾選或取消個別元件。
+
+![「選擇元件」的預設組合、元件清單與記憶體估算](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-components.avif)
+
+| 預設組合 | 內容 |
+| --- | --- |
+| 「精簡」 | Ingress、憑證和 metrics-server |
+| 「標準」 | 元件目錄建議單台伺服器安裝的全部元件，這是預設選項 |
+| 「強化」 | 「標準」再加執行期威脅偵測、弱點掃描和入侵防護 |
+
+其他元件需要的元件會一起加入，並標示「其他元件需要」。標示「特權」的元件會以主機權限執行。
+
+上方會顯示已選數量和閒置記憶體估算，結果分為「夠用」「快不夠了」「不夠用」。依估算調整選擇，再按「繼續」。
+
+## 4. 確認並開始安裝
+
+在「確認」核對網址、元件和記憶體估算，確認後按「安裝」。
+
+![「確認」顯示安裝摘要、警告與詳細資料](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-review.avif)
+
+摘要會列出：
+
+- 閒置時的記憶體用量。
+- 選定的元件。
+- Kubernetes 版本，也就是 RKE2 版本。
+- 連線方式和網址。
+- 所需時間，約 10 到 20 分鐘。
+
+先閱讀「安裝前請注意」中的警告。例如，測試機的網域也必須透過 DNS 解析到這台伺服器。只修改 hosts 檔不夠，Pod 不會讀取它。
+
+展開「詳細資料」可以查看 Chart 與版本、設定檔和完整計畫。按「下載」可存下 `config.yaml`。
+
+有檢查未通過，或記憶體估算為「不夠用」時，「安裝」按鈕無法按下。修正問題或調整元件後再開始。
+
+## 5. 查看安裝進度
+
+「正在安裝」會顯示時間軸，整體約需 10 到 20 分鐘。按「顯示日誌」可以查看完整輸出。
+
+![「正在安裝」顯示安裝時間軸與進度](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-install.avif)
+
+時間軸依序列出檢查伺服器、安裝 Kubernetes（RKE2）、Namespace 和連線規則、儲存空間、各元件、憑證授權單位、Zeabur Identity、Zeabur 和收尾。憑證授權單位只會在測試機模式安裝。
+
+關掉頁面不會中斷安裝。重新開啟含權杖的連結，就能繼續查看進度。
+
+## 註冊第一位管理員
+
+看到「Zeabur 已就緒」後，在「第一位管理員」按「註冊通行密鑰」。完成註冊後，按「開啟 Zeabur」登入。
+
+這個帳號是管理員帳號，只能用通行密鑰登入，有整個叢集的完整權限。日常部署、看日誌這類工作，可以到**成員**邀請自己一個一般帳號來做，見[管理員帳號和一般帳號](../reference/permissions.mdx#管理員帳號和一般帳號)。
+
+![「Zeabur 已就緒」顯示第一位管理員的註冊入口](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-done.avif)
+
+<Callout type="warn">
+第一位管理員的註冊連結會建立管理員帳號，誰先開啟，誰就能完整控制叢集，只交給要管理叢集的人。連結只能使用一次，24 小時內有效。
+</Callout>
+
+測試機模式要先按「下載憑證」，把憑證匯入瀏覽器或系統並設為信任，否則瀏覽器會顯示警告。憑證檔案也放在伺服器的：
+
+```text
+/var/lib/rancher/zeabur-installer/local-ca.crt
+```
+
+註冊連結過期時，在伺服器執行以下指令，產生新的連結：
+
+```sh
+zeabur-identityctl setup-link --username admin
+```
+
+完成後，在伺服器終端機按 Ctrl-C 結束 installer。RKE2 和服務會繼續執行。
+
+## 安裝已停止時
+
+看到「安裝已停止」時，先查看頁面指出的步驟，再讀取日誌最後幾行的錯誤原因。可能原因包括記憶體不夠、伺服器檢查未通過或逾時。
+
+![「安裝已停止」顯示停止的步驟與錯誤資訊](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-failed.avif)
+
+修正後按「再安裝一次」。installer 會從頭開始，略過已就緒的部分，不會移除任何東西。
+
+## 檢查安裝結果
+
+在伺服器執行：
+
+```sh
+sudo zeabur-installer doctor
+```
+
+這會檢查 RKE2、元件、預設儲存類別、Zeabur Identity 和 Zeabur。
+
+| 結束碼 | 結果 |
+| --- | --- |
+| `0` | 正常 |
+| `1` | 警告 |
+| `2` | 嚴重 |
+| `3` | 檢查無法執行，例如沒有用 root 執行 |
+
+接著可以[部署第一個服務](first-project.mdx)。
+
+## 改用設定檔和指令
+
+要重複安裝、把設定放進版本控制，或無法開啟 SSH tunnel 時，見[用設定檔和指令安裝](advanced-install.mdx)。網頁介面寫入的設定檔，就是命令列讀取的同一份。
+
+## 移除 Zeabur
+
+只移除 Zeabur 時，在伺服器執行：
+
+```sh
+sudo zeabur-installer uninstall zeabur
+```
+
+RKE2、元件、Zeabur Identity 和應用程式會保留。其他移除方式見[移除 Zeabur，保留服務](../leave/uninstall.mdx)。

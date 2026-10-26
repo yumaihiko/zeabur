@@ -1,0 +1,864 @@
+//! The server end to end, with an in-process issuer and in-memory clusters: one per token, so
+//! what a request does shows which credential it used.
+
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+
+use axum::Router;
+use axum::body::Body;
+use axum::http::{Method, Request, StatusCode, header};
+use axum::response::Response;
+use http_body_util::BodyExt as _;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::{Value, json};
+use tower::ServiceExt as _;
+use zeabur_api::plan_token::PlanKey;
+use zeabur_auth::client::{ClientConfig, ExtraRoots, OAuthClient};
+use zeabur_auth::flow::FlowKey;
+use zeabur_auth::session::{Limits, Sessions};
+use zeabur_auth::testing::{CLIENT_ID, CLIENT_SECRET, FakeIssuer};
+use zeabur_auth::url::BaseUrl;
+use zeabur_kube::k8s_openapi::api::core::v1::Namespace;
+use zeabur_kube::memory::{MemoryCluster, State};
+use zeabur_kube::{Identity, NamespaceObjects, UserToken};
+
+use super::{Auth, Connection, app};
+
+const PUBLIC: &str = "http://127.0.0.1:8080";
+const HOST: (&str, &str) = ("host", "127.0.0.1:8080");
+const SAME_ORIGIN: [(&str, &str); 2] = [("sec-fetch-site", "same-origin"), ("zeabur-request", "1")];
+const NOW: i64 = 1_800_000_000;
+
+/// A project whose Deployment `web` only an admin account may change, in a cluster whose nodes
+/// only an admin account may list. The admin account is `root`.
+fn cluster(user: &str) -> MemoryCluster {
+    let admin = user == "root";
+    let namespace: Namespace = serde_json::from_value(json!({"metadata": {"name": "shop",
+        "labels": {"zeabur.com/project": "true"}}}))
+    .unwrap();
+    let deployment = serde_json::from_value(json!({
+        "apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": {"name": "web", "namespace": "shop", "resourceVersion": "41"},
+        "spec": {"selector": {"matchLabels": {"app": "web"}}, "template": {
+            "metadata": {"labels": {"app": "web"}},
+            "spec": {"containers": [{"name": "app", "image": "example/app:1",
+                "env": [{"name": "MODE", "value": "production"}]}]}}}
+    }))
+    .unwrap();
+    let mut groups = vec!["developers".to_owned()];
+    if admin {
+        groups.push("admins".to_owned());
+    }
+    let cluster = MemoryCluster::new(State {
+        identity: Identity {
+            username: user.to_owned(),
+            groups,
+        },
+        namespaces: vec![namespace],
+        objects: BTreeMap::from([(
+            "shop".to_owned(),
+            NamespaceObjects {
+                namespace: "shop".to_owned(),
+                deployments: vec![deployment],
+                ..NamespaceObjects::default()
+            },
+        )]),
+        ..State::default()
+    });
+    if !admin {
+        cluster.update(|s| {
+            s.forbidden_writes.insert("Deployment/web".to_owned());
+            s.forbidden_resources.insert("nodes".to_owned());
+        });
+    }
+    cluster
+}
+
+struct Rig {
+    issuer: FakeIssuer,
+    app: Router,
+    now: Arc<AtomicI64>,
+}
+
+impl Rig {
+    async fn new() -> Self {
+        let issuer = FakeIssuer::start().await;
+        let public = BaseUrl::parse_root(PUBLIC).unwrap();
+        let oauth = Arc::new(
+            OAuthClient::new(ClientConfig {
+                issuer: issuer.url(),
+                public_url: public.clone(),
+                client_id: CLIENT_ID.to_owned(),
+                client_secret: SecretString::from(CLIENT_SECRET.to_owned()),
+                issuer_ca: ExtraRoots::default(),
+            })
+            .unwrap(),
+        );
+        let now = Arc::new(AtomicI64::new(NOW));
+        let read = Arc::clone(&now);
+        let clock: zeabur_auth::session::Clock = Arc::new(move || read.load(Ordering::SeqCst));
+        // Tokens read `<user>:<n>`, or are a JWT with the user as `sub`; kube-apiserver refuses
+        // `mallory`.
+        let connect: zeabur_auth::session::Bind<Connection> = Arc::new(|token: SecretString| {
+            let text = token.expose_secret();
+            let user =
+                sub_of(text).unwrap_or_else(|| text.split(':').next().unwrap_or("").to_owned());
+            let user = user.as_str();
+            if user == "mallory" {
+                return Err("Unauthorized".to_owned());
+            }
+            let cluster = Arc::new(cluster(user));
+            Ok(Connection {
+                cluster,
+                token: UserToken::new(token).map_err(|e| e.to_string())?,
+            })
+        });
+        let sessions = Arc::new(Sessions::new(
+            Arc::clone(&oauth),
+            Arc::clone(&connect),
+            Limits::default(),
+            Arc::clone(&clock),
+        ));
+        let auth = Arc::new(Auth {
+            public,
+            issuer: issuer.url(),
+            oauth,
+            sessions,
+            connect,
+            flow_key: FlowKey::random().unwrap(),
+            clock,
+        });
+        Self {
+            issuer,
+            app: app(
+                &auth,
+                PlanKey::from_bytes([3; 32]),
+                zeabur_api::Settings::default(),
+                Arc::new(zeabur_api::account::Fixed(None)),
+                None,
+            ),
+            now,
+        }
+    }
+
+    /// A token Zeabur Identity issued to `user`.
+    fn token(&self, user: &str) -> String {
+        jwt(&json!({"iss": self.issuer.url().as_str(), "sub": user}))
+    }
+
+    async fn send(&self, method: Method, uri: &str, headers: &[(&str, &str)]) -> Response {
+        let mut request = Request::builder().method(method).uri(uri);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        self.app
+            .clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn post_json(&self, uri: &str, cookie: &str, body: &Value) -> (StatusCode, Value) {
+        let mut request = Request::post(uri)
+            .header("host", HOST.1)
+            .header("cookie", cookie)
+            .header("content-type", "application/json");
+        for (name, value) in SAME_ORIGIN {
+            request = request.header(name, value);
+        }
+        let response = self
+            .app
+            .clone()
+            .oneshot(request.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        (status, json_of(response).await)
+    }
+
+    /// `user` signs in, coming back to `return_to`; the session cookie.
+    async fn sign_in(&self, user: &str) -> String {
+        let login = self
+            .send(Method::GET, "/auth/login?return=/projects/shop", &[HOST])
+            .await;
+        assert_eq!(login.status(), StatusCode::SEE_OTHER);
+        let flow = cookie_pair(&login, "__Host-zeabur-signin");
+        let answer = self.issuer.approve(location(&login), user);
+        let back = self
+            .send(
+                Method::GET,
+                &format!("/auth/callback?{answer}"),
+                &[HOST, ("cookie", &flow)],
+            )
+            .await;
+        assert_eq!(back.status(), StatusCode::SEE_OTHER, "{}", text(back).await);
+        assert_eq!(location(&back), "/projects/shop");
+        cookie_pair(&back, "__Host-zeabur")
+    }
+
+    async fn plan_and_apply(&self, session: &str) -> (StatusCode, Value) {
+        let change = json!({"changes": [{"op": "env",
+            "workload": {"kind": "Deployment", "name": "web"},
+            "changes": [{"op": "set", "name": "MODE", "value": "maintenance"}]}]});
+        let (status, plan) = self
+            .post_json("/api/v1/projects/shop/plan", session, &change)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{plan}");
+        self.post_json(
+            "/api/v1/projects/shop/apply",
+            session,
+            &json!({"token": plan["token"]}),
+        )
+        .await
+    }
+
+    async fn get_json(&self, uri: &str, session: &str) -> (StatusCode, Value) {
+        let response = self
+            .send(Method::GET, uri, &[HOST, ("cookie", session)])
+            .await;
+        let status = response.status();
+        (status, json_of(response).await)
+    }
+}
+
+fn encode(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// A JWT with `claims`; only kube-apiserver checks its signature.
+fn jwt(claims: &Value) -> String {
+    format!(
+        "{}.{}.signature",
+        encode(br#"{"alg":"RS256","typ":"JWT"}"#),
+        encode(claims.to_string().as_bytes())
+    )
+}
+
+fn sub_of(token: &str) -> Option<String> {
+    use base64::Engine as _;
+    let payload = token.split('.').nth(1)?;
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let claims: Value = serde_json::from_slice(&payload).ok()?;
+    claims["sub"].as_str().map(str::to_owned)
+}
+
+fn location(response: &Response) -> &str {
+    response.headers()[header::LOCATION].to_str().unwrap()
+}
+
+fn set_cookies(response: &Response) -> Vec<String> {
+    response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .map(|v| v.to_str().unwrap().to_owned())
+        .collect()
+}
+
+/// `name=value` of the cookie `name` the response sets.
+fn cookie_pair(response: &Response, name: &str) -> String {
+    set_cookies(response)
+        .into_iter()
+        .find(|c| c.starts_with(&format!("{name}=")))
+        .and_then(|c| c.split(';').next().map(str::to_owned))
+        .unwrap_or_else(|| panic!("no {name} cookie in {:?}", set_cookies(response)))
+}
+
+async fn text(response: Response) -> String {
+    String::from_utf8(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap()
+}
+
+async fn json_of(response: Response) -> Value {
+    serde_json::from_str(&text(response).await).unwrap_or(Value::Null)
+}
+
+fn query(url: &str) -> HashMap<String, String> {
+    let query = url.split_once('?').map_or("", |(_, q)| q);
+    form_urlencoded_pairs(query)
+}
+
+fn form_urlencoded_pairs(query: &str) -> HashMap<String, String> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect()
+}
+
+#[tokio::test]
+async fn the_health_check_needs_no_host_or_session() {
+    let rig = Rig::new().await;
+    let response = rig
+        .send(Method::GET, "/api/healthz", &[("host", "10.42.0.7:8080")])
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn without_a_session_the_api_answers_signed_out() {
+    let rig = Rig::new().await;
+    for cookie in ["", "__Host-zeabur=guess"] {
+        let (status, problem) = rig.get_json("/api/v1/whoami", cookie).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(problem["type"], "/problems/signed-out");
+    }
+}
+
+#[cfg(feature = "ui")]
+const NAVIGATE: [(&str, &str); 2] = [
+    ("sec-fetch-mode", "navigate"),
+    ("sec-fetch-dest", "document"),
+];
+
+/// Where a page opened as `headers` goes, if the server sends it elsewhere.
+#[cfg(feature = "ui")]
+async fn open_page(rig: &Rig, uri: &str, headers: &[(&str, &str)]) -> Option<String> {
+    let response = rig.send(Method::GET, uri, headers).await;
+    match response.status() {
+        StatusCode::SEE_OTHER => {
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            Some(location(&response).to_owned())
+        }
+        StatusCode::OK => {
+            let kind = response.headers()[header::CONTENT_TYPE].to_str().unwrap();
+            assert!(kind.starts_with("text/html"), "{kind}");
+            None
+        }
+        status => panic!("{uri}: {status}"),
+    }
+}
+
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn a_page_opened_without_a_session_goes_to_sign_in_first() {
+    let rig = Rig::new().await;
+    let page = [HOST, NAVIGATE[0], NAVIGATE[1]];
+    assert_eq!(
+        open_page(&rig, "/projects/shop?tab=logs", &page)
+            .await
+            .as_deref(),
+        Some("/auth/login?return=%2Fprojects%2Fshop%3Ftab%3Dlogs")
+    );
+    assert_eq!(
+        open_page(&rig, "/", &page).await.as_deref(),
+        Some("/auth/login")
+    );
+    // Without Fetch Metadata, `Accept` tells a page load apart.
+    let old_browser = [
+        HOST,
+        ("accept", "text/html,application/xhtml+xml,*/*;q=0.8"),
+    ];
+    assert_eq!(
+        open_page(&rig, "/projects/shop", &old_browser)
+            .await
+            .as_deref(),
+        Some("/auth/login?return=%2Fprojects%2Fshop")
+    );
+    let ended = [HOST, NAVIGATE[0], ("cookie", "__Host-zeabur=guess")];
+    assert_eq!(
+        open_page(&rig, "/projects/shop", &ended).await.as_deref(),
+        Some("/auth/login?return=%2Fprojects%2Fshop")
+    );
+
+    // Not a page load: served as before, and the API still answers `signed-out`.
+    let fetch = [HOST, ("sec-fetch-mode", "cors"), ("accept", "text/html")];
+    assert_eq!(open_page(&rig, "/projects/shop", &fetch).await, None);
+    let api = rig.send(Method::GET, "/api/v1/whoami", &page).await;
+    assert_eq!(api.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(json_of(api).await["type"], "/problems/signed-out");
+    let login = rig.send(Method::GET, "/auth/login", &page).await;
+    assert!(location(&login).starts_with(&rig.issuer.url().to_string()));
+}
+
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn a_signed_in_page_load_gets_the_interface() {
+    let rig = Rig::new().await;
+    let session = rig.sign_in("alice").await;
+    let page = [HOST, NAVIGATE[0], NAVIGATE[1], ("cookie", &session)];
+    assert_eq!(open_page(&rig, "/projects/shop", &page).await, None);
+    assert_eq!(open_page(&rig, "/", &page).await, None);
+}
+
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn the_return_path_never_leaves_this_server() {
+    let rig = Rig::new().await;
+    let page = [HOST, NAVIGATE[0], NAVIGATE[1]];
+    for uri in ["//attacker.example/", "//attacker.example/projects"] {
+        assert_eq!(
+            open_page(&rig, uri, &page).await.as_deref(),
+            Some("/auth/login"),
+            "{uri}"
+        );
+    }
+    // Of an absolute-form target, only the path is kept.
+    assert_eq!(
+        open_page(&rig, "http://attacker.example/projects", &page)
+            .await
+            .as_deref(),
+        Some("/auth/login?return=%2Fprojects")
+    );
+    // Encoded, a backslash stays part of a path on this server.
+    assert_eq!(
+        open_page(&rig, "/%5Cattacker.example", &page)
+            .await
+            .as_deref(),
+        Some("/auth/login?return=%2F%255Cattacker.example")
+    );
+}
+
+#[tokio::test]
+async fn signing_in_sends_the_browser_to_the_issuer_with_a_sealed_flow_cookie() {
+    let rig = Rig::new().await;
+    let login = rig
+        .send(
+            Method::GET,
+            "/auth/login?return=//attacker.example/",
+            &[HOST],
+        )
+        .await;
+    assert_eq!(login.status(), StatusCode::SEE_OTHER);
+    let to = query(location(&login));
+    assert!(location(&login).starts_with(&format!("{}/authorize?", rig.issuer.url())));
+    assert_eq!(to["code_challenge_method"], "S256");
+    assert_eq!(to["client_id"], "zeabur");
+    let set = set_cookies(&login).join("\n");
+    assert!(set.contains("__Host-zeabur-signin="));
+    assert!(set.contains("Max-Age=600; Path=/; Secure; HttpOnly; SameSite=Lax"));
+    assert_eq!(login.headers()[header::CACHE_CONTROL], "no-store");
+
+    // The unsafe return path became `/`.
+    let flow = cookie_pair(&login, "__Host-zeabur-signin");
+    let answer = rig.issuer.approve(location(&login), "alice");
+    let back = rig
+        .send(
+            Method::GET,
+            &format!("/auth/callback?{answer}"),
+            &[HOST, ("cookie", &flow)],
+        )
+        .await;
+    assert_eq!(location(&back), "/");
+    let set = set_cookies(&back).join("\n");
+    assert!(set.contains("__Host-zeabur-signin=; Max-Age=0"));
+    let session = set
+        .lines()
+        .find(|c| c.starts_with("__Host-zeabur="))
+        .unwrap()
+        .to_owned();
+    assert!(
+        session.ends_with("; Path=/; Secure; HttpOnly; SameSite=Lax"),
+        "{session}"
+    );
+}
+
+#[tokio::test]
+async fn a_signed_in_person_uses_the_api_as_themselves() {
+    let rig = Rig::new().await;
+    let session = rig.sign_in("alice").await;
+    let (status, whoami) = rig.get_json("/api/v1/whoami", &session).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(whoami["username"], "alice");
+    let (_, view) = rig.get_json("/api/v1/session", &session).await;
+    assert_eq!(view["signsIn"], true);
+}
+
+/// A command-line client presents the person's own token instead of a cookie: it acts as that
+/// person, with that person's rights, and the guard still wants a change to say where it comes
+/// from.
+#[tokio::test]
+async fn a_bearer_token_acts_as_the_person_who_holds_it() {
+    let rig = Rig::new().await;
+    let get = |token: String| {
+        let authorization = format!("Bearer {token}");
+        let rig = &rig;
+        async move {
+            let response = rig
+                .send(
+                    Method::GET,
+                    "/api/v1/whoami",
+                    &[HOST, ("authorization", &authorization)],
+                )
+                .await;
+            (response.status(), json_of(response).await)
+        }
+    };
+    let (status, whoami) = get(rig.token("alice")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(whoami["username"], "alice");
+    let (status, problem) = get(rig.token("mallory")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{problem}");
+
+    let alice = format!("Bearer {}", rig.token("alice"));
+    let plan = json!({"changes": [{"op": "env",
+        "workload": {"kind": "Deployment", "name": "web"},
+        "changes": [{"op": "set", "name": "MODE", "value": "maintenance"}]}]});
+    let post = |headers: &[(&str, &str)]| {
+        let mut request = Request::post("/api/v1/projects/shop/plan")
+            .header("host", HOST.1)
+            .header("authorization", alice.as_str())
+            .header("content-type", "application/json");
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let request = request.body(Body::from(plan.to_string())).unwrap();
+        let app = rig.app.clone();
+        async move { app.oneshot(request).await.unwrap().status() }
+    };
+    assert_eq!(post(&[]).await, StatusCode::FORBIDDEN);
+    assert_eq!(
+        post(&[("origin", PUBLIC), ("zeabur-request", "1")]).await,
+        StatusCode::OK
+    );
+}
+
+/// Zeabur uses only a token from Zeabur Identity. A ServiceAccount token, a token of another
+/// issuer or a static token is signed out, also when kube-apiserver accepts it.
+#[tokio::test]
+async fn a_bearer_token_of_another_issuer_is_signed_out() {
+    let rig = Rig::new().await;
+    for token in [
+        jwt(
+            &json!({"iss": "https://kubernetes.default.svc.cluster.local",
+            "sub": "system:serviceaccount:shop:default"}),
+        ),
+        jwt(&json!({"iss": "kubernetes/serviceaccount", "sub": "alice"})),
+        jwt(&json!({"iss": "https://accounts.google.com", "sub": "alice"})),
+        jwt(&json!({"sub": "alice"})),
+        "alice:1".to_owned(),
+    ] {
+        let response = rig
+            .send(
+                Method::GET,
+                "/api/v1/whoami",
+                &[HOST, ("authorization", &format!("Bearer {token}"))],
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{token}");
+        assert_eq!(json_of(response).await["type"], "/problems/signed-out");
+    }
+}
+
+/// A request with a session cookie uses only the session. When the session ended, a bearer
+/// token in the same request does not sign it in.
+#[tokio::test]
+async fn an_ended_session_does_not_fall_back_to_a_bearer_token() {
+    let rig = Rig::new().await;
+    rig.issuer.with(|r| r.refresh_expires_in = Some(900));
+    let session = rig.sign_in("alice").await;
+    rig.now.fetch_add(901, Ordering::SeqCst);
+    let response = rig
+        .send(
+            Method::GET,
+            "/api/v1/whoami",
+            &[
+                HOST,
+                ("cookie", session.as_str()),
+                ("authorization", &format!("Bearer {}", rig.token("alice"))),
+            ],
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// A bearer token is not kept, so a tools pod or Zeabur Proxy (log history) never gets it.
+#[tokio::test]
+async fn a_bearer_token_starts_no_tools_pod() {
+    let rig = Rig::new().await;
+    let request = Request::post("/api/v1/cluster/tools/plan")
+        .header("host", HOST.1)
+        .header("authorization", format!("Bearer {}", rig.token("root")))
+        .header("origin", PUBLIC)
+        .header("zeabur-request", "1")
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let response = rig.app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(json_of(response).await["type"], "/problems/bad-request");
+}
+
+#[test]
+fn a_bearer_token_is_never_handed_on() {
+    use zeabur_api::access::ClusterAccess as _;
+
+    use super::{SessionAccess, Signed};
+
+    let access = SessionAccess {
+        origin: PUBLIC.to_owned(),
+    };
+    let mut parts = Request::builder().body(()).unwrap().into_parts().0;
+    parts.extensions.insert(Signed::Token(Connection {
+        cluster: Arc::new(cluster("alice")),
+        token: UserToken::new(SecretString::from("alice:1")).unwrap(),
+    }));
+    assert!(access.for_request(&parts).is_ok());
+    assert!(access.handoff(&parts).is_none());
+}
+
+#[tokio::test]
+async fn a_callback_that_does_not_match_a_sign_in_in_this_browser_is_refused() {
+    let rig = Rig::new().await;
+    let login = rig.send(Method::GET, "/auth/login", &[HOST]).await;
+    let flow = cookie_pair(&login, "__Host-zeabur-signin");
+    let answer = rig.issuer.approve(location(&login), "alice");
+    let code = form_urlencoded_pairs(&answer)["code"].clone();
+    let iss = rig.issuer.url().to_string();
+
+    // Another state (a forged answer), no flow cookie (another browser), another issuer.
+    for (uri, cookie) in [
+        (
+            format!("/auth/callback?code={code}&state=forged&iss={iss}"),
+            flow.as_str(),
+        ),
+        (format!("/auth/callback?{answer}"), ""),
+    ] {
+        let response = rig
+            .send(Method::GET, &uri, &[HOST, ("cookie", cookie)])
+            .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+        assert!(
+            set_cookies(&response)
+                .iter()
+                .all(|c| !c.starts_with("__Host-zeabur="))
+        );
+    }
+    let state = query(location(&login))["state"].clone();
+    let mixed_up = rig
+        .send(
+            Method::GET,
+            &format!("/auth/callback?code={code}&state={state}&iss=https%3A%2F%2Fattacker.example"),
+            &[HOST, ("cookie", &flow)],
+        )
+        .await;
+    assert_eq!(mixed_up.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        set_cookies(&mixed_up)
+            .iter()
+            .all(|c| !c.starts_with("__Host-zeabur="))
+    );
+}
+
+#[tokio::test]
+async fn a_token_the_cluster_refuses_starts_no_session() {
+    let rig = Rig::new().await;
+    let login = rig.send(Method::GET, "/auth/login", &[HOST]).await;
+    let flow = cookie_pair(&login, "__Host-zeabur-signin");
+    let answer = rig.issuer.approve(location(&login), "mallory");
+    let back = rig
+        .send(
+            Method::GET,
+            &format!("/auth/callback?{answer}"),
+            &[HOST, ("cookie", &flow)],
+        )
+        .await;
+    assert_eq!(back.status(), StatusCode::FORBIDDEN);
+    assert!(
+        set_cookies(&back)
+            .iter()
+            .all(|c| !c.starts_with("__Host-zeabur="))
+    );
+}
+
+#[tokio::test]
+async fn changes_from_other_sites_and_hosts_are_refused() {
+    let rig = Rig::new().await;
+    let session = rig.sign_in("alice").await;
+    let apply = "/api/v1/projects/shop/apply";
+    for headers in [
+        vec![
+            HOST,
+            ("cookie", &session),
+            ("sec-fetch-site", "cross-site"),
+            ("zeabur-request", "1"),
+        ],
+        vec![
+            HOST,
+            ("cookie", &session),
+            ("sec-fetch-site", "same-origin"),
+        ],
+        vec![
+            ("host", "attacker.example"),
+            ("cookie", &session),
+            SAME_ORIGIN[0],
+            SAME_ORIGIN[1],
+        ],
+    ] {
+        let response = rig.send(Method::POST, apply, &headers).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{headers:?}");
+    }
+    // A read from another Host too (DNS rebinding).
+    let response = rig
+        .send(
+            Method::GET,
+            "/api/v1/whoami",
+            &[("host", "attacker.example"), ("cookie", &session)],
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    // Signing out is a change.
+    let response = rig
+        .send(
+            Method::POST,
+            "/auth/logout",
+            &[HOST, ("cookie", &session), ("sec-fetch-site", "cross-site")],
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// No admin step: an admin account changes the project and reads the nodes directly, and a
+/// regular account gets a plain refusal.
+#[tokio::test]
+async fn an_admin_account_acts_directly_and_a_regular_one_is_refused() {
+    let rig = Rig::new().await;
+    let alice = rig.sign_in("alice").await;
+    let (status, problem) = rig.plan_and_apply(&alice).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(problem["type"], "/problems/forbidden");
+    assert_eq!(problem["denied"]["verb"], "patch");
+    let (status, problem) = rig.get_json("/api/v1/cluster/nodes", &alice).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(problem["type"], "/problems/forbidden");
+    assert_eq!(problem["denied"]["resource"], "nodes");
+
+    let root = rig.sign_in("root").await;
+    let (status, applied) = rig.plan_and_apply(&root).await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    let (status, nodes) = rig.get_json("/api/v1/cluster/nodes", &root).await;
+    assert_eq!(status, StatusCode::OK, "{nodes}");
+}
+
+/// A request marked as background work, such as a poll from a page left open, does not keep the
+/// session alive. The session ends at the shorter of Zeabur's idle limit and the one the issuer
+/// gives its refresh token.
+#[tokio::test]
+async fn only_requests_a_person_makes_keep_the_session_alive() {
+    let rig = Rig::new().await;
+    let whoami = |session: String, background: bool| {
+        let rig = &rig;
+        async move {
+            let mut headers = vec![HOST, ("cookie", session.as_str())];
+            if background {
+                headers.push((super::BACKGROUND, "1"));
+            }
+            rig.send(Method::GET, "/api/v1/whoami", &headers)
+                .await
+                .status()
+        }
+    };
+    let person = rig.sign_in("alice").await;
+    let background = rig.sign_in("bob").await;
+    rig.now.fetch_add(3000, Ordering::SeqCst);
+    assert_eq!(whoami(person.clone(), false).await, StatusCode::OK);
+    assert_eq!(whoami(background.clone(), true).await, StatusCode::OK);
+    rig.now.fetch_add(700, Ordering::SeqCst);
+    assert_eq!(whoami(person, false).await, StatusCode::OK);
+    assert_eq!(whoami(background, true).await, StatusCode::UNAUTHORIZED);
+
+    rig.issuer.with(|r| r.refresh_expires_in = Some(900));
+    let short = rig.sign_in("root").await;
+    rig.now.fetch_add(800, Ordering::SeqCst);
+    assert_eq!(whoami(short.clone(), false).await, StatusCode::OK);
+    rig.now.fetch_add(901, Ordering::SeqCst);
+    assert_eq!(whoami(short, false).await, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn signing_out_ends_the_session_and_revokes_its_refresh_token() {
+    let rig = Rig::new().await;
+    let session = rig.sign_in("alice").await;
+    let mut headers = vec![HOST, ("cookie", session.as_str())];
+    headers.extend(SAME_ORIGIN);
+    let response = rig.send(Method::POST, "/auth/logout", &headers).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        set_cookies(&response)
+            .iter()
+            .any(|c| c.starts_with("__Host-zeabur=; Max-Age=0"))
+    );
+    assert_eq!(rig.issuer.with(|r| r.revocations.len()), 1);
+    let (status, _) = rig.get_json("/api/v1/whoami", &session).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// The terminal's handshake must come from the public URL's origin: `Host` alone matching is not
+/// enough (here the scheme differs).
+#[tokio::test]
+async fn a_terminal_opens_only_from_the_public_origin() {
+    let rig = Rig::new().await;
+    let session = rig.sign_in("alice").await;
+    let uri = "/api/v1/projects/shop/pods/web-1/exec";
+    for (origin, refused) in [
+        ("https://127.0.0.1:8080", true),
+        ("http://attacker.example", true),
+        (PUBLIC, false),
+    ] {
+        let response = rig
+            .send(
+                Method::GET,
+                uri,
+                &[HOST, ("cookie", session.as_str()), ("origin", origin)],
+            )
+            .await;
+        // Past the origin check, this request (not a real upgrade) fails at the upgrade instead.
+        assert_eq!(
+            response.status() == StatusCode::FORBIDDEN,
+            refused,
+            "{origin}: {}",
+            response.status()
+        );
+        if refused {
+            assert_eq!(json_of(response).await["type"], "/problems/forbidden");
+        }
+    }
+}
+
+/// Every request goes with the session's token, and a terminal gets that token and its expiry.
+#[test]
+fn every_request_goes_with_the_session_token() {
+    use zeabur_api::access::ClusterAccess as _;
+    use zeabur_auth::session::{Bound, Credentials};
+
+    use super::{SessionAccess, Signed};
+
+    let base = Connection {
+        cluster: Arc::new(cluster("alice")),
+        token: UserToken::new(SecretString::from("alice:1")).unwrap(),
+    };
+    let access = SessionAccess {
+        origin: PUBLIC.to_owned(),
+    };
+    let mut parts = Request::builder().body(()).unwrap().into_parts().0;
+    assert!(access.for_request(&parts).is_err());
+    assert!(access.handoff(&parts).is_none());
+
+    parts.extensions.insert(Signed::In(Credentials {
+        username: "alice".to_owned(),
+        base: Bound {
+            value: base.clone(),
+            expires_at: NOW + 600,
+        },
+        signed_out: tokio::sync::watch::channel(false).1,
+    }));
+    let cluster = access.for_request(&parts).unwrap();
+    let expected: Arc<dyn zeabur_kube::Cluster> =
+        Arc::<dyn zeabur_kube::Cluster>::clone(&base.cluster);
+    assert!(Arc::ptr_eq(&cluster, &expected));
+    let handoff = access.handoff(&parts).unwrap();
+    assert_eq!(handoff.token.secret().expose_secret(), "alice:1");
+    assert_eq!(handoff.expires_at.as_second(), NOW + 600);
+}

@@ -1,0 +1,44 @@
+[package]
+name = "zeaburctl"
+description = "Kubernetes made simple and secure by default: the command-line tool (ui, doctor, up)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["ui"]
+ui = ["dep:zeabur-ui"]
+
+[dependencies]
+zeabur-api.workspace = true
+zeabur-core.workspace = true
+zeabur-kube.workspace = true
+zeabur-ui = { workspace = true, optional = true }
+axum.workspace = true
+bytes.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde-saphyr.workspace = true
+serde_json.workspace = true
+flate2.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper-rustls.workspace = true
+hyper-util.workspace = true
+kube.workspace = true
+regex.workspace = true
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
+secrecy.workspace = true
+tar.workspace = true
+tokio.workspace = true
+tower.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+zeabur-kube = { workspace = true, features = ["memory"] }

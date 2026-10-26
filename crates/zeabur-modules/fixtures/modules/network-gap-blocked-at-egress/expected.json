@@ -1,0 +1,19 @@
+[
+  {
+    "gap": {
+      "rule": "blocked-connection",
+      "subject": { "kind": "Deployment", "name": "web" },
+      "message": {
+        "key": "gap.blockedConnection",
+        "params": { "from": "worker", "to": "web", "at": "egress" }
+      },
+      "fix": {
+        "kind": "plan",
+        "id": "networkPolicy.allowEgress",
+        "params": {
+          "object": "{\"apiVersion\":\"networking.k8s.io/v1\",\"kind\":\"NetworkPolicy\",\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"zeabur\"},\"name\":\"zeabur-allow-to-web-worker\",\"namespace\":\"shop\"},\"spec\":{\"egress\":[{\"to\":[{\"podSelector\":{\"matchLabels\":{\"app\":\"web\"}}}]}],\"podSelector\":{\"matchLabels\":{\"app\":\"worker\"}},\"policyTypes\":[\"Egress\"]}}"
+        }
+      }
+    }
+  }
+]

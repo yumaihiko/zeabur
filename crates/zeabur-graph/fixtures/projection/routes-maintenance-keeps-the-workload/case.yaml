@@ -1,0 +1,2 @@
+description: A host in maintenance has a maintenance Ingress that the Ingress owns and that sends to the page server. The maintenance Ingress is not a route of its own; the Ingress keeps its rules to the workload and lists the host as in maintenance.
+operation: projection.routes

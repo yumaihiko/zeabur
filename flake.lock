@@ -1,0 +1,222 @@
+{
+  "nodes": {
+    "catalog": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1793022000,
+        "narHash": "sha256-o2ZCVKkIViKLQ+MIcIUrWH8VburJ1jVe83ajtP3dwn0=",
+        "ref": "refs/heads/main",
+        "rev": "9f4e27b8cea45c0087063d78da63344a25ff6ab5",
+        "revCount": 1,
+        "type": "git",
+        "url": "ssh://git@github.com/zeabur-oss/catalog.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/zeabur-oss/catalog.git"
+      }
+    },
+    "fenix": {
+      "inputs": {
+        "nixpkgs": [
+          "zhtw-mcp",
+          "nixpkgs"
+        ],
+        "rust-analyzer-src": "rust-analyzer-src"
+      },
+      "locked": {
+        "lastModified": 1790858958,
+        "narHash": "sha256-am3DS8g9vyeQLKk9QQvmJoZLHGBUB1rtd6zVaGeq2Mc=",
+        "rev": "025bf5b6b0293c5ee3a3506a7e43ba64bc8bb1b7",
+        "revCount": 2805,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/nix-community/fenix/0.1.2805%2Brev-025bf5b6b0293c5ee3a3506a7e43ba64bc8bb1b7/01a0f7fd-201c-7141-9966-113030740054/source.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://flakehub.com/f/nix-community/fenix/0.1"
+      }
+    },
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1791914995,
+        "narHash": "sha256-Zf/xfQEAasnwnmEfHqW/4hjDE/s44yn2hD4RuVIZRjA=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "b7a79d3fea1e214f6d668d521cecec0c01e26544",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "kache": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": [
+          "rust-overlay"
+        ],
+        "treefmt-nix": "treefmt-nix"
+      },
+      "locked": {
+        "lastModified": 1792081631,
+        "narHash": "sha256-thzKe50UE6CKYYfKNrVyNdgQdAqr0bLRYOZzvWwlxW8=",
+        "owner": "kunobi-ninja",
+        "repo": "kache",
+        "rev": "96052b4842239bb216f6c4812054203c21550788",
+        "type": "github"
+      },
+      "original": {
+        "owner": "kunobi-ninja",
+        "ref": "v1.2.2",
+        "repo": "kache",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1792812153,
+        "narHash": "sha256-T2+XBfNbf9pecLUWS4+RtuVNZ3W8K5taG5QdV71mWlk=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "674a2028661e550a97400c1cc992b9cca9a668a1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1792773339,
+        "narHash": "sha256-rZLrzrC6i+jnTAlvPZHogKDulY7WWDEv9hJeHieO7Zw=",
+        "rev": "3ec636362e1816bc2f0888fa0fa2c69f1bc9e504",
+        "revCount": 1100280,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/NixOS/nixpkgs/0.1.1100280%2Brev-3ec636362e1816bc2f0888fa0fa2c69f1bc9e504/01a17194-8758-7043-ac6b-726b42e30e85/source.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://flakehub.com/f/NixOS/nixpkgs/0.1"
+      }
+    },
+    "root": {
+      "inputs": {
+        "catalog": "catalog",
+        "kache": "kache",
+        "nixpkgs": "nixpkgs_2",
+        "rust-overlay": "rust-overlay",
+        "zhtw-mcp": "zhtw-mcp"
+      }
+    },
+    "rust-analyzer-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790532271,
+        "narHash": "sha256-j8y/AO3AMDF9p+11aIDhnA21JnNj5PjvcejTI43vI8Q=",
+        "owner": "rust-lang",
+        "repo": "rust-analyzer",
+        "rev": "03fcb77246f2568adb0e9b2fa60d19c6cc1686f4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rust-lang",
+        "ref": "nightly",
+        "repo": "rust-analyzer",
+        "type": "github"
+      }
+    },
+    "rust-overlay": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1792913333,
+        "narHash": "sha256-wjoZGhxH/Yr+OsFRpNyV9DpMGQIdNEjjAOinfzQvadk=",
+        "rev": "fad80eb74614f7dc37c1c83df8caae64361eda22",
+        "revCount": 2347,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/oxalica/rust-overlay/0.1.2347%2Brev-fad80eb74614f7dc37c1c83df8caae64361eda22/01a17424-3e3a-7a40-bfd9-0660ff121157/source.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://flakehub.com/f/oxalica/rust-overlay/0.1"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "treefmt-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "kache",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1784369104,
+        "narHash": "sha256-47cxbcZODibHv3rELFQ9vZly0vUNkND/atn/U7HLeb0=",
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "rev": "df3c0640565d04a0261253cdd89fce78ec50168a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "type": "github"
+      }
+    },
+    "zhtw-mcp": {
+      "inputs": {
+        "fenix": "fenix",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1791166685,
+        "narHash": "sha256-ncvYESRSMGUNSs+gviiSKxJiyFd+CpBNlAAddgPGLjI=",
+        "owner": "sysprog21",
+        "repo": "zhtw-mcp",
+        "rev": "5b385b3d66b1554f6f9ae036017ef06dd8ec0da6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sysprog21",
+        "repo": "zhtw-mcp",
+        "rev": "5b385b3d66b1554f6f9ae036017ef06dd8ec0da6",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
