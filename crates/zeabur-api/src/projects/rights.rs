@@ -64,8 +64,6 @@ pub struct ProjectRights {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClusterRights {
-    /// Install components with Zeabur: `create` on `helmcharts.helm.cattle.io` in `kube-system`.
-    pub install_components: Permission,
     /// Change nodes (labels, taints, cordon): `patch` on nodes.
     pub change_nodes: Permission,
     /// Set up Velero backups: `create` on `schedules.velero.io`. The backups page asks again in
@@ -221,14 +219,12 @@ impl ClusterRights {
     pub fn of(rules: Option<&AccessRules>) -> Self {
         let Some(rules) = rules else {
             return Self {
-                install_components: Permission::Unknown,
                 change_nodes: Permission::Unknown,
                 change_backups: Permission::Unknown,
             };
         };
         let ask = Ask(rules);
         Self {
-            install_components: ask.can("create", "helm.cattle.io", "helmcharts"),
             change_nodes: ask.can("patch", "", "nodes"),
             change_backups: ask.can("create", "velero.io", "schedules"),
         }
@@ -296,7 +292,6 @@ mod tests {
             assert_eq!(answer, "allowed", "{right}");
         }
         let cluster = ClusterRights::of(Some(&AccessRules::everything()));
-        assert_eq!(cluster.install_components, Permission::Allowed);
         assert_eq!(cluster.change_nodes, Permission::Allowed);
         assert_eq!(cluster.change_backups, Permission::Allowed);
     }
@@ -309,10 +304,7 @@ mod tests {
         assert_eq!(viewer.deploy, Permission::Unknown);
         assert_eq!(viewer.read_logs, Permission::Unknown);
         assert_eq!(ProjectRights::unknown().change_members, Permission::Unknown);
-        assert_eq!(
-            ClusterRights::of(None).install_components,
-            Permission::Unknown
-        );
+        assert_eq!(ClusterRights::of(None).change_nodes, Permission::Unknown);
     }
 
     #[test]
@@ -342,14 +334,13 @@ mod tests {
     }
 
     #[test]
-    fn the_member_roles_install_no_components_and_change_no_nodes() {
+    fn the_member_roles_change_no_nodes_or_backups() {
         for role in [ProjectRole::Developer, ProjectRole::Viewer] {
             let mut rules = roles()[role.cluster_role()].clone();
             rules
                 .rules
                 .extend(roles()[crate::members::access::BASELINE_ROLE].rules.clone());
             let cluster = ClusterRights::of(Some(&rules));
-            assert_eq!(cluster.install_components, Permission::Denied, "{role:?}");
             assert_eq!(cluster.change_nodes, Permission::Denied, "{role:?}");
             assert_eq!(cluster.change_backups, Permission::Denied, "{role:?}");
         }

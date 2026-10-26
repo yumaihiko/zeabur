@@ -64,8 +64,8 @@ import {
 import { deployKeyPage, parseRepository } from "@/model/git-service"
 import { imageTag, isTask, type Service } from "@/model/service"
 
-const InstallSheet = lazy(() =>
-  import("@/routes/cluster/install-sheet").then((m) => ({ default: m.InstallSheet })),
+const InstallerSheet = lazy(() =>
+  import("@/routes/cluster/installer-sheet").then((m) => ({ default: m.InstallerSheet })),
 )
 
 /** The service's builds, when a Zeabur Builder `Build` makes one of its images. */
@@ -550,11 +550,10 @@ function AutoUpdate({
       ) : null}
       {installing ? (
         <Suspense fallback={null}>
-          <InstallSheet
+          <InstallerSheet
             component="image-updates/keel"
             name="Keel"
             installed={false}
-            onProfile={() => undefined}
             onClose={() => setInstalling(false)}
           />
         </Suspense>

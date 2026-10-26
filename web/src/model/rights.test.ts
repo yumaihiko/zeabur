@@ -20,7 +20,7 @@ describe("closing an action by the person's rights", () => {
   })
 
   test("a denial closes it for an admin account too", () => {
-    expect(gate("installComponents", "denied", admin)).toMatchObject({ open: false, role: "admin" })
+    expect(gate("changeNodes", "denied", admin)).toMatchObject({ open: false, role: "admin" })
   })
 
   test("someone signed in with a kubeconfig is told the rule, not a role", () => {
@@ -31,11 +31,10 @@ describe("closing an action by the person's rights", () => {
     })
   })
 
-  test("members, components and nodes need an admin; everything else in a project a developer", () => {
+  test("members and nodes need an admin; everything else in a project a developer", () => {
     const admin = new Set(["changeMembers"])
     for (const right of Object.keys(unknownRights()) as (keyof ReturnType<typeof unknownRights>)[])
       expect(neededRole(right)).toBe(admin.has(right) ? "admin" : "developer")
-    expect(neededRole("installComponents")).toBe("admin")
     expect(neededRole("changeNodes")).toBe("admin")
     expect(ruleOf("readSecrets")).toBe("get secrets")
   })

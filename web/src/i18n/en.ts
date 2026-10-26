@@ -1129,6 +1129,23 @@ export const en = {
   "settings.optional": "Optional",
   "settings.unsupported": "Not supported",
   "settings.installCommand": "Install",
+  "settings.removeCommand": "Remove",
+  "installer.intro":
+    "zeabur-installer installs and removes components. Run it on the server it installed the cluster on.",
+  "installer.gui": (name: string) =>
+    `Open the installer's page, tick ${name} under Components, and install:`,
+  "installer.guiRemove": (name: string) =>
+    `Open the installer's page, untick ${name} under Components, and install:`,
+  "installer.guiReach":
+    "The page listens on 127.0.0.1:8085 on the server. Reach it with ssh -L 8085:127.0.0.1:8085.",
+  "installer.config": (path: string) => `Or add it to enable in ${path}, then apply:`,
+  "installer.configRemove": (path: string) =>
+    `Or take it out of enable in ${path} (for a component the preset installs, add it to disable), then apply:`,
+  "installer.stays":
+    "Its namespace, CRDs and volumes stay. The installer docs say how to delete them.",
+  "installer.elsewhere": "If Helm, K3s or a GitOps tool installed it, remove it with that tool.",
+  "installer.otherCluster":
+    "For a cluster that zeabur-installer didn't install, print the manifests. Apply them with kubectl, or commit them to your GitOps repository. Add --format helm for Helm commands.",
   "settings.homepage": "Home page",
   "settings.opensInNewTab": "(opens in a new tab)",
   "category.traffic": "Traffic",
@@ -1949,56 +1966,6 @@ export const en = {
   "fix.addVolume": (container: string, path: string) => `Keep ${path} of ${container} on a volume`,
   "fix.isolateProject": (project: string) => `Isolate the services of ${project}`,
   "gap.unreadable": "Some checks need rights you don't have.",
-  "install.title": "Install",
-  "install.helm": "Run these commands where helm and kubectl can reach the cluster.",
-  "install.noController":
-    "Zeabur can install it for you when the cluster runs K3s, RKE2, Flux or Argo CD.",
-  "install.installed": "Already installed in this cluster.",
-  "install.yourself": "Apply it with kubectl, or commit it to your GitOps repository.",
-  "install.blocked.k3sPackaged":
-    "Zeabur doesn't install this one itself: K3s and RKE2 ship their own copy, which has to be turned off on the servers first.",
-  "install.blocked.inputs": "Zeabur doesn't install this one itself: it needs values you fill in.",
-  "install.blocked.manifests":
-    "Zeabur doesn't install this one itself: part of it is plain manifests, not a chart.",
-  "install.blocked.privileged":
-    "Zeabur doesn't install this one itself: it needs access to the host, so its Namespace must be set to Unrestricted first. The text below does that.",
-  "install.tool.k3s": "the K3s/RKE2 Helm controller",
-  "install.tool.flux": "Flux",
-  "install.tool.argoCd": "Argo CD",
-  "install.planWhat": (namespace: string, tool: string) =>
-    `Zeabur creates these objects in ${namespace}, and ${tool} installs the chart from them. You check each object before anything is created.`,
-  "install.planAction": "Review and install",
-  "install.planTitle": (name: string) => `Install ${name}`,
-  "install.after": (tool: string) =>
-    `${tool} installs the chart once the objects exist, usually within a few minutes.`,
-  "install.afterRemove": (tool: string) =>
-    `${tool} installs the chart once the objects exist, usually within a few minutes. To remove it, delete these objects.`,
-  "install.profile": "Profile",
-  "install.singleNode": "Single node",
-  "install.multiNode": "Several nodes",
-  "install.forCluster": "fits this cluster",
-  "install.notes": "Notes",
-  "install.needs": "Install first",
-  "install.security": "Permissions",
-  "install.clusterWide": "Cluster-wide RBAC",
-  "install.privileged": "Privileged",
-  "install.connectsTo": "Connects to",
-  "install.credentials": "Credentials",
-  "install.risks": "Risks",
-  "install.inputs": "Values to fill in",
-  "install.generated": "generated",
-  "install.required": "required",
-  "install.alsoAdds": "Also adds values to",
-  "install.k3sPackaged": (addon: string) =>
-    `On K3s, first turn off the packaged ${addon}: add it to disable in /etc/rancher/k3s/config.yaml on every server, then restart k3s.`,
-  "install.rke2Packaged": (name: string) =>
-    `On RKE2, add ${name} to disable in /etc/rancher/rke2/config.yaml on every server, then restart rke2-server.`,
-  "install.rke2PackagedIngress":
-    "On RKE2, set ingress-controller: none in /etc/rancher/rke2/config.yaml on every server, then restart rke2-server.",
-  "install.k3sPackagedTraefik":
-    "That deletes the Traefik CRDs and any IngressRoute or Middleware objects; Ingress traffic stops until this one runs.",
-  "install.k3sPackagedMetrics": "The metrics API is unavailable until this one runs.",
-  "install.k3sPackagedOther": "Its workloads stop until this one runs.",
   "reach.title": "Connection rules",
   "reach.addPolicy": "Add rule",
   "reach.isolate": "Isolate this service",
@@ -2551,7 +2518,7 @@ export const en = {
   "add.templateDeploy": (name: string) => `Deploy ${name}`,
   "add.templateBack": "All templates",
   "add.templateMissingBody":
-    "This app runs on that component. Install it from Components, then come back.",
+    "This app runs on that component. Install it with zeabur-installer on the server, then come back.",
   "add.templateInstall": (name: string) => `Install ${name}`,
   "add.templateUnknown": (names: string) =>
     `Zeabur can't tell whether ${names} is installed. If it isn't, the review says so.`,

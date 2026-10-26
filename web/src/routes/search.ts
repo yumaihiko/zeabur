@@ -146,13 +146,9 @@ export const objectsSearch = z.object({
   empty: flag,
 })
 
-export const profiles = ["single-node", "multi-node"] as const
-
 export const componentsSearch = z.object({
-  /** `capability/id` of the component whose install texts are open. */
+  /** `capability/id` of the component whose installer commands are open. */
   component: text,
-  /** The cluster's own when absent. */
-  profile: choice(profiles),
 })
 
 /** Cluster → GitHub: what GitHub sends back at the end of its manifest flow, and the project

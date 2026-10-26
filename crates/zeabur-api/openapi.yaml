@@ -275,48 +275,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
-  "/api/v1/cluster/components/{capability}/{component}/install":
-    get:
-      tags:
-      - cluster
-      summary: |-
-        How to install a catalogue component: Helm commands, a k3s `HelmChart`, Flux objects or an
-        Argo CD `Application`, with the catalogue's pinned versions and values. An object form is listed
-        only when the cluster serves its controller, with the objects a plan creates.
-      operationId: guide_for
-      parameters:
-      - name: capability
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: component
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: profile
-        in: query
-        description: "`single-node` or `multi-node`; by default the one that fits the cluster's node count."
-        required: false
-        schema:
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InstallAnswer"
-        "400":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-        "404":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
   /api/v1/cluster/config-reload:
     get:
       tags:
@@ -6699,7 +6657,6 @@ components:
       type: object
       description: What the person may change in the cluster itself.
       required:
-      - installComponents
       - changeNodes
       - changeBackups
       properties:
@@ -6711,9 +6668,6 @@ components:
         changeNodes:
           $ref: "#/components/schemas/Permission"
           description: "Change nodes (labels, taints, cordon): `patch` on nodes."
-        installComponents:
-          $ref: "#/components/schemas/Permission"
-          description: "Install components with Zeabur: `create` on `helmcharts.helm.cattle.io` in `kube-system`."
     ClusterToolsApplied:
       type: object
       description: What an apply did.
@@ -9983,120 +9937,6 @@ components:
           - $ref: "#/components/schemas/RegistryLogin"
             description: Credentials typed in, used instead of `pullSecret`.
           - type: "null"
-    InstallAnswer:
-      allOf:
-      - $ref: "#/components/schemas/InstallGuide"
-        description: The guide for the chosen profile.
-      - type: object
-        required:
-        - defaultProfile
-        properties:
-          defaultProfile:
-            type: string
-            description: |-
-              The profile that fits the cluster's node count (`single-node` when nodes could not be
-              counted).
-      description: How to install one component, and the profile that fits this cluster.
-    InstallBlocked:
-      type: string
-      description: Why a plan cannot install a component; the texts still work.
-      enum:
-      - k3sPackaged
-      - inputs
-      - manifests
-      - privileged
-    InstallFormat:
-      type: string
-      description: One way to install a component.
-      enum:
-      - helm
-      - k3s
-      - flux
-      - argoCd
-    InstallGuide:
-      type: object
-      description: How to install one catalogue component, for one profile.
-      required:
-      - component
-      - profile
-      - profiles
-      - requires
-      - security
-      - inputs
-      - contributesTo
-      - replacesK3sPackaged
-      - formats
-      properties:
-        blocked:
-          oneOf:
-          - $ref: "#/components/schemas/InstallBlocked"
-            description: Why no plan can install it.
-          - type: "null"
-        component:
-          type: string
-          description: "`<capability>/<id>`."
-        contributesTo:
-          type: array
-          items:
-            type: string
-          description: |-
-            Other components whose releases it adds values to (`<capability>/<id>`); those values
-            are not in these texts.
-        formats:
-          type: array
-          items:
-            $ref: "#/components/schemas/InstallText"
-          description: The texts, one per form.
-        inputs:
-          type: array
-          items:
-            $ref: "#/components/schemas/InstallInput"
-          description: Values asked for or generated.
-        profile:
-          type: string
-          description: The profile the texts are for.
-        profiles:
-          type: array
-          items:
-            type: string
-          description: Every profile the catalogue sizes it for.
-        replacesK3sPackaged:
-          type: array
-          items:
-            type: string
-          description: |-
-            K3s packaged components of the same kind (`traefik`, `metrics-server`) that must be
-            turned off on K3s, or their `rke2-` copies on RKE2, before installing this one; each text
-            begins by saying how.
-        requires:
-          type: array
-          items:
-            type: string
-          description: "What it needs installed first: `<capability>` (any provider) or `<capability>/<id>`."
-        security:
-          $ref: "#/components/schemas/Security"
-          description: Its RBAC and network access.
-    InstallInput:
-      type: object
-      description: A value the install needs from the person, or generates.
-      required:
-      - name
-      - description
-      - required
-      - generated
-      properties:
-        description:
-          type: string
-          description: What it is.
-        generated:
-          type: boolean
-          description: It is generated at random, not asked for.
-        name:
-          type: string
-          description: Its name, the `<name>` placeholder in the texts.
-        required:
-          type: boolean
-          description: It must be given.
     InstallSource:
       type: string
       description: How a component was installed.
@@ -10106,32 +9946,6 @@ components:
       - helm-chart
       - helm
       - other
-    InstallText:
-      type: object
-      description: One rendering of the install.
-      required:
-      - format
-      - text
-      - objects
-      properties:
-        format:
-          $ref: "#/components/schemas/InstallFormat"
-          description: The form.
-        namespace:
-          type:
-          - string
-          - "null"
-          description: "The namespace of the objects: `kube-system`, `flux-system` or `argocd`; absent for Helm."
-        objects:
-          type: array
-          items:
-            type: string
-          description: |-
-            The objects a plan creates, YAML, in install order, all in [`Self::namespace`]; empty for
-            Helm and when the guide is blocked.
-        text:
-          type: string
-          description: "The text to copy: shell for Helm, YAML for the others."
     Installation:
       type: object
       description: One installed component.
@@ -15095,19 +14909,6 @@ components:
             $ref: "#/components/schemas/SecretValue"
           propertyNames:
             type: string
-    Risk:
-      type: object
-      description: A known risk of a component.
-      required:
-      - risk
-      - mitigation
-      properties:
-        mitigation:
-          type: string
-          description: How to contain it.
-        risk:
-          type: string
-          description: The risk.
     RiskLocale:
       type: object
       description: A risk's words in one language.
@@ -15955,53 +15756,6 @@ components:
         value:
           type: string
           description: "The value: text as is, binary data as base64."
-    Security:
-      type: object
-      description: What a component's RBAC and network access amount to, from the catalogue.
-      required:
-      - summary
-      properties:
-        clusterWide:
-          type: boolean
-          description: It has cluster-scoped RBAC.
-        credentials:
-          type:
-          - string
-          - "null"
-          description: "External credentials: `optional` or `required`; absent means none."
-        credentialsNote:
-          type:
-          - string
-          - "null"
-          description: What the credentials are for.
-        egress:
-          type: array
-          items:
-            type: string
-          description: Hosts it connects to.
-        podSecurity:
-          type:
-          - string
-          - "null"
-          description: "The Pod Security level its namespaces need when it is not `restricted`: `baseline`."
-        privileged:
-          type: boolean
-          description: It runs privileged.
-        risks:
-          type: array
-          items:
-            $ref: "#/components/schemas/Risk"
-          description: Known risks and how to contain them.
-        summary:
-          type: string
-          description: What its RBAC lets it do.
-        tenants:
-          type:
-          - string
-          - "null"
-          description: |-
-            Who may use its custom resources: `namespaced` or `admin-only`; absent means tenants never
-            do.
     ServerFrame:
       oneOf:
       - type: object

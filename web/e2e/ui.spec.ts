@@ -904,29 +904,15 @@ test("the project's suggestions list what it misses, and a fix is planned and ap
   await expect(limits).toHaveCount(0, { timeout: 15_000 })
 })
 
-test("an install is Helm commands to copy, or objects a plan creates for the cluster's controller", async ({
+test("a component is installed with zeabur-installer on the server, not from the panel", async ({
   page,
 }) => {
-  await page.goto("/cluster/components?component=certificates/cert-manager")
-  const sheet = page.getByRole("dialog", { name: /cert-manager/ })
-  // The texts are tested server-side (crates/zeabur-catalog/tests/golden).
-  const text = (form: string) => sheet.getByRole("figure", { name: new RegExp(` ${form}$`) })
-  await expect(text("Helm")).toContainText("cert-manager")
-  await expect(sheet.getByRole("button", { name: /terminal/ })).toHaveCount(0)
-  await sheet.getByRole("button", { name: /Several nodes/ }).click()
-  await expect(page).toHaveURL(/profile=multi-node/)
-  // Part of cert-manager is plain manifests: the k3s form is text to apply yourself.
-  await sheet.getByRole("tab", { name: "K3s/RKE2 HelmChart" }).click()
-  await expect(text("K3s/RKE2 HelmChart")).toContainText("cert-manager")
-  await expect(sheet).toContainText("Zeabur doesn't install this one itself")
-  await expect(sheet.getByRole("button", { name: "Review and install" })).toHaveCount(0)
-
-  // Reloader is only a chart: the K3s/RKE2 Helm controller installs it from objects a plan creates.
   await page.goto("/cluster/components?component=config-reload/reloader")
-  const reloader = page.getByRole("dialog", { name: /Reloader/ })
-  await reloader.getByRole("button", { name: "Review and install" }).click()
-  const plan = page.getByRole("dialog", { name: "Install Stakater Reloader" })
-  await expect(plan).toContainText("HelmChart")
+  const sheet = page.getByRole("dialog", { name: /Reloader/ })
+  await expect(sheet).toContainText("sudo zeabur-installer gui")
+  await expect(sheet).toContainText("sudo zeabur-installer apply")
+  await expect(sheet).toContainText("zeaburctl components export config-reload/reloader")
+  await expect(sheet.getByRole("button", { name: /install/i })).toHaveCount(0)
 })
 
 const noShell = env("ZEABUR_E2E_NO_SHELL")

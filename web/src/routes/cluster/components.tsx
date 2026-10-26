@@ -17,6 +17,7 @@ import HardDrivesIcon from "~icons/ph/hard-drives"
 import HeartbeatIcon from "~icons/ph/heartbeat"
 import LightningIcon from "~icons/ph/lightning"
 import MagnifyingGlassIcon from "~icons/ph/magnifying-glass"
+import MinusCircleIcon from "~icons/ph/minus-circle"
 import PackageIcon from "~icons/ph/package"
 import PulseIcon from "~icons/ph/pulse"
 import ShieldCheckIcon from "~icons/ph/shield-check"
@@ -43,8 +44,8 @@ import { Section } from "@/routes/cluster/section"
 
 const route = getRouteApi("/cluster/components")
 
-const InstallSheet = lazy(() =>
-  import("@/routes/cluster/install-sheet").then((m) => ({ default: m.InstallSheet })),
+const InstallerSheet = lazy(() =>
+  import("@/routes/cluster/installer-sheet").then((m) => ({ default: m.InstallerSheet })),
 )
 
 const categories: {
@@ -145,19 +146,12 @@ export function ComponentsPage() {
     <ClusterFrame tab="components">
       {open ? (
         <Suspense fallback={null}>
-          <InstallSheet
+          <InstallerSheet
             component={open}
             name={opened?.displayName ?? open}
-            notes={opened?.description}
             installed={list.some((c) => opened !== undefined && isInstalled(c, opened))}
-            profile={search.profile}
-            onProfile={(profile) =>
-              void navigate({ search: (previous) => ({ ...previous, profile }), replace: true })
-            }
             onClose={() =>
-              void navigate({
-                search: (previous) => ({ ...previous, component: undefined, profile: undefined }),
-              })
+              void navigate({ search: (previous) => ({ ...previous, component: undefined }) })
             }
           />
         </Suspense>
@@ -305,19 +299,21 @@ function ComponentCard({
           <ArrowSquareOutIcon className="size-3" aria-hidden="true" />
           <span className="sr-only">{t("settings.opensInNewTab")}</span>
         </a>
-        {installed ? null : (
-          <Link
-            from="/cluster/components"
-            search={(previous) => ({
-              ...previous,
-              component: `${capability.name}/${component.id}`,
-            })}
-            className={cn(buttonVariants({ variant: "outline", size: "xs" }), "ml-auto")}
-          >
+        <Link
+          from="/cluster/components"
+          search={(previous) => ({
+            ...previous,
+            component: `${capability.name}/${component.id}`,
+          })}
+          className={cn(buttonVariants({ variant: "outline", size: "xs" }), "ml-auto")}
+        >
+          {installed ? (
+            <MinusCircleIcon aria-hidden="true" data-icon="inline-start" />
+          ) : (
             <DownloadSimpleIcon aria-hidden="true" data-icon="inline-start" />
-            {t("settings.installCommand")}
-          </Link>
-        )}
+          )}
+          {installed ? t("settings.removeCommand") : t("settings.installCommand")}
+        </Link>
       </div>
     </article>
   )

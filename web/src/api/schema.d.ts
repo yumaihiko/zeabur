@@ -187,27 +187,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  "/api/v1/cluster/components/{capability}/{component}/install": {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * How to install a catalogue component: Helm commands, a k3s `HelmChart`, Flux objects or an
-     *     Argo CD `Application`, with the catalogue's pinned versions and values. An object form is listed
-     *     only when the cluster serves its controller, with the objects a plan creates.
-     */
-    get: operations["guide_for"]
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   "/api/v1/cluster/config-reload": {
     parameters: {
       query?: never
@@ -3484,8 +3463,6 @@ export interface components {
       changeBackups: components["schemas"]["Permission"]
       /** @description Change nodes (labels, taints, cordon): `patch` on nodes. */
       changeNodes: components["schemas"]["Permission"]
-      /** @description Install components with Zeabur: `create` on `helmcharts.helm.cattle.io` in `kube-system`. */
-      installComponents: components["schemas"]["Permission"]
     }
     /** @description What an apply did. */
     ClusterToolsApplied: {
@@ -5222,83 +5199,11 @@ export interface components {
       pullSecret?: string | null
       registry?: components["schemas"]["RegistryLogin"] | null
     }
-    /** @description How to install one component, and the profile that fits this cluster. */
-    InstallAnswer: components["schemas"]["InstallGuide"] & {
-      /**
-       * @description The profile that fits the cluster's node count (`single-node` when nodes could not be
-       *     counted).
-       */
-      defaultProfile: string
-    }
-    /**
-     * @description Why a plan cannot install a component; the texts still work.
-     * @enum {string}
-     */
-    InstallBlocked: "k3sPackaged" | "inputs" | "manifests" | "privileged"
-    /**
-     * @description One way to install a component.
-     * @enum {string}
-     */
-    InstallFormat: "helm" | "k3s" | "flux" | "argoCd"
-    /** @description How to install one catalogue component, for one profile. */
-    InstallGuide: {
-      blocked?: components["schemas"]["InstallBlocked"] | null
-      /** @description `<capability>/<id>`. */
-      component: string
-      /**
-       * @description Other components whose releases it adds values to (`<capability>/<id>`); those values
-       *     are not in these texts.
-       */
-      contributesTo: string[]
-      /** @description The texts, one per form. */
-      formats: components["schemas"]["InstallText"][]
-      /** @description Values asked for or generated. */
-      inputs: components["schemas"]["InstallInput"][]
-      /** @description The profile the texts are for. */
-      profile: string
-      /** @description Every profile the catalogue sizes it for. */
-      profiles: string[]
-      /**
-       * @description K3s packaged components of the same kind (`traefik`, `metrics-server`) that must be
-       *     turned off on K3s, or their `rke2-` copies on RKE2, before installing this one; each text
-       *     begins by saying how.
-       */
-      replacesK3sPackaged: string[]
-      /** @description What it needs installed first: `<capability>` (any provider) or `<capability>/<id>`. */
-      requires: string[]
-      /** @description Its RBAC and network access. */
-      security: components["schemas"]["Security"]
-    }
-    /** @description A value the install needs from the person, or generates. */
-    InstallInput: {
-      /** @description What it is. */
-      description: string
-      /** @description It is generated at random, not asked for. */
-      generated: boolean
-      /** @description Its name, the `<name>` placeholder in the texts. */
-      name: string
-      /** @description It must be given. */
-      required: boolean
-    }
     /**
      * @description How a component was installed.
      * @enum {string}
      */
     InstallSource: "k3s" | "rke2" | "helm-chart" | "helm" | "other"
-    /** @description One rendering of the install. */
-    InstallText: {
-      /** @description The form. */
-      format: components["schemas"]["InstallFormat"]
-      /** @description The namespace of the objects: `kube-system`, `flux-system` or `argocd`; absent for Helm. */
-      namespace?: string | null
-      /**
-       * @description The objects a plan creates, YAML, in install order, all in [`Self::namespace`]; empty for
-       *     Helm and when the guide is blocked.
-       */
-      objects: string[]
-      /** @description The text to copy: shell for Helm, YAML for the others. */
-      text: string
-    }
     /** @description One installed component. */
     Installation: {
       /** @description The catalogue component (`traefik`). */
@@ -7798,13 +7703,6 @@ export interface components {
         [key: string]: components["schemas"]["SecretValue"]
       }
     }
-    /** @description A known risk of a component. */
-    Risk: {
-      /** @description How to contain it. */
-      mitigation: string
-      /** @description The risk. */
-      risk: string
-    }
     /** @description A risk's words in one language. */
     RiskLocale: {
       /** @description How to contain it. */
@@ -8245,30 +8143,6 @@ export interface components {
       encoding: string
       /** @description The value: text as is, binary data as base64. */
       value: string
-    }
-    /** @description What a component's RBAC and network access amount to, from the catalogue. */
-    Security: {
-      /** @description It has cluster-scoped RBAC. */
-      clusterWide?: boolean
-      /** @description External credentials: `optional` or `required`; absent means none. */
-      credentials?: string | null
-      /** @description What the credentials are for. */
-      credentialsNote?: string | null
-      /** @description Hosts it connects to. */
-      egress?: string[]
-      /** @description The Pod Security level its namespaces need when it is not `restricted`: `baseline`. */
-      podSecurity?: string | null
-      /** @description It runs privileged. */
-      privileged?: boolean
-      /** @description Known risks and how to contain them. */
-      risks?: components["schemas"]["Risk"][]
-      /** @description What its RBAC lets it do. */
-      summary: string
-      /**
-       * @description Who may use its custom resources: `namespaced` or `admin-only`; absent means tenants never
-       *     do.
-       */
-      tenants?: string | null
     }
     /** @description A control frame to the browser. */
     ServerFrame:
@@ -9959,47 +9833,6 @@ export interface operations {
         }
       }
       403: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          "application/problem+json": components["schemas"]["Problem"]
-        }
-      }
-    }
-  }
-  guide_for: {
-    parameters: {
-      query?: {
-        /** @description `single-node` or `multi-node`; by default the one that fits the cluster's node count. */
-        profile?: string
-      }
-      header?: never
-      path: {
-        capability: string
-        component: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          "application/json": components["schemas"]["InstallAnswer"]
-        }
-      }
-      400: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          "application/problem+json": components["schemas"]["Problem"]
-        }
-      }
-      404: {
         headers: {
           [name: string]: unknown
         }

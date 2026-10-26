@@ -1051,6 +1051,18 @@ export const zhCN: Messages = {
   "settings.optional": "可选",
   "settings.unsupported": "不支持",
   "settings.installCommand": "安装",
+  "settings.removeCommand": "移除",
+  "installer.intro": "组件由 zeabur-installer 安装和移除，要在当初装集群的那台服务器上运行。",
+  "installer.gui": (name) => `打开安装程序的页面，在“组件”勾选 ${name}，然后安装：`,
+  "installer.guiRemove": (name) => `打开安装程序的页面，在“组件”取消勾选 ${name}，然后安装：`,
+  "installer.guiReach": "页面只开在服务器的 127.0.0.1:8085，用 ssh -L 8085:127.0.0.1:8085 连过去。",
+  "installer.config": (path) => `或在 ${path} 的 enable 加上它，再运行 apply：`,
+  "installer.configRemove": (path) =>
+    `或从 ${path} 的 enable 去掉它，预设就会装的组件则加到 disable，再运行 apply：`,
+  "installer.stays": "它的命名空间、CRD 和存储卷会保留，要删掉的话，安装程序文档有写怎么做。",
+  "installer.elsewhere": "如果是用 Helm、K3s 或 GitOps 工具装的，就用同一个工具移除。",
+  "installer.otherCluster":
+    "集群不是用 zeabur-installer 装的话，可以打印 manifests，用 kubectl 应用，或提交到 GitOps 仓库。加上 --format helm 会改为打印 Helm 命令。",
   "settings.homepage": "主页",
   "settings.opensInNewTab": "（在新标签页打开）",
   "category.traffic": "流量",
@@ -1799,54 +1811,6 @@ export const zhCN: Messages = {
   "fix.addVolume": (container, path) => `把 ${container} 的 ${path} 存到卷上`,
   "fix.isolateProject": (project: string) => `隔离 ${project} 的服务`,
   "gap.unreadable": "部分检查需要你没有的权限。",
-  "install.title": "安装",
-  "install.helm": "在能用 helm 和 kubectl 连到集群的电脑上运行这些命令。",
-  "install.noController": "集群用的是 K3s、RKE2，或装了 Flux、Argo CD 时，Zeabur 可以帮你安装。",
-  "install.installed": "这个集群已经装好了。",
-  "install.yourself": "用 kubectl 应用，或提交到 GitOps 仓库。",
-  "install.blocked.k3sPackaged":
-    "这个组件不由 Zeabur 直接安装：K3s 和 RKE2 都内置了一份，要先在每台 server 上禁用。",
-  "install.blocked.inputs": "这个组件不由 Zeabur 直接安装：需要你填入一些值。",
-  "install.blocked.manifests":
-    "这个组件不由 Zeabur 直接安装：其中有一部分是普通 manifest，不是 chart。",
-  "install.blocked.privileged":
-    "这个组件不由 Zeabur 直接安装：它需要访问主机，所在的 Namespace 要先设为“不受限”。下方的内容已包含这一步。",
-  "install.tool.k3s": "K3s/RKE2 的 Helm 控制器",
-  "install.tool.flux": "Flux",
-  "install.tool.argoCd": "Argo CD",
-  "install.planWhat": (namespace, tool) =>
-    `Zeabur 会在 ${namespace} 创建这些对象，再由 ${tool} 安装 chart。创建前会先让你检查每个对象。`,
-  "install.planAction": "检查并安装",
-  "install.planTitle": (name: string) => `安装 ${name}`,
-  "install.after": (tool) => `对象创建后，${tool} 通常会在几分钟内装好 chart。`,
-  "install.afterRemove": (tool) =>
-    `对象创建后，${tool} 通常会在几分钟内装好 chart。要移除时，删除这些对象即可。`,
-  "install.profile": "安装方式",
-  "install.singleNode": "单节点",
-  "install.multiNode": "多节点",
-  "install.forCluster": "适合这个集群",
-  "install.notes": "备注",
-  "install.needs": "需要先安装",
-  "install.security": "权限",
-  "install.clusterWide": "集群范围的 RBAC",
-  "install.privileged": "特权模式",
-  "install.connectsTo": "会连接到",
-  "install.credentials": "凭证",
-  "install.risks": "风险",
-  "install.inputs": "需要填入的值",
-  "install.generated": "自动生成",
-  "install.required": "必填",
-  "install.alsoAdds": "也会为这些组件添加值",
-  "install.k3sPackaged": (addon: string) =>
-    `在 K3s 上，先禁用内置的 ${addon}：在每台 server 的 /etc/rancher/k3s/config.yaml 中把它加入 disable，然后重启 k3s。`,
-  "install.rke2Packaged": (name: string) =>
-    `在 RKE2 上，在每台 server 的 /etc/rancher/rke2/config.yaml 中把 ${name} 加入 disable，然后重启 rke2-server。`,
-  "install.rke2PackagedIngress":
-    "在 RKE2 上，在每台 server 的 /etc/rancher/rke2/config.yaml 中设置 ingress-controller: none，然后重启 rke2-server。",
-  "install.k3sPackagedTraefik":
-    "这会删除 Traefik 的 CRD 以及所有 IngressRoute、Middleware 对象。这个组件开始运行前，Ingress 流量会中断。",
-  "install.k3sPackagedMetrics": "这个组件开始运行前，metrics API 不可用。",
-  "install.k3sPackagedOther": "这个组件开始运行前，内置版本的工作负载会停止。",
   "reach.title": "连接规则",
   "reach.addPolicy": "添加规则",
   "reach.isolate": "隔离这个服务",
@@ -2343,7 +2307,8 @@ export const zhCN: Messages = {
   "add.templateMissing": (names) => `需要先安装 ${names}`,
   "add.templateDeploy": (name) => `部署 ${name}`,
   "add.templateBack": "所有模板",
-  "add.templateMissingBody": "这个应用要靠这个组件才能运行。先到组件页面安装，再回来部署。",
+  "add.templateMissingBody":
+    "这个应用要靠这个组件才能运行。先在服务器上用 zeabur-installer 装好，再回来部署。",
   "add.templateInstall": (name) => `安装 ${name}`,
   "add.templateUnknown": (names) =>
     `Zeabur 无法确认 ${names} 是否已安装；如果没装，检查变更时会提醒你。`,

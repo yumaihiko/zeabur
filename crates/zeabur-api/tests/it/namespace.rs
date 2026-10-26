@@ -353,14 +353,14 @@ mod tests {
     /// The cluster says whether the person may install components, from a review in
     /// `kube-system`.
     #[tokio::test]
-    async fn the_cluster_says_whether_the_person_may_install_components() {
+    async fn the_cluster_says_whether_the_person_may_change_nodes_and_backups() {
         let cluster = cluster();
         let app = app(&cluster);
         let (status, open) = send(&app, "GET", "/api/v1/cluster", None).await;
         assert_eq!(status, StatusCode::OK, "{open}");
         assert_eq!(
             open["can"],
-            json!({"installComponents": "allowed", "changeNodes": "allowed", "changeBackups": "allowed"})
+            json!({"changeNodes": "allowed", "changeBackups": "allowed"})
         );
         cluster.update(|s| {
             s.access_rules.insert(
@@ -374,7 +374,7 @@ mod tests {
         let (_, member) = send(&app, "GET", "/api/v1/cluster", None).await;
         assert_eq!(
             member["can"],
-            json!({"installComponents": "denied", "changeNodes": "denied", "changeBackups": "denied"})
+            json!({"changeNodes": "denied", "changeBackups": "denied"})
         );
     }
 

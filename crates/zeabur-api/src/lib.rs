@@ -21,7 +21,6 @@
 //! | `GET /api/v1/cluster/tools/{name}/terminal` | a terminal in it, `kubectl` and `helm` acting as you, over a WebSocket |
 //! | `GET /api/v1/cluster/backups` | Velero's backup locations (and whether Velero reaches them), schedules and newest backups, or that Velero is not installed |
 //! | `GET /api/v1/cluster/capabilities` | what is installed (with versions), and what to install |
-//! | `GET /api/v1/cluster/components/{capability}/{component}/install` | how to install it yourself, in four forms |
 //! | `GET /api/v1/cluster/templates` | the catalogue's templates: what each asks for and requests, and whether its components are there |
 //! | `GET /api/v1/cluster/templates/{template}` | one of them, with what its pods use when idle |
 //! | `GET /api/v1/settings/metrics-store` | the metrics store history is read from, whether it answers, who may change it |
@@ -235,7 +234,6 @@ fn cluster_routes(router: OpenApiRouter<AppState>) -> OpenApiRouter<AppState> {
         .routes(routes!(notifications::cluster_plan))
         .routes(routes!(notifications::cluster_apply))
         .routes(routes!(cluster::config_reload::get))
-        .routes(routes!(cluster::install::guide_for))
         .routes(routes!(cluster::templates::list))
         .routes(routes!(cluster::templates::get))
         .routes(routes!(cluster::node_shells::list))

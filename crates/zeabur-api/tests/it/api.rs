@@ -1016,7 +1016,7 @@ mod tests {
             about,
             json!({"name": "k3d-zeabur", "nameSource": "kubeconfig",
                    "kubernetesVersion": "v1.36.5+k3s1", "distribution": "k3s", "domains": {}, "builds": {},
-                   "can": {"installComponents": "allowed", "changeNodes": "allowed", "changeBackups": "allowed"}})
+                   "can": {"changeNodes": "allowed", "changeBackups": "allowed"}})
         );
 
         let capabilities = get(&cluster, "/api/v1/cluster/capabilities").await;
@@ -1453,7 +1453,6 @@ mod tests {
         own::<zeabur_api::projects::writes::ApplyRequest>(&mut expected);
         own::<zeabur_api::projects::writes::ApplyResponse>(&mut expected);
         own::<zeabur_api::gaps::GapList>(&mut expected);
-        own::<zeabur_api::cluster::install::InstallAnswer>(&mut expected);
         own::<ProjectList>(&mut expected);
         own::<ProjectDocument>(&mut expected);
         own::<ServiceDocument>(&mut expected);
@@ -1655,45 +1654,6 @@ mod tests {
             );
         });
         assert!(find(&get(&cluster, "/api/v1/projects/shop/gaps").await).is_none());
-    }
-
-    #[tokio::test]
-    async fn install_texts_come_for_the_profile_asked() {
-        let cluster = cluster();
-        let guide = get(
-            &cluster,
-            "/api/v1/cluster/components/certificates/cert-manager/install",
-        )
-        .await;
-        assert_eq!(guide["defaultProfile"], "single-node");
-        assert_eq!(guide["profile"], "single-node");
-        assert_eq!(guide["formats"][0]["format"], "helm");
-        assert!(
-            guide["formats"][0]["text"]
-                .as_str()
-                .unwrap()
-                .contains("helm upgrade --install cert-manager oci://")
-        );
-        let multi = get(
-            &cluster,
-            "/api/v1/cluster/components/certificates/cert-manager/install?profile=multi-node",
-        )
-        .await;
-        assert_eq!(multi["profile"], "multi-node");
-        let (status, ..) = call(
-            app(&cluster),
-            "GET",
-            "/api/v1/cluster/components/certificates/nope/install",
-        )
-        .await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
-        let (status, ..) = call(
-            app(&cluster),
-            "GET",
-            "/api/v1/cluster/components/certificates/cert-manager/install?profile=huge",
-        )
-        .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

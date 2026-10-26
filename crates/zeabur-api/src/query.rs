@@ -21,18 +21,6 @@ pub(crate) const MAX_LIMIT: usize = 500;
 /// Events per answer when the client names no `limit`.
 pub(crate) const DEFAULT_LIMIT: usize = 100;
 
-/// The `profile` parameter of an install guide (for the description; parsed by hand).
-#[expect(
-    dead_code,
-    reason = "describes the parameter in the OpenAPI document; parsed by hand"
-)]
-#[derive(Debug, Default, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub(crate) struct ProfileParams {
-    /// `single-node` or `multi-node`; by default the one that fits the cluster's node count.
-    profile: Option<String>,
-}
-
 /// The `limit` parameter of the event lists (for the description; parsed by [`EventQuery`]).
 #[expect(
     dead_code,

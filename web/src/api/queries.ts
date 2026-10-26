@@ -293,19 +293,6 @@ export const clusterGapsQuery = queryOptions({
   staleTime: 60_000,
 })
 
-export const installQuery = (capability: string, component: string, profile?: string) =>
-  queryOptions({
-    queryKey: ["cluster", "install", capability, component, profile ?? "default"],
-    queryFn: async ({ signal }) =>
-      unwrap(
-        await api.GET("/api/v1/cluster/components/{capability}/{component}/install", {
-          params: { path: { capability, component }, query: profile ? { profile } : {} },
-          signal,
-        }),
-      ),
-    staleTime: Infinity,
-  })
-
 export const clusterBackupsQuery = queryOptions({
   queryKey: ["cluster", "backups"],
   queryFn: async ({ signal }) => unwrap(await api.GET("/api/v1/cluster/backups", { signal })),
