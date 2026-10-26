@@ -997,7 +997,7 @@ export const zhCN: Messages = {
   "storage.about.other": "行为由它的驱动决定。",
   "storage.container": "挂载到容器",
   "storage.grows": "之后可以扩容，不能缩小。",
-  "storage.fixedSize": "之后不能扩容，请一次选好需要的大小。",
+  "storage.fixedSize": "创建后就不能扩容，请一次选好需要的大小。",
   "storage.growUnknown": "之后能否扩容，由集群的存储类决定。",
   "storage.selfReplicating": (engine: string) =>
     `${engine} 会自己把数据复制到其他实例，所以适合用本地磁盘。`,

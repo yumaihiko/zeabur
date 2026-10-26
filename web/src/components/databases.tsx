@@ -175,6 +175,10 @@ function Licence({ engine }: { engine: Engine }) {
   )
 }
 
+/** The engine that keeps its own copies, which only matters with more than one instance. */
+const replicatingEngine = (form: { members: number; engine: Engine }) =>
+  form.members > 1 ? engineName(form.engine) : undefined
+
 export function NewDatabaseDrawer({
   project,
   engines: available,
@@ -307,7 +311,7 @@ export function NewDatabaseDrawer({
         <StorageClassField
           storage={storage}
           value={form.storageClass}
-          engine={engineName(form.engine)}
+          engine={replicatingEngine(form)}
           onChange={(name) => set({ storageClass: chosenClass(storage, name) })}
         />
         <Licence engine={form.engine} />

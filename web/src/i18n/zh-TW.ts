@@ -1001,7 +1001,7 @@ export const zhTW: Messages = {
   "storage.about.other": "行為由它的驅動程式決定。",
   "storage.container": "掛載到容器",
   "storage.grows": "之後可以擴充，不能縮小。",
-  "storage.fixedSize": "之後不能擴充，請一次選好需要的大小。",
+  "storage.fixedSize": "建立後就不能加大，請一次選好需要的大小。",
   "storage.growUnknown": "之後能否擴充，由叢集的儲存類別決定。",
   "storage.selfReplicating": (engine: string) =>
     `${engine} 會自己把資料複寫到其他執行個體，所以適合用本機磁碟。`,

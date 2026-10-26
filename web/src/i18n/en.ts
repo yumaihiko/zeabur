@@ -1075,7 +1075,7 @@ export const en = {
   "storage.about.other": "How it behaves is up to its driver.",
   "storage.container": "Mount in container",
   "storage.grows": "It can grow later, not shrink.",
-  "storage.fixedSize": "It can't grow later, so choose the size it needs.",
+  "storage.fixedSize": "It can't grow once created, so choose the size it needs.",
   "storage.growUnknown": "Whether it can grow later is up to the cluster's storage class.",
   "storage.selfReplicating": (engine: string) =>
     `${engine} copies its data to its other instances itself, so local disks suit it.`,
