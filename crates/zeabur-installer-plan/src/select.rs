@@ -12,9 +12,6 @@ use crate::PlanError;
 use crate::catalog::{Default, Index};
 use crate::config::{Config, PersonalConfig, Preset};
 
-/// The distribution of a team install.
-pub const DISTRIBUTION: &str = "rke2";
-
 /// The distribution of a personal install.
 pub const PERSONAL_DISTRIBUTION: &str = "kubesolo";
 
@@ -100,7 +97,7 @@ pub fn select(index: &Index, config: &Config) -> Result<Selection, PlanError> {
             enable: &config.enable,
             disable: &config.disable,
             profile,
-            distribution: DISTRIBUTION,
+            distribution: config.distribution.id(),
             offered: None,
         },
     )

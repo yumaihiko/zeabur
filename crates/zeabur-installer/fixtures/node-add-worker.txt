@@ -1,5 +1,6 @@
 install -d -m 0700 /etc/zeabur-installer
 (umask 077; cat > /etc/zeabur-installer/config.yaml) <<'EOF'
+distribution: rke2
 join:
   server: https://10.0.0.5:9345
   role: worker

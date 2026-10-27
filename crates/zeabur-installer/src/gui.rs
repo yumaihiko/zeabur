@@ -22,8 +22,9 @@ use std::thread::{self, JoinHandle};
 use serde_json::{Value, json};
 use zeabur_installer_host::{facts, files, preflight, systemd};
 use zeabur_installer_plan::catalog::{Default, Index};
+use zeabur_installer_plan::cluster::Distribution;
 use zeabur_installer_plan::config::{Config, Document, PersonalConfig};
-use zeabur_installer_plan::select::{self, BUILD_CAPABILITIES, PERSONAL, PERSONAL_DISTRIBUTION};
+use zeabur_installer_plan::select::{BUILD_CAPABILITIES, PERSONAL, PERSONAL_DISTRIBUTION};
 use zeabur_installer_plan::{kubesolo, personal, plan};
 
 use self::http::{Request, Response};
@@ -219,11 +220,23 @@ impl Server {
         let personal = personal.unwrap_or_else(PersonalConfig::defaults);
         let host = facts::read().ok();
         let facts = host.as_ref().map_or(Value::Null, |f| json!(f));
-        let checks = preflight::run(preflight::Options {
-            cluster_running: systemd::is_active("rke2-server"),
-            require_encrypted_disk: team.as_ref().is_some_and(|c| c.host.require_encrypted_disk),
-            node: preflight::Node::Server,
-        });
+        let checks: serde_json::Map<String, Value> = Distribution::ALL
+            .into_iter()
+            .map(|d| {
+                let checks = preflight::run(preflight::Options {
+                    cluster_running: systemd::is_active(d.server_unit()),
+                    require_encrypted_disk: team
+                        .as_ref()
+                        .is_some_and(|c| c.host.require_encrypted_disk),
+                    node: preflight::Node::Server(d),
+                });
+                (d.id().to_owned(), json!(checks))
+            })
+            .collect();
+        let min_memory: serde_json::Map<String, Value> = Distribution::ALL
+            .into_iter()
+            .map(|d| (d.id().to_owned(), json!(d.min_memory_mib())))
+            .collect();
         let personal_checks = preflight::run(preflight::Options {
             cluster_running: systemd::is_active(kubesolo::UNIT),
             require_encrypted_disk: personal.host.require_encrypted_disk,
@@ -259,7 +272,8 @@ impl Server {
                 "use": chosen_use,
                 "config": team,
                 "personal": personal,
-                "teamMinMemoryMib": plan::MIN_MEMORY_MIB,
+                "teamMinMemoryMib": min_memory,
+                "rke2SuggestedMib": plan::RKE2_SUGGESTED_MIB,
                 "configExists": config_exists,
                 "configPath": self.config_path,
                 "catalog": catalog,
@@ -510,7 +524,6 @@ fn catalog_json(index: &Index, profile: &str, arch: &str) -> Value {
                     Default::Optional => "optional",
                     Default::Unsupported => "unsupported",
                 },
-                "supported": c.supports(select::DISTRIBUTION),
                 "personal": c.supports(PERSONAL_DISTRIBUTION)
                     && PERSONAL.contains(&c.capability.as_str()),
                 "distributions": c.distributions,

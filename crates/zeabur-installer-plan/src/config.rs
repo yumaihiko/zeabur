@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::PlanError;
+use crate::cluster::Distribution;
 
 /// The whole configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -33,7 +34,10 @@ pub struct Config {
     pub profile: String,
     /// How people reach Zeabur and Zeabur Identity.
     pub access: Access,
-    /// Install Zeabur Identity and Zeabur; `false` installs RKE2 and the components only.
+    /// `k3s`, the default, or `rke2` for a control plane of three servers.
+    #[serde(default)]
+    pub distribution: Distribution,
+    /// Install Zeabur Identity and Zeabur; `false` installs Kubernetes and the components only.
     #[serde(default = "yes")]
     pub zeabur: bool,
     /// Values for catalog inputs, by component id then input name.
@@ -50,6 +54,8 @@ pub struct Config {
     /// checked only against the release's own checksum list, so the plan warns that it is
     /// unsupported.
     pub rke2_version: Option<String>,
+    /// A K3s release other than the pinned one, such as `v1.37.1+k3s1`, checked the same way.
+    pub k3s_version: Option<String>,
     /// Host settings.
     #[serde(default)]
     pub host: Host,
@@ -65,7 +71,7 @@ pub enum Use {
     /// One person: `KubeSolo` and the components, reached with `zeaburctl ui` and the admin
     /// kubeconfig. No isolation, roles or other nodes.
     Personal,
-    /// A team: RKE2, the components, Zeabur Identity and Zeabur.
+    /// A team: K3s or RKE2, the components, Zeabur Identity and Zeabur.
     #[default]
     Team,
 }
@@ -227,7 +233,7 @@ pub struct Host {
 pub struct Sources {
     /// A catalog `index.json` on disk.
     pub catalog: Option<String>,
-    /// Image archives (`docker save` output) RKE2 imports on start.
+    /// Image archives (`docker save` output) K3s or RKE2 imports on start.
     #[serde(default)]
     pub image_archives: Vec<String>,
     /// Zeabur Identity's image reference.
@@ -243,9 +249,9 @@ pub struct Sources {
 /// A configuration file: a new cluster, or a node joining one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Document {
-    /// The first server: RKE2, the components, Zeabur Identity and Zeabur.
+    /// The first server: K3s or RKE2, the components, Zeabur Identity and Zeabur.
     Install(Config),
-    /// Another node: RKE2 only, joined to an existing cluster.
+    /// Another node: K3s or RKE2 only, joined to an existing cluster.
     Join(JoinConfig),
     /// A personal install on `KubeSolo`.
     Personal(PersonalConfig),
@@ -277,12 +283,17 @@ impl Document {
 pub struct JoinConfig {
     /// The cluster to join.
     pub join: Join,
+    /// The cluster's distribution, as `node add` printed it.
+    #[serde(default)]
+    pub distribution: Distribution,
     /// An RKE2 release other than the pinned one; it must match the cluster's.
     pub rke2_version: Option<String>,
+    /// A K3s release other than the pinned one; it must match the cluster's.
+    pub k3s_version: Option<String>,
     /// Host settings. `tlsSan` applies to servers only.
     #[serde(default)]
     pub host: Host,
-    /// Image archives RKE2 imports on start.
+    /// Image archives the node imports on start.
     #[serde(default)]
     pub sources: JoinSources,
 }
@@ -291,7 +302,7 @@ pub struct JoinConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinSources {
-    /// Image archives (`docker save` output) RKE2 imports on start.
+    /// Image archives (`docker save` output) the node imports on start.
     #[serde(default)]
     pub image_archives: Vec<String>,
 }
@@ -300,7 +311,8 @@ pub struct JoinSources {
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Join {
-    /// The RKE2 supervisor of a server: `https://<address>:9345`.
+    /// The server to join through: `https://<address>:6443` on K3s, `https://<address>:9345`
+    /// (RKE2's supervisor) on RKE2.
     pub server: String,
     /// `worker` (default) or `server`.
     #[serde(default)]
@@ -313,7 +325,7 @@ pub struct Join {
     /// Settings every server of the cluster must share, as `node add --role server` printed them.
     pub server_config: Option<ServerConfig>,
     /// The cluster runs Longhorn, so this node gets its iSCSI initiator, NFS client and kernel
-    /// module before RKE2 starts.
+    /// module before Kubernetes starts on it.
     #[serde(default)]
     pub longhorn: bool,
     /// The cluster runs the catalog's zot, so this node pulls its images through a mirror, as
@@ -349,10 +361,10 @@ impl std::fmt::Debug for Join {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Role {
-    /// An RKE2 agent: runs workloads.
+    /// An agent: runs workloads.
     #[default]
     Worker,
-    /// An RKE2 server: control plane and etcd, and workloads.
+    /// An RKE2 server: control plane and etcd, and workloads. K3s takes no second server.
     Server,
 }
 
@@ -367,7 +379,7 @@ impl Role {
     }
 }
 
-/// RKE2 server settings that must match on every server.
+/// Server settings that must match on every server.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ServerConfig {
@@ -399,7 +411,15 @@ impl JoinConfig {
     /// The first invalid value.
     pub fn check(&self) -> Result<(), PlanError> {
         let join = &self.join;
-        server_address(&join.server)?;
+        check_version(
+            self.distribution,
+            self.rke2_version.as_ref(),
+            self.k3s_version.as_ref(),
+        )?;
+        if join.role == Role::Server && !self.distribution.takes_servers() {
+            return Err(PlanError::SecondServer);
+        }
+        server_address(&join.server, self.distribution.join_port())?;
         if let Some(zot) = &join.zot
             && !zot
                 .ca
@@ -449,15 +469,16 @@ impl JoinConfig {
     }
 }
 
-/// The host and port of a join URL, `https://<host>:<port>` with nothing after it.
+/// The host and port of a join URL, `https://<host>:<port>` with nothing after it; without a
+/// port, `default_port`.
 ///
 /// # Errors
 ///
 /// When the URL is not of that form.
-pub fn server_address(url: &str) -> Result<(String, u16), PlanError> {
+pub fn server_address(url: &str, default_port: u16) -> Result<(String, u16), PlanError> {
     let bad = || {
         PlanError::Config(format!(
-            "join.server `{url}` is not of the form https://<address>:9345"
+            "join.server `{url}` is not of the form https://<address>:{default_port}"
         ))
     };
     let rest = url.strip_prefix("https://").ok_or_else(bad)?;
@@ -477,12 +498,31 @@ pub fn server_address(url: &str) -> Result<(String, u16), PlanError> {
     };
     let port = match port {
         Some(p) => p.parse::<u16>().ok().ok_or_else(bad)?,
-        None => 9345,
+        None => default_port,
     };
     if host.is_empty() {
         return Err(bad());
     }
     Ok((host.to_owned(), port))
+}
+
+/// The release override of the other distribution is a mistake: it would be ignored.
+fn check_version(
+    distribution: Distribution,
+    rke2: Option<&String>,
+    k3s: Option<&String>,
+) -> Result<(), PlanError> {
+    match (distribution, rke2, k3s) {
+        (Distribution::K3s, Some(_), _) => Err(PlanError::Config(
+            "rke2Version applies to distribution: rke2; this one is k3s (set k3sVersion)"
+                .to_owned(),
+        )),
+        (Distribution::Rke2, _, Some(_)) => Err(PlanError::Config(
+            "k3sVersion applies to distribution: k3s; this one is rke2 (set rke2Version)"
+                .to_owned(),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// A join token: `K10<64 hex>::<credentials>`, or bare credentials (no CA pinning).
@@ -594,7 +634,9 @@ impl Config {
             inputs: BTreeMap::new(),
             secret_files: BTreeMap::new(),
             allow_data_loss: Vec::new(),
+            distribution: Distribution::default(),
             rke2_version: None,
+            k3s_version: None,
             host: Host::default(),
             sources: Sources::default(),
         })
@@ -624,6 +666,11 @@ impl Config {
                     .to_owned(),
             ));
         }
+        check_version(
+            self.distribution,
+            self.rke2_version.as_ref(),
+            self.k3s_version.as_ref(),
+        )?;
         if !matches!(self.profile.as_str(), "single-node" | "multi-node") {
             return Err(PlanError::Config(format!(
                 "profile `{}` is not single-node or multi-node",
@@ -655,6 +702,15 @@ impl Config {
             ));
         }
         Ok(())
+    }
+
+    /// The release chosen instead of the pinned one, for the distribution.
+    #[must_use]
+    pub fn version(&self) -> Option<&str> {
+        match self.distribution {
+            Distribution::K3s => self.k3s_version.as_deref(),
+            Distribution::Rke2 => self.rke2_version.as_deref(),
+        }
     }
 
     /// Zeabur Identity's issuer URL.
@@ -758,7 +814,7 @@ mod tests {
 
     fn join(extra: &str) -> Result<Document, PlanError> {
         Document::parse(&format!(
-            "join:\n  server: https://10.0.0.5:9345\n  token: K10{HASH}::abcdef.0123456789abcdef\n{extra}"
+            "distribution: rke2\njoin:\n  server: https://10.0.0.5:9345\n  token: K10{HASH}::abcdef.0123456789abcdef\n{extra}"
         ))
     }
 
@@ -777,7 +833,7 @@ mod tests {
 
     #[test]
     fn join_rejects_what_does_not_fit() {
-        // A joining node installs RKE2 only.
+        // A joining node installs K3s or RKE2 only.
         assert!(join("access: {mode: local, identity: a.b.c, zeabur: d.b.c}\n").is_err());
         assert!(join("host: {tlsSan: [k8s.example.com]}\n").is_err());
         assert!(join("  tokenFile: /etc/zeabur-installer/join-token\n").is_err());
@@ -785,28 +841,62 @@ mod tests {
         let err = join("  role: server\n  serverConfig: {identity: true}\n").unwrap_err();
         assert!(matches!(err, PlanError::BootstrapTokenForServer), "{err}");
         let server = Document::parse(&format!(
-            "join:\n  server: https://10.0.0.5:9345\n  role: server\n  token: K10{HASH}::server:s3cret\n  serverConfig: {{disable: [rke2-metrics-server], identity: true}}\n"
+            "distribution: rke2\njoin:\n  server: https://10.0.0.5:9345\n  role: server\n  token: K10{HASH}::server:s3cret\n  serverConfig: {{disable: [rke2-metrics-server], identity: true}}\n"
         ));
         assert!(matches!(server, Ok(Document::Join(_))), "{server:?}");
         let no_server_config = Document::parse(&format!(
-            "join:\n  server: https://10.0.0.5:9345\n  role: server\n  token: K10{HASH}::server:s3cret\n"
+            "distribution: rke2\njoin:\n  server: https://10.0.0.5:9345\n  role: server\n  token: K10{HASH}::server:s3cret\n"
         ));
         assert!(no_server_config.is_err());
     }
 
     #[test]
+    fn k3s_takes_workers_and_points_a_second_server_at_rke2() {
+        let worker = Document::parse(&format!(
+            "join:\n  server: https://10.0.0.5:6443\n  token: K10{HASH}::abcdef.0123456789abcdef\n"
+        ));
+        let Ok(Document::Join(worker)) = worker else {
+            panic!("{worker:?}");
+        };
+        assert_eq!(worker.distribution, Distribution::K3s);
+        let err = Document::parse(&format!(
+            "join:\n  server: https://10.0.0.5:6443\n  role: server\n  token: K10{HASH}::server:s3cret\n  serverConfig: {{identity: true}}\n"
+        ))
+        .unwrap_err();
+        assert!(matches!(err, PlanError::SecondServer), "{err}");
+        assert!(err.to_string().contains("distribution: rke2"), "{err}");
+    }
+
+    #[test]
+    fn a_release_override_must_match_the_distribution() {
+        assert!(Config::parse(&format!("{MINIMAL}k3sVersion: v1.37.1+k3s1\n")).is_ok());
+        assert!(Config::parse(&format!("{MINIMAL}rke2Version: v1.37.1+rke2r1\n")).is_err());
+        let rke2 = Config::parse(&format!(
+            "{MINIMAL}distribution: rke2\nrke2Version: v1.37.1+rke2r1\n"
+        ))
+        .unwrap();
+        assert_eq!(rke2.version(), Some("v1.37.1+rke2r1"));
+        assert!(
+            Config::parse(&format!(
+                "{MINIMAL}distribution: rke2\nk3sVersion: v1.37.1+k3s1\n"
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn server_urls_and_tokens() {
         assert_eq!(
-            server_address("https://10.0.0.5:9345").unwrap(),
+            server_address("https://10.0.0.5:9345", 6443).unwrap(),
             ("10.0.0.5".to_owned(), 9345)
         );
         assert_eq!(
-            server_address("https://[fd00::5]:9345/").unwrap(),
+            server_address("https://[fd00::5]:9345/", 9345).unwrap(),
             ("fd00::5".to_owned(), 9345)
         );
         assert_eq!(
-            server_address("https://k8s.example.com").unwrap(),
-            ("k8s.example.com".to_owned(), 9345)
+            server_address("https://k8s.example.com", 6443).unwrap(),
+            ("k8s.example.com".to_owned(), 6443)
         );
         for bad in [
             "http://10.0.0.5:9345",
@@ -814,7 +904,7 @@ mod tests {
             "https://:9345",
             "https://fd00::5",
         ] {
-            assert!(server_address(bad).is_err(), "{bad}");
+            assert!(server_address(bad, 9345).is_err(), "{bad}");
         }
         assert_eq!(
             check_token("abcdef.0123456789abcdef", Role::Worker).unwrap(),

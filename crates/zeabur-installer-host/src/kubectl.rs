@@ -1,4 +1,4 @@
-//! The cluster, through RKE2's own `kubectl` and admin kubeconfig.
+//! The cluster, through the `kubectl` and admin kubeconfig of K3s or RKE2.
 //!
 //! A subprocess rather than a client library: the installer applies a handful of objects and
 //! waits on them, and `kubectl` is already on the host, matched to the server.
@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
+use zeabur_installer_plan::cluster::Distribution;
 use zeabur_installer_plan::plan::MANAGER;
-use zeabur_installer_plan::rke2::{ADMIN_KUBECONFIG, BIN_DIR};
 
 use crate::{HostError, cmd};
 
@@ -24,13 +24,11 @@ pub struct Kubectl {
 }
 
 impl Kubectl {
-    /// RKE2's `kubectl` with its admin kubeconfig.
+    /// The `kubectl` of the distribution with its admin kubeconfig.
     #[must_use]
-    pub fn rke2() -> Self {
-        Self {
-            binary: PathBuf::from(BIN_DIR).join("kubectl"),
-            kubeconfig: PathBuf::from(ADMIN_KUBECONFIG),
-        }
+    pub fn admin(distribution: Distribution) -> Self {
+        let layout = distribution.layout();
+        Self::new(layout.kubectl, layout.admin_kubeconfig)
     }
 
     /// A `kubectl` binary with another kubeconfig, such as the kubelet's on an agent.

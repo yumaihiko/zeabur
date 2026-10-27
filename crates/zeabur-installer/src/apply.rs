@@ -13,15 +13,15 @@ use zeabur_installer_host::nodeprep::{self, Stage};
 use zeabur_installer_host::preflight::{self, Status};
 use zeabur_installer_host::{archive, chart, cmd, download, facts, files, systemd};
 use zeabur_installer_plan::catalog::{Encoding, Index};
+use zeabur_installer_plan::cluster::{AUTHN_CONFIGMAP, Distribution, HostFile};
 use zeabur_installer_plan::config::{AccessMode, Config};
+use zeabur_installer_plan::k3s;
 use zeabur_installer_plan::plan::{
-    self, ComponentPlan, Download, IDENTITY_NAMESPACE, IdentityPlan, LOCAL_ISSUER, MANAGER,
-    NAMESPACE_MANAGER, Plan, ReleasePlan, Rke2Plan, SecretSource, Source, ZEABUR_NAMESPACE,
+    self, ClusterPlan, ComponentPlan, Download, IDENTITY_NAMESPACE, IdentityPlan, LOCAL_ISSUER,
+    MANAGER, NAMESPACE_MANAGER, Plan, ReleasePlan, SecretSource, Source, ZEABUR_NAMESPACE,
     ZeaburPlan,
 };
-use zeabur_installer_plan::rke2::{
-    AUTHN_CONFIGMAP, AUTHN_FILE, ETCD_USER, HostFile, IMAGES_DIR, PREFIX, ZOT_CA_FILE,
-};
+use zeabur_installer_plan::rke2::{ETCD_USER, PREFIX};
 use zeabur_installer_plan::storage::{self, NodePrep, Storage};
 
 use crate::{InstallError, load, out, remove, render};
@@ -30,33 +30,37 @@ use crate::{InstallError, load, out, remove, render};
 pub(crate) const STATE_DIR: &str = "/var/lib/rancher/zeabur-installer";
 /// The `ConfigMap` recording what was installed.
 pub(crate) const STATE_CONFIGMAP: &str = "zeabur-installer";
-pub(crate) const UNIT: &str = "rke2-server";
 const RELOADS_METRIC: &str = "apiserver_authentication_config_controller_automatic_reloads_total";
 
 pub(crate) fn run(config_path: &Path) -> Result<(), InstallError> {
     let config = load::config(config_path)?;
     let index = load::catalog(config.sources.catalog.as_deref(), STATE_DIR)?;
-    let running = systemd::is_active(UNIT);
+    let distribution = config.distribution;
+    let running = systemd::is_active(distribution.server_unit());
     let mut plan = make_plan(&index, &config)?;
     out::line(render::plan(&plan).trim_end());
     remove::check(&plan.removals)?;
     check_host(
-        UNIT,
+        preflight::Node::Server(distribution),
         config.host.require_encrypted_disk,
         plan.node_prep.as_ref(),
     )?;
     prepare_node(plan.node_prep.as_ref())?;
 
-    let kubectl = Kubectl::rke2();
-    let started = install_rke2(&Rke2Install {
-        rke2: &plan.rke2,
+    let kubectl = Kubectl::admin(distribution);
+    let started = install_cluster(&ClusterInstall {
+        cluster: &plan.cluster,
+        calico: plan.calico.as_ref(),
         files: &plan.host_files,
         image_archives: &config.sources.image_archives,
-        unit: UNIT,
         server: true,
         changed: false,
     })?;
     kubectl.wait_ready(Duration::from_secs(600))?;
+    if distribution == Distribution::K3s {
+        // RKE2 writes its server certificates 0600 itself; K3s writes them 0644.
+        files::set_modes(Path::new(k3s::TLS_DIR), ".crt", 0o600)?;
+    }
     if started.is_some() {
         let name = plan.facts.hostname.to_ascii_lowercase();
         kubectl::poll(
@@ -78,7 +82,7 @@ pub(crate) fn run(config_path: &Path) -> Result<(), InstallError> {
             kubectl.apply_object(&plan::network_policy(&namespace.name, &nodes))?;
         }
     }
-    kubectl.apply_object(&plan::servicelb_policy())?;
+    kubectl.apply_object(&plan::servicelb_policy(distribution))?;
 
     storage(&kubectl, &plan.storage)?;
 
@@ -95,7 +99,7 @@ pub(crate) fn run(config_path: &Path) -> Result<(), InstallError> {
             kubectl.apply_object(&plan::zot_builder_policy())?;
         }
         if component.id == plan::ZOT && plan.zot_cluster_ip.is_some() {
-            zot_ca(&kubectl, Path::new(ZOT_CA_FILE))?;
+            zot_ca(&kubectl, Path::new(distribution.layout().zot_ca_file))?;
         }
     }
 
@@ -136,9 +140,9 @@ pub(crate) fn run(config_path: &Path) -> Result<(), InstallError> {
 /// The plan, with the removals read from the cluster when it runs.
 pub(crate) fn make_plan(index: &Index, config: &Config) -> Result<Plan, InstallError> {
     let mut plan = plan::plan(index, config, &facts::read()?)?;
-    let kubectl = Kubectl::rke2();
+    let kubectl = Kubectl::admin(config.distribution);
     plan.removals = remove::plan(
-        systemd::is_active(UNIT).then_some(&kubectl),
+        systemd::is_active(config.distribution.server_unit()).then_some(&kubectl),
         index,
         &plan.components,
         &config.profile,
@@ -148,8 +152,8 @@ pub(crate) fn make_plan(index: &Index, config: &Config) -> Result<Plan, InstallE
     Ok(plan)
 }
 
-/// Removes the components the plan removes. With `read`, as when RKE2 was stopped while planning,
-/// it first reads them from the cluster.
+/// Removes the components the plan removes. With `read`, as when the cluster was stopped while
+/// planning, it first reads them from the cluster.
 fn remove_components(
     kubectl: &Kubectl,
     index: &Index,
@@ -174,11 +178,11 @@ fn remove_components(
 
 /// The preflight checks; a failed one stops `apply`.
 pub(crate) fn check_host(
-    unit: &str,
+    node: preflight::Node,
     require_encrypted_disk: bool,
     prep: Option<&NodePrep>,
 ) -> Result<(), InstallError> {
-    if show_checks(unit, require_encrypted_disk, prep) {
+    if show_checks(node, require_encrypted_disk, prep) {
         return Err(InstallError::Message(
             "the host is not ready; fix what failed and run apply again".to_owned(),
         ));
@@ -188,19 +192,20 @@ pub(crate) fn check_host(
 
 /// Runs and prints the preflight checks, which only read the host. Returns whether one failed.
 pub(crate) fn show_checks(
-    unit: &str,
+    node: preflight::Node,
     require_encrypted_disk: bool,
     prep: Option<&NodePrep>,
 ) -> bool {
     out::step("Checking the host");
+    let unit = match node {
+        preflight::Node::Server(d) => d.server_unit(),
+        preflight::Node::Agent(d) => d.agent_unit(),
+        preflight::Node::KubeSolo => zeabur_installer_plan::kubesolo::UNIT,
+    };
     let mut checks = preflight::run(preflight::Options {
         cluster_running: systemd::is_active(unit),
         require_encrypted_disk,
-        node: if unit == UNIT {
-            preflight::Node::Server
-        } else {
-            preflight::Node::Agent
-        },
+        node,
     });
     if let Some(prep) = prep {
         checks.extend(nodeprep::check(prep, Stage::Before));
@@ -220,8 +225,8 @@ pub(crate) fn show_checks(
     checks.iter().any(|c| c.status == Status::Fail)
 }
 
-/// Installs and starts what the planned components need on this node, before RKE2 runs their pods
-/// here.
+/// Installs and starts what the planned components need on this node, before the cluster runs their
+/// pods here.
 pub(crate) fn prepare_node(prep: Option<&NodePrep>) -> Result<(), InstallError> {
     let Some(prep) = prep else {
         return Ok(());
@@ -250,80 +255,113 @@ pub(crate) fn prepare_node(prep: Option<&NodePrep>) -> Result<(), InstallError> 
     }
 }
 
-/// What `install_rke2` installs: a first server, a joining server or an agent.
-pub(crate) struct Rke2Install<'a> {
-    pub(crate) rke2: &'a Rke2Plan,
+/// Installs the release when another version or no unit is there. Returns whether it did.
+fn install_release(cluster: &ClusterPlan, server: bool, unit: &str) -> Result<bool, InstallError> {
+    let distribution = cluster.distribution;
+    let binary = match distribution {
+        Distribution::K3s => PathBuf::from(k3s::BINARY),
+        Distribution::Rke2 => Path::new(PREFIX).join("bin/rke2"),
+    };
+    let installed = cmd::run(&binary, &["--version"], None).unwrap_or_default();
+    // `install.sh` writes the K3s unit; RKE2's comes in its tarball.
+    let no_unit = distribution == Distribution::K3s
+        && !Path::new(&format!("/etc/systemd/system/{unit}.service")).exists();
+    if installed.contains(&cluster.version) && !no_unit {
+        return Ok(false);
+    }
+    let dir = PathBuf::from(STATE_DIR)
+        .join("downloads")
+        .join(&cluster.version);
+    fetch_release(cluster, &dir)?;
+    let release = dir.join(&cluster.release.file);
+    match distribution {
+        Distribution::K3s => {
+            files::install(&release, &binary, 0o755)?;
+            let script = cluster.install_script.as_ref().ok_or_else(|| {
+                InstallError::Message("no install.sh for K3s in the plan".to_owned())
+            })?;
+            let role = if server { "server" } else { "agent" };
+            let script = dir.join(&script.file);
+            cmd::run_with(
+                "sh",
+                &[&script.to_string_lossy(), role],
+                &[
+                    ("INSTALL_K3S_SKIP_DOWNLOAD", "true"),
+                    ("INSTALL_K3S_SKIP_ENABLE", "true"),
+                    ("INSTALL_K3S_SKIP_START", "true"),
+                    ("INSTALL_K3S_SKIP_SELINUX_RPM", "true"),
+                ],
+                None,
+            )?;
+        }
+        Distribution::Rke2 => {
+            archive::unpack_tar_gz(&release, Path::new(PREFIX))?;
+        }
+    }
+    systemd::daemon_reload()?;
+    Ok(true)
+}
+
+/// What `install_cluster` installs: a first server, a joining server or an agent.
+pub(crate) struct ClusterInstall<'a> {
+    pub(crate) cluster: &'a ClusterPlan,
+    /// Calico's manifest, which a K3s server applies.
+    pub(crate) calico: Option<&'a Download>,
     pub(crate) files: &'a [HostFile],
     pub(crate) image_archives: &'a [String],
-    /// `rke2-server` or `rke2-agent`.
-    pub(crate) unit: &'a str,
-    /// A server runs etcd, which the cis profile runs as the `etcd` user.
+    /// A server runs the control plane; an RKE2 server runs etcd as the `etcd` user.
     pub(crate) server: bool,
     /// Something the caller wrote already needs a restart.
     pub(crate) changed: bool,
 }
 
-/// Installs RKE2 and starts or restarts it as needed. Returns when it did, in seconds since the
-/// Unix epoch, taken just before; a Ready condition older than that is the old kubelet's.
-pub(crate) fn install_rke2(install: &Rke2Install<'_>) -> Result<Option<u64>, InstallError> {
-    let unit = install.unit;
-    out::step(&format!("RKE2 {} ({unit})", install.rke2.version));
+/// Installs K3s or RKE2 and starts or restarts it as needed. Returns when it did, in seconds since
+/// the Unix epoch, taken just before; a Ready condition older than that is the old kubelet's.
+pub(crate) fn install_cluster(install: &ClusterInstall<'_>) -> Result<Option<u64>, InstallError> {
+    let cluster = install.cluster;
+    let distribution = cluster.distribution;
+    let layout = distribution.layout();
+    let unit = if install.server {
+        distribution.server_unit()
+    } else {
+        distribution.agent_unit()
+    };
+    out::step(&format!(
+        "{} {} ({unit})",
+        distribution.title(),
+        cluster.version
+    ));
     let mut changed = install.changed;
     for file in install.files {
         let path = Path::new(&file.path);
         // The issuer configuration belongs to a later step; only make sure one exists.
-        if file.path == AUTHN_FILE && path.exists() {
+        if file.path == layout.authn_file && path.exists() {
             continue;
         }
         changed |= files::write(path, file.mode, file.content.as_bytes())?;
     }
     cmd::run(
         "sysctl",
-        &["--quiet", "--load=/etc/sysctl.d/60-rke2-cis.conf"],
+        &["--quiet", &format!("--load={}", layout.sysctl_file)],
         None,
     )?;
-    if install.server && !cmd::succeeds("id", &["etcd"]) {
-        let (program, args) = ETCD_USER
-            .split_first()
-            .ok_or_else(|| InstallError::Message("ETCD_USER".to_owned()))?;
-        cmd::run(program, args, None)?;
-    }
-
-    let installed =
-        cmd::run(Path::new(PREFIX).join("bin/rke2"), &["--version"], None).unwrap_or_default();
-    if !installed.contains(&install.rke2.version) {
-        let agent = download::agent();
-        let dir = PathBuf::from(STATE_DIR)
-            .join("downloads")
-            .join(&install.rke2.version);
-        let mut list = None;
-        for d in &install.rke2.downloads {
-            let dest = if d.file.contains("-images-") {
-                Path::new(IMAGES_DIR).join(&d.file)
-            } else {
-                dir.join(&d.file)
-            };
-            out::err(&format!("    {}", d.url));
-            let actual = download::fetch(&agent, &d.url, &dest, d.sha256.as_deref())?;
-            if d.file.starts_with("sha256sum-") {
-                list = Some(
-                    fs::read_to_string(&dest).map_err(|e| InstallError::Message(e.to_string()))?,
-                );
-            } else if let (None, Some(list)) = (&d.sha256, &list) {
-                download::check_against_list(list, &dest, &actual)?;
-            }
+    match distribution {
+        Distribution::Rke2 if install.server && !cmd::succeeds("id", &["etcd"]) => {
+            let (program, args) = ETCD_USER
+                .split_first()
+                .ok_or_else(|| InstallError::Message("ETCD_USER".to_owned()))?;
+            cmd::run(program, args, None)?;
         }
-        let tarball = install
-            .rke2
-            .downloads
-            .iter()
-            .find(|d| d.file.ends_with(".tar.gz"))
-            .ok_or_else(|| InstallError::Message("no RKE2 tarball in the plan".to_owned()))?;
-        archive::unpack_tar_gz(&dir.join(&tarball.file), Path::new(PREFIX))?;
-        systemd::daemon_reload()?;
-        changed = true;
+        Distribution::K3s if install.server => {
+            files::make_dir(Path::new(k3s::AUDIT_LOG_DIR), 0o700)?;
+        }
+        Distribution::K3s | Distribution::Rke2 => {}
     }
-    changed |= image_archives(install.image_archives)?;
+    if let Some(calico) = install.calico {
+        changed |= calico_manifest(calico)?;
+    }
+    changed |= install_release(cluster, install.server, unit)?;
+    changed |= image_archives(Path::new(layout.images_dir), install.image_archives)?;
 
     let now = || {
         SystemTime::now()
@@ -347,19 +385,64 @@ pub(crate) fn install_rke2(install: &Rke2Install<'_>) -> Result<Option<u64>, Ins
     }
 }
 
-/// The name prefix of the archives the installer copies into RKE2's image directory, so it can
-/// tell its own from RKE2's and from those put there by hand.
+/// Downloads the release into `dir` and its image archives into the image directory, and checks
+/// each against its pinned digest or, for a release that is not pinned, the release's list.
+fn fetch_release(cluster: &ClusterPlan, dir: &Path) -> Result<(), InstallError> {
+    let agent = download::agent();
+    let images = cluster.distribution.layout().images_dir;
+    let mut list = None;
+    for d in cluster.downloads() {
+        let dest = if cluster.images.contains(d) {
+            Path::new(images).join(&d.file)
+        } else {
+            dir.join(&d.file)
+        };
+        out::err(&format!("    {}", d.url));
+        let actual = download::fetch(&agent, &d.url, &dest, d.sha256.as_deref())?;
+        if cluster.checksums.as_ref() == Some(d) {
+            list =
+                Some(fs::read_to_string(&dest).map_err(|e| InstallError::Message(e.to_string()))?);
+        } else if let (None, Some(list)) = (&d.sha256, &list) {
+            download::check_against_list(list, &dest, &actual)?;
+        }
+    }
+    Ok(())
+}
+
+/// Writes Calico's manifest, set for K3s, where K3s applies it on start. Returns whether it
+/// changed.
+fn calico_manifest(calico: &Download) -> Result<bool, InstallError> {
+    let path = Path::new(k3s::MANIFESTS_DIR).join("zeabur-calico.yaml");
+    let source = pinned_path(calico);
+    if !source.exists() || !path.exists() {
+        out::err(&format!("    {}", calico.url));
+        download::fetch(
+            &download::agent(),
+            &calico.url,
+            &source,
+            calico.sha256.as_deref(),
+        )?;
+    }
+    let manifest = fs::read_to_string(&source).map_err(|e| InstallError::Message(e.to_string()))?;
+    Ok(files::write(
+        &path,
+        0o600,
+        k3s::calico_manifest(&manifest)?.as_bytes(),
+    )?)
+}
+
+/// The name prefix of the archives the installer copies into the image directory, so it can
+/// tell its own from the release's and from those put there by hand.
 const ARCHIVE_PREFIX: &str = "zeabur-installer-";
 
-/// Copies `sources.imageArchives` into RKE2's image directory and removes the ones it copied that
+/// Copies `sources.imageArchives` into the image directory and removes the ones it copied that
 /// are no longer listed. Returns whether an archive was copied.
 ///
-/// RKE2 imports every archive there each time it starts, replacing the tags it holds, so an
+/// K3s and RKE2 import every archive there each time they start, replacing the tags it holds, so an
 /// archive left behind would bring an old image back over a newer one. With `.cache.json` in the
 /// directory it imports an archive again only when the file changes (k3s
 /// `pkg/agent/containerd/watcher.go`); a changed one is imported at once, without a restart.
-fn image_archives(sources: &[String]) -> Result<bool, InstallError> {
-    let dir = Path::new(IMAGES_DIR);
+fn image_archives(dir: &Path, sources: &[String]) -> Result<bool, InstallError> {
     let io = |path: &Path| {
         let path = path.display().to_string();
         move |e: std::io::Error| InstallError::Message(format!("{path}: {e}"))
@@ -380,7 +463,7 @@ fn image_archives(sources: &[String]) -> Result<bool, InstallError> {
             .into_owned();
         let dest = dir.join(format!("{ARCHIVE_PREFIX}{name}"));
         if download::sha256_file(source)? != download::sha256_file(&dest).unwrap_or_default() {
-            // RKE2 does not import a `.partial` file, so it never reads half an archive.
+            // A `.partial` file is not imported, so half an archive is never read.
             let partial = dir.join(format!(".{ARCHIVE_PREFIX}{name}.partial"));
             fs::copy(source, &partial).map_err(io(source))?;
             fs::rename(&partial, &dest).map_err(io(&dest))?;
@@ -408,7 +491,7 @@ fn image_archives(sources: &[String]) -> Result<bool, InstallError> {
     Ok(changed)
 }
 
-/// Drops the fraction of a second from a file's modification time. RKE2's cache keeps whole
+/// Drops the fraction of a second from a file's modification time. The import cache keeps whole
 /// seconds and imports a file again when its time is later, so a fraction makes it import every
 /// archive on every start.
 fn whole_second_mtime(path: &Path) -> std::io::Result<()> {
@@ -902,9 +985,9 @@ fn identity(kubectl: &Kubectl, plan: &Plan) -> Result<(), InstallError> {
             .map_or(0, |m| successful_reloads(&m))
     };
     let before = reloads(kubectl);
-    // RKE2 runs k3s's server, so its file is k3s's (see `EMPTY_AUTHN`).
+    // RKE2 runs the K3s server, so both read the K3s file (see `EMPTY_AUTHN`).
     let config = identityctl(kubectl, plan, &["kube-config", "--distro", "k3s"], None)?.stdout;
-    if trust(kubectl, &config)? {
+    if trust(kubectl, plan.cluster.distribution, &config)? {
         out::err("    waiting for kube-apiserver to trust Zeabur Identity (up to a few minutes)");
         kubectl::poll(
             Duration::from_secs(300),
@@ -917,7 +1000,11 @@ fn identity(kubectl: &Kubectl, plan: &Plan) -> Result<(), InstallError> {
 
 /// Writes kube-apiserver's authentication configuration on this server and in the cluster, where
 /// the other servers copy it from (`join::sync_authn`). Returns whether this server's file changed.
-pub(crate) fn trust(kubectl: &Kubectl, config: &str) -> Result<bool, InstallError> {
+pub(crate) fn trust(
+    kubectl: &Kubectl,
+    distribution: Distribution,
+    config: &str,
+) -> Result<bool, InstallError> {
     kubectl.apply_object(&json!({
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -929,7 +1016,7 @@ pub(crate) fn trust(kubectl: &Kubectl, config: &str) -> Result<bool, InstallErro
         "data": {"authn.yaml": config},
     }))?;
     Ok(files::write(
-        Path::new(AUTHN_FILE),
+        Path::new(distribution.layout().authn_file),
         0o600,
         config.as_bytes(),
     )?)
@@ -1151,7 +1238,7 @@ pub(crate) fn new_setup_link(
     let index = load::catalog(config.sources.catalog.as_deref(), STATE_DIR)?;
     let plan = make_plan(&index, &config)?;
     let link = identityctl(
-        &Kubectl::rke2(),
+        &Kubectl::admin(crate::node::server_distribution()?),
         &plan,
         &setup_link_args(username, valid_for, reset),
         None,
@@ -1212,7 +1299,8 @@ fn record(kubectl: &Kubectl, plan: &Plan, link_issued: bool) -> Result<(), Insta
         },
         "data": {
             "installer": env!("CARGO_PKG_VERSION"),
-            "rke2": plan.rke2.version,
+            "distribution": plan.cluster.distribution.id(),
+            "version": plan.cluster.version,
             "components": components.join(","),
             "plan": summary,
             "setupLinkIssued": if link_issued { "true" } else { "false" },

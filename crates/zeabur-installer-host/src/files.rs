@@ -42,6 +42,56 @@ pub fn write(path: &Path, mode: u32, content: &[u8]) -> Result<bool, HostError> 
     Ok(true)
 }
 
+/// Makes a directory and its parents, and sets its mode.
+///
+/// # Errors
+///
+/// When it cannot be made or its mode cannot be set.
+pub fn make_dir(path: &Path, mode: u32) -> Result<(), HostError> {
+    fs::create_dir_all(path).map_err(HostError::io(path))?;
+    fs::set_permissions(path, Permissions::from_mode(mode)).map_err(HostError::io(path))
+}
+
+/// Copies an executable to `dest` with `mode` through a temporary file and a rename, so a running
+/// copy is not changed.
+///
+/// # Errors
+///
+/// When it cannot be read or written.
+pub fn install(source: &Path, dest: &Path, mode: u32) -> Result<(), HostError> {
+    let dir = dest.parent().unwrap_or_else(|| Path::new("/"));
+    fs::create_dir_all(dir).map_err(HostError::io(dir))?;
+    let name = dest
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let temp = dir.join(format!(".{name}.zeabur-installer"));
+    fs::copy(source, &temp).map_err(HostError::io(&temp))?;
+    fs::set_permissions(&temp, Permissions::from_mode(mode)).map_err(HostError::io(&temp))?;
+    fs::rename(&temp, dest).map_err(HostError::io(dest))
+}
+
+/// Sets `mode` on the files in `dir` whose names end with `suffix`. Returns how many changed.
+///
+/// # Errors
+///
+/// When the directory cannot be read or a mode cannot be set.
+pub fn set_modes(dir: &Path, suffix: &str, mode: u32) -> Result<usize, HostError> {
+    let mut changed = 0;
+    for entry in fs::read_dir(dir).map_err(HostError::io(dir))? {
+        let path = entry.map_err(HostError::io(dir))?.path();
+        let meta = fs::symlink_metadata(&path).map_err(HostError::io(&path))?;
+        let matches = path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().ends_with(suffix));
+        if matches && meta.is_file() && meta.permissions().mode() & 0o7777 != mode {
+            fs::set_permissions(&path, Permissions::from_mode(mode))
+                .map_err(HostError::io(&path))?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
 /// Reads a secret file, refusing one others can read.
 ///
 /// # Errors

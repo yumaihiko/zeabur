@@ -1,8 +1,8 @@
 //! `node add` and `node sync`, run on a server of the cluster.
 //!
 //! `node add` prints what the new VM needs: the server's address and a join token, as a
-//! configuration to paste. A worker gets a bootstrap token that expires; a server gets the
-//! cluster's server token, which a bootstrap token cannot replace.
+//! configuration to paste. A worker gets a bootstrap token that expires; an RKE2 server gets the
+//! cluster's server token, which a bootstrap token cannot replace. K3s takes workers only.
 
 use std::fs;
 use std::path::Path;
@@ -12,12 +12,10 @@ use serde_json::Value;
 use zeabur_installer_host::facts;
 use zeabur_installer_host::kubectl::Kubectl;
 use zeabur_installer_host::token::{self, BootstrapToken};
+use zeabur_installer_plan::cluster::Distribution;
 use zeabur_installer_plan::config::{Document, Role};
-use zeabur_installer_plan::join;
 use zeabur_installer_plan::plan::{self, MANAGER};
-use zeabur_installer_plan::rke2::{
-    ADMIN_KUBECONFIG, BIN_DIR, CONFIG_DIR, SERVER_TOKEN_FILE, ZOT_CA_FILE,
-};
+use zeabur_installer_plan::{PlanError, join};
 
 use crate::{InstallError, load, out};
 
@@ -36,13 +34,26 @@ pub(crate) struct AddOptions {
     pub(crate) ttl: Duration,
 }
 
+/// The distribution of this server: the one whose admin kubeconfig is here.
+pub(crate) fn server_distribution() -> Result<Distribution, InstallError> {
+    Distribution::ALL
+        .into_iter()
+        .find(|d| Path::new(d.layout().admin_kubeconfig).exists())
+        .ok_or_else(|| {
+            InstallError::Message(
+                "no K3s or RKE2 admin kubeconfig here: run this on a server of the cluster"
+                    .to_owned(),
+            )
+        })
+}
+
 pub(crate) fn add(config_path: &Path, options: &AddOptions) -> Result<(), InstallError> {
-    if !Path::new(ADMIN_KUBECONFIG).exists() {
-        return Err(InstallError::Message(format!(
-            "{ADMIN_KUBECONFIG} does not exist: run node add on a server of the cluster"
-        )));
+    let distribution = server_distribution()?;
+    if options.role == Role::Server && !distribution.takes_servers() {
+        return Err(PlanError::SecondServer.into());
     }
-    let kubectl = Kubectl::rke2();
+    let layout = distribution.layout();
+    let kubectl = Kubectl::admin(distribution);
     let name = facts::read()?.hostname.to_ascii_lowercase();
     let node = kubectl.get("node", &name, None)?.ok_or_else(|| {
         InstallError::Message(format!("this server's node {name} is not in the cluster"))
@@ -60,21 +71,24 @@ pub(crate) fn add(config_path: &Path, options: &AddOptions) -> Result<(), Instal
     } else {
         address
     };
-    let server = format!("https://{host}:{}", join::SUPERVISOR_PORT);
-    let server_token = fs::read_to_string(SERVER_TOKEN_FILE).ok();
+    let server = format!("https://{host}:{}", distribution.join_port());
+    let server_token = fs::read_to_string(layout.server_token_file).ok();
 
     let (token, expiry) = match options.role {
         Role::Worker => {
-            let hash = ca_hash(&kubectl, server_token.as_deref())?;
+            let hash = ca_hash(&kubectl, server_token.as_deref(), layout.server_token_file)?;
             let t = BootstrapToken::generate()?;
             let expires = token::expires(options.ttl);
-            let secret = t.secret_object("zeabur-installer node add", &expires);
+            let secret = t.secret_object(distribution, "zeabur-installer node add", &expires);
             kubectl.run(&["create", "-f", "-"], Some(secret.to_string().as_bytes()))?;
             (t.joining(&hash), Some((expires, t.id)))
         }
         Role::Server => {
             let token = server_token.ok_or_else(|| {
-                InstallError::Message(format!("{SERVER_TOKEN_FILE} cannot be read; run as root"))
+                InstallError::Message(format!(
+                    "{} cannot be read; run as root",
+                    layout.server_token_file
+                ))
             })?;
             (token.trim().to_owned(), None)
         }
@@ -89,8 +103,9 @@ pub(crate) fn add(config_path: &Path, options: &AddOptions) -> Result<(), Instal
     let longhorn = kubectl
         .get("customresourcedefinition", LONGHORN_CRD, None)?
         .is_some();
-    let zot = zot_mirror(&kubectl)?;
+    let zot = zot_mirror(&kubectl, layout.zot_ca_file)?;
     let text = instructions(&Instructions {
+        distribution,
         server: &server,
         role: options.role,
         token: &token,
@@ -106,6 +121,7 @@ pub(crate) fn add(config_path: &Path, options: &AddOptions) -> Result<(), Instal
 /// What `node add` prints.
 #[derive(Debug)]
 pub(crate) struct Instructions<'a> {
+    pub(crate) distribution: Distribution,
     pub(crate) server: &'a str,
     pub(crate) role: Role,
     pub(crate) token: &'a str,
@@ -129,7 +145,7 @@ pub(crate) fn instructions(i: &Instructions<'_>) -> String {
     );
     push(&mut text, "");
     push(&mut text, "Before you start");
-    for advice in join::advice(i.role, i.longhorn) {
+    for advice in join::advice(i.distribution, i.role, i.longhorn) {
         push(&mut text, &format!("  - {}", advice.text));
     }
     if let Some(path) = &i.single_node {
@@ -147,7 +163,14 @@ pub(crate) fn instructions(i: &Instructions<'_>) -> String {
         "On the new VM, as root, with the same zeabur-installer copied to it:",
     );
     push(&mut text, "");
-    text.push_str(&commands(i.server, i.role, i.token, i.longhorn, i.zot));
+    text.push_str(&commands(
+        i.distribution,
+        i.server,
+        i.role,
+        i.token,
+        i.longhorn,
+        i.zot,
+    ));
     push(&mut text, "");
     if let Some((expires, _)) = i.expiry {
         push(
@@ -173,11 +196,13 @@ pub(crate) fn instructions(i: &Instructions<'_>) -> String {
         );
     }
     push(&mut text, "");
-    push(&mut text, "When the node is Ready, here:");
-    push(
-        &mut text,
-        &format!("  {BIN_DIR}/kubectl --kubeconfig {ADMIN_KUBECONFIG} get nodes -o wide"),
+    let layout = i.distribution.layout();
+    let kubectl = format!(
+        "{} --kubeconfig {}",
+        layout.kubectl, layout.admin_kubeconfig
     );
+    push(&mut text, "When the node is Ready, here:");
+    push(&mut text, &format!("  {kubectl} get nodes -o wide"));
     if i.role == Role::Worker {
         push(
             &mut text,
@@ -189,8 +214,8 @@ pub(crate) fn instructions(i: &Instructions<'_>) -> String {
         push(
             &mut text,
             &format!(
-                "  {BIN_DIR}/kubectl --kubeconfig {ADMIN_KUBECONFIG} --namespace kube-system delete \
-                 secret bootstrap-token-{id}   # revokes the token"
+                "  {kubectl} --namespace kube-system delete secret bootstrap-token-{id}   \
+                 # revokes the token"
             ),
         );
     }
@@ -204,6 +229,7 @@ fn push(text: &mut String, line: &str) {
 
 /// The shell commands that write the join configuration and run the installer.
 pub(crate) fn commands(
+    distribution: Distribution,
     server: &str,
     role: Role,
     token: &str,
@@ -211,7 +237,8 @@ pub(crate) fn commands(
     zot: Option<(&str, &str)>,
 ) -> String {
     let mut yaml = format!(
-        "join:\n  server: {server}\n  role: {}\n  token: {token}\n",
+        "distribution: {}\njoin:\n  server: {server}\n  role: {}\n  token: {token}\n",
+        distribution.id(),
         role.as_str()
     );
     if longhorn {
@@ -228,7 +255,7 @@ pub(crate) fn commands(
         }
     }
     if role == Role::Server {
-        let (disable, identity) = server_config();
+        let (disable, identity) = server_config(distribution);
         let disable = disable.join(", ");
         let identity = identity.to_string();
         for part in [
@@ -249,13 +276,15 @@ pub(crate) fn commands(
          (umask 077; cat > /etc/zeabur-installer/config.yaml) <<'EOF'\n\
          {yaml}EOF\n\
          zeabur-installer plan    # what it installs, the distance to this server and warnings\n\
-         zeabur-installer apply   # installs RKE2 and waits until the node is Ready\n"
+         zeabur-installer apply   # installs {} and waits until the node is Ready\n",
+        distribution.title()
     )
 }
 
-/// What every server must share, read from this server's RKE2 configuration.
-fn server_config() -> (Vec<String>, bool) {
-    let disable = fs::read_to_string(format!("{CONFIG_DIR}/config.yaml"))
+/// What every server must share, read from this server's configuration.
+fn server_config(distribution: Distribution) -> (Vec<String>, bool) {
+    let dir = distribution.layout().config_dir;
+    let disable = fs::read_to_string(format!("{dir}/config.yaml"))
         .ok()
         .and_then(|text| serde_saphyr::from_str::<Value>(&text).ok())
         .and_then(|v| v.get("disable").cloned())
@@ -264,16 +293,13 @@ fn server_config() -> (Vec<String>, bool) {
         .flatten()
         .filter_map(|v| v.as_str().map(str::to_owned))
         .collect();
-    let identity = Path::new(&format!(
-        "{CONFIG_DIR}/config.yaml.d/50-zeabur-identity.yaml"
-    ))
-    .exists();
+    let identity = Path::new(&format!("{dir}/config.yaml.d/50-zeabur-identity.yaml")).exists();
     (disable, identity)
 }
 
 /// zot's `ClusterIP` and the CA `apply` copied to this server, when the cluster runs it.
-fn zot_mirror(kubectl: &Kubectl) -> Result<Option<(String, String)>, InstallError> {
-    let Ok(ca) = fs::read_to_string(ZOT_CA_FILE) else {
+fn zot_mirror(kubectl: &Kubectl, ca_file: &str) -> Result<Option<(String, String)>, InstallError> {
+    let Ok(ca) = fs::read_to_string(ca_file) else {
         return Ok(None);
     };
     Ok(kubectl
@@ -295,7 +321,11 @@ fn internal_ip(node: &Value) -> Option<String> {
 
 /// The cluster CA's hash, from `kube-root-ca.crt` as Zeabur reads it, checked against the hash in
 /// this server's token when both are known.
-fn ca_hash(kubectl: &Kubectl, server_token: Option<&str>) -> Result<String, InstallError> {
+fn ca_hash(
+    kubectl: &Kubectl,
+    server_token: Option<&str>,
+    token_file: &str,
+) -> Result<String, InstallError> {
     let from_token = server_token.and_then(token::hash_of_token);
     let pem = kubectl
         .get("configmap", "kube-root-ca.crt", Some("kube-system"))?
@@ -307,8 +337,8 @@ fn ca_hash(kubectl: &Kubectl, server_token: Option<&str>) -> Result<String, Inst
     let from_configmap = pem.as_deref().and_then(|p| token::ca_hash(p.as_bytes()));
     match (from_configmap, from_token) {
         (Some(a), Some(b)) if a != b => Err(InstallError::Message(format!(
-            "the CA hash of kube-root-ca.crt ({a}) differs from the one in {SERVER_TOKEN_FILE} \
-             ({b}); please report this"
+            "the CA hash of kube-root-ca.crt ({a}) differs from the one in {token_file} ({b}); \
+             please report this"
         ))),
         (Some(hash), _) => Ok(hash),
         (None, Some(hash)) => Ok(hash.to_owned()),
@@ -319,7 +349,7 @@ fn ca_hash(kubectl: &Kubectl, server_token: Option<&str>) -> Result<String, Inst
 }
 
 pub(crate) fn sync(_config_path: &Path) -> Result<(), InstallError> {
-    report_sync(&Kubectl::rke2())
+    report_sync(&Kubectl::admin(server_distribution()?))
 }
 
 /// Runs [`sync_policies`] under its own step and says how many policies changed.
@@ -401,7 +431,8 @@ mod tests {
     #[test]
     fn what_node_add_prints() {
         let text = instructions(&Instructions {
-            server: "https://10.0.1.10:9345",
+            distribution: Distribution::K3s,
+            server: "https://10.0.1.10:6443",
             role: Role::Worker,
             token: "K10aa::abcdef.0123456789abcdef",
             expiry: Some(("2026-10-23T09:00:00Z", "abcdef")),
@@ -415,6 +446,7 @@ mod tests {
     #[test]
     fn a_server_join_needs_no_node_sync() {
         let text = instructions(&Instructions {
+            distribution: Distribution::Rke2,
             server: "https://10.0.1.10:9345",
             role: Role::Server,
             token: "K10aa::server:0123456789abcdef",
@@ -429,6 +461,7 @@ mod tests {
     #[test]
     fn the_commands_to_paste() {
         let text = commands(
+            Distribution::Rke2,
             "https://10.0.0.5:9345",
             Role::Worker,
             "K10aa::abcdef.0123456789abcdef",
@@ -450,7 +483,8 @@ mod tests {
     fn a_cluster_with_zot_gives_the_new_node_its_mirror() {
         let ca = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
         let text = commands(
-            "https://10.0.0.5:9345",
+            Distribution::K3s,
+            "https://10.0.0.5:6443",
             Role::Worker,
             "K10aa::abcdef.0123456789abcdef",
             false,
@@ -475,7 +509,8 @@ mod tests {
     #[test]
     fn a_cluster_with_longhorn_prepares_the_new_node() {
         let text = instructions(&Instructions {
-            server: "https://10.0.1.10:9345",
+            distribution: Distribution::K3s,
+            server: "https://10.0.1.10:6443",
             role: Role::Worker,
             token: "K10aa::abcdef.0123456789abcdef",
             expiry: Some(("2026-10-23T09:00:00Z", "abcdef")),

@@ -5,23 +5,22 @@ use zeabur_installer_plan::join::{self, JoinPlan};
 use zeabur_installer_plan::personal::PersonalPlan;
 use zeabur_installer_plan::plan::{ComponentPlan, Plan, ReleasePlan};
 use zeabur_installer_plan::remove::Removal;
-use zeabur_installer_plan::rke2::JOIN_TOKEN_FILE;
 use zeabur_installer_plan::storage::NodePrep;
 
 /// The plan as text.
 pub(crate) fn plan(plan: &Plan) -> String {
     let mut s = String::new();
-    let rke2 = &plan.rke2;
-    let support = if rke2.pinned {
-        "pinned, checked against this installer's digests"
-    } else {
-        "UNSUPPORTED"
-    };
+    let cluster = &plan.cluster;
     push(
         &mut s,
         &format!(
-            "RKE2 {} ({support}), CIS profile, on {} ({}, {} MiB)",
-            rke2.version, plan.facts.hostname, plan.facts.arch, plan.facts.memory_mib
+            "{} {} ({}), CIS hardened, on {} ({}, {} MiB)",
+            cluster.distribution.title(),
+            cluster.version,
+            support(cluster.pinned),
+            plan.facts.hostname,
+            plan.facts.arch,
+            plan.facts.memory_mib
         ),
     );
     node_addresses(&mut s, &plan.facts.node_ips);
@@ -73,9 +72,10 @@ pub(crate) fn plan(plan: &Plan) -> String {
     push(
         &mut s,
         &format!(
-            "Memory at idle   about {} MiB of {} (RKE2 {}, components {}{unmeasured})",
+            "Memory at idle   about {} MiB of {} ({} {}, components {}{unmeasured})",
             m.cluster_mib + m.components_mib,
             m.host_mib,
+            cluster.distribution.title(),
             m.cluster_mib,
             m.components_mib
         ),
@@ -238,28 +238,30 @@ pub(crate) fn personal_plan(plan: &PersonalPlan) -> String {
 /// The plan of a joining node as text.
 pub(crate) fn join_plan(plan: &JoinPlan) -> String {
     let mut s = String::new();
-    let rke2 = &plan.rke2;
-    let support = if rke2.pinned {
-        "pinned, checked against this installer's digests"
-    } else {
-        "UNSUPPORTED"
-    };
+    let cluster = &plan.cluster;
+    let title = cluster.distribution.title();
     let (what, runs) = match plan.role {
-        Role::Worker => ("RKE2 agent", "a worker"),
-        Role::Server => ("RKE2 server", "a server (control plane and etcd)"),
+        Role::Worker => ("agent", "a worker"),
+        Role::Server => ("server", "a server (control plane and etcd)"),
     };
     push(&mut s, &format!("Join {} as {runs}", plan.server));
     push(
         &mut s,
         &format!(
-            "{what} {} ({support}), CIS profile, on {} ({}, {} MiB)",
-            rke2.version, plan.facts.hostname, plan.facts.arch, plan.facts.memory_mib
+            "{title} {what} {} ({}), CIS hardened, on {} ({}, {} MiB)",
+            cluster.version,
+            support(cluster.pinned),
+            plan.facts.hostname,
+            plan.facts.arch,
+            plan.facts.memory_mib
         ),
     );
     push(
         &mut s,
-        "Installs RKE2 only: Zeabur, Zeabur Identity and the catalog's components are already in \
-         the cluster.",
+        &format!(
+            "Installs {title} only: Zeabur, Zeabur Identity and the catalog's components are \
+             already in the cluster."
+        ),
     );
     node_addresses(&mut s, &plan.facts.node_ips);
     push(&mut s, "");
@@ -269,7 +271,10 @@ pub(crate) fn join_plan(plan: &JoinPlan) -> String {
     }
     push(
         &mut s,
-        &format!("  {JOIN_TOKEN_FILE} (the token, mode 0600)"),
+        &format!(
+            "  {} (the token, mode 0600)",
+            cluster.distribution.layout().join_token_file
+        ),
     );
     push(&mut s, "");
     match &plan.rtt {
@@ -346,7 +351,7 @@ fn ports(s: &mut String, plan: &JoinPlan) {
     }
     push(
         s,
-        "Ports on this VM, free before RKE2 starts (apply checks them)",
+        "Ports on this VM, free before the node starts (apply checks them)",
     );
     for port in &plan.local_ports {
         push(
@@ -362,10 +367,18 @@ fn ports(s: &mut String, plan: &JoinPlan) {
     push(s, "");
 }
 
+const fn support(pinned: bool) -> &'static str {
+    if pinned {
+        "pinned, checked against this installer's digests"
+    } else {
+        "UNSUPPORTED"
+    }
+}
+
 /// The addresses the node registers with, which the network policies let in.
 fn node_addresses(s: &mut String, addresses: &[String]) {
     let text = if addresses.is_empty() {
-        "chosen by RKE2: this host's addresses could not be read".to_owned()
+        "chosen by Kubernetes: this host's addresses could not be read".to_owned()
     } else {
         format!(
             "{} (temporary IPv6 addresses left out)",
@@ -403,7 +416,7 @@ mod tests {
             rtt_us: rtt_us.to_vec(),
             ports: vec![
                 (9345, !rtt_us.is_empty()),
-                (6443, true),
+                (6443, !rtt_us.is_empty()),
                 (10250, true),
                 (2379, true),
                 (2380, false),
@@ -419,18 +432,18 @@ mod tests {
             include_str!("../../../docs/reference/installer-examples/join.yaml"),
             &[640, 610, 700, 900, 650],
         );
-        let text = join_plan(&p).replace(&p.rke2.version, "<rke2>");
+        let text = join_plan(&p).replace(&p.cluster.version, "<version>");
         assert_eq!(text, include_str!("../fixtures/join-worker.txt"));
     }
 
     #[test]
     fn a_server_far_from_the_server() {
         let p = plan(
-            "join:\n  server: https://10.0.0.5:9345\n  role: server\n  tokenFile: /root/token\n  \
-             serverConfig: {disable: [rke2-metrics-server], identity: true}\n",
+            "distribution: rke2\njoin:\n  server: https://10.0.0.5:9345\n  role: server\n  \
+             tokenFile: /root/token\n  serverConfig: {disable: [rke2-metrics-server], identity: true}\n",
             &[24_000, 23_500, 25_100, 24_200, 23_900],
         );
-        let text = join_plan(&p).replace(&p.rke2.version, "<rke2>");
+        let text = join_plan(&p).replace(&p.cluster.version, "<version>");
         assert_eq!(text, include_str!("../fixtures/join-server.txt"));
     }
 
@@ -442,6 +455,6 @@ mod tests {
         );
         let text = join_plan(&p);
         assert!(text.contains("Distance         the server did not answer"));
-        assert!(text.contains("error: Cannot connect to https://10.0.0.5:9345."));
+        assert!(text.contains("error: Cannot connect to https://10.0.0.5:6443."));
     }
 }

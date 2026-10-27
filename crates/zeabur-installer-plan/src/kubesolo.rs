@@ -7,8 +7,8 @@
 use serde_json::{Value, json};
 
 use crate::PlanError;
+use crate::cluster::HostFile;
 use crate::pins::HelmController;
-use crate::rke2::HostFile;
 
 /// The systemd unit.
 pub const UNIT: &str = "kubesolo";

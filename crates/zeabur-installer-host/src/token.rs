@@ -1,8 +1,10 @@
-//! Join tokens for new workers: Kubernetes bootstrap tokens, as `rke2 token create` makes them.
+//! Join tokens for new workers: Kubernetes bootstrap tokens, as `k3s token create` and
+//! `rke2 token create` make them.
 //!
 //! The token is a Secret in `kube-system`, so anyone allowed to create Secrets there (Zeabur, for
 //! a signed-in admin) can make one through the API, and kube-controller-manager deletes it when it
-//! expires. RKE2's supervisor accepts it on the agent routes only, so it cannot join a server.
+//! expires. The K3s and RKE2 supervisors accept it on the agent routes only, so it cannot join a
+//! server.
 
 use std::fs;
 use std::io::Read as _;
@@ -10,12 +12,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
+use zeabur_installer_plan::cluster::Distribution;
 use zeabur_installer_plan::plan::MANAGER;
 
 use crate::HostError;
 
-/// The group RKE2's supervisor lets join as an agent (k3s `NodeBootstrapTokenAuthGroup`).
-pub const AUTH_GROUP: &str = "system:bootstrappers:rke2:default-node-token";
 /// How long a token joins workers unless told otherwise.
 pub const TTL: Duration = Duration::from_hours(1);
 /// The longest lifetime `parse_ttl` accepts.
@@ -51,15 +52,21 @@ impl BootstrapToken {
         })
     }
 
-    /// The token as RKE2 reads it, pinned to the cluster CA: `K10<ca-hash>::<id>.<secret>`.
+    /// The token as K3s and RKE2 read it, pinned to the cluster CA: `K10<ca-hash>::<id>.<secret>`.
     #[must_use]
     pub fn joining(&self, ca_hash: &str) -> String {
         format!("K10{ca_hash}::{}.{}", self.id, self.secret)
     }
 
-    /// The Secret holding it, expiring at `expires` (RFC 3339).
+    /// The Secret holding it, expiring at `expires` (RFC 3339), in the group whose members the
+    /// supervisor of the distribution lets join as agents.
     #[must_use]
-    pub fn secret_object(&self, description: &str, expires: &str) -> Value {
+    pub fn secret_object(
+        &self,
+        distribution: Distribution,
+        description: &str,
+        expires: &str,
+    ) -> Value {
         json!({
             "apiVersion": "v1",
             "kind": "Secret",
@@ -76,7 +83,7 @@ impl BootstrapToken {
                 "expiration": expires,
                 "usage-bootstrap-authentication": "true",
                 "usage-bootstrap-signing": "true",
-                "auth-extra-groups": AUTH_GROUP,
+                "auth-extra-groups": distribution.bootstrap_group(),
             },
         })
     }
@@ -187,13 +194,25 @@ mod tests {
             credentials
         ));
         assert!(!format!("{t:?}").contains(&t.secret));
-        let secret = t.secret_object("zeabur-installer node add", "2026-10-24T08:00:00Z");
+        let secret = t.secret_object(
+            Distribution::Rke2,
+            "zeabur-installer node add",
+            "2026-10-24T08:00:00Z",
+        );
         assert_eq!(
             secret["metadata"]["name"],
             format!("bootstrap-token-{}", t.id)
         );
         assert_eq!(secret["type"], "bootstrap.kubernetes.io/token");
-        assert_eq!(secret["stringData"]["auth-extra-groups"], AUTH_GROUP);
+        assert_eq!(
+            secret["stringData"]["auth-extra-groups"],
+            "system:bootstrappers:rke2:default-node-token"
+        );
+        let k3s = t.secret_object(Distribution::K3s, "", "2026-10-24T08:00:00Z");
+        assert_eq!(
+            k3s["stringData"]["auth-extra-groups"],
+            "system:bootstrappers:k3s:default-node-token"
+        );
         assert_eq!(
             secret["stringData"]["usage-bootstrap-authentication"],
             "true"

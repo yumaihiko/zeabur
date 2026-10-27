@@ -1,10 +1,11 @@
 //! Storage: which class is the default, and what Longhorn needs on every node.
 //!
-//! RKE2 ships no storage class, so the installer always adds local-path. When the plan includes
-//! Longhorn, the catalog's values for the profile say whether its class `longhorn` is the default
-//! (multi-node) or local-path stays it (single-node). Longhorn attaches volumes over iSCSI from
-//! the node itself, so every node needs an initiator, `iscsid` and the `iscsi_tcp` module before
-//! Longhorn's pods start there; `ReadWriteMany` volumes and NFS backups also need an NFS client.
+//! The installer always adds local-path: RKE2 ships no storage class, and K3s's is turned off so
+//! that both get the same one. When the plan includes Longhorn, the catalog's values for the
+//! profile say whether its class `longhorn` is the default (multi-node) or local-path stays it
+//! (single-node). Longhorn attaches volumes over iSCSI from the node itself, so every node needs
+//! an initiator, `iscsid` and the `iscsi_tcp` module before Longhorn's pods start there;
+//! `ReadWriteMany` volumes and NFS backups also need an NFS client.
 
 use serde::Serialize;
 use serde_json::Value;

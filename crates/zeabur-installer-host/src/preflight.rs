@@ -5,8 +5,8 @@ use std::net::TcpListener;
 use std::path::Path;
 
 use serde::Serialize;
+use zeabur_installer_plan::cluster::Distribution;
 use zeabur_installer_plan::kubesolo;
-use zeabur_installer_plan::rke2::node_ports;
 
 use crate::{cmd, systemd};
 
@@ -181,40 +181,43 @@ pub struct Options {
 /// What a host runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Node {
-    /// An RKE2 server, which also listens on the API and supervisor ports.
-    Server,
-    /// An RKE2 agent.
-    Agent,
+    /// A server, which also listens on the API and join ports.
+    Server(Distribution),
+    /// A worker.
+    Agent(Distribution),
     /// `KubeSolo`, for a personal install.
     KubeSolo,
 }
 
 impl Node {
-    const fn is_rke2(self) -> bool {
-        matches!(self, Self::Server | Self::Agent)
+    /// The distribution id, as the `OTHERS` list names it.
+    const fn kind(self) -> &'static str {
+        match self {
+            Self::Server(d) | Self::Agent(d) => d.id(),
+            Self::KubeSolo => "kubesolo",
+        }
     }
 
     const fn data_dir(self) -> &'static str {
-        if self.is_rke2() {
-            "/var/lib/rancher"
-        } else {
-            kubesolo::DATA_DIR
+        match self {
+            Self::Server(_) | Self::Agent(_) => "/var/lib/rancher",
+            Self::KubeSolo => kubesolo::DATA_DIR,
         }
     }
 }
 
-/// Files left by other Kubernetes distributions, and whether each is RKE2's or `KubeSolo`'s,
-/// which the other kind of install also reports.
-const OTHERS: [(&str, &str, Option<Node>); 9] = [
-    ("/usr/local/bin/k3s", "k3s", None),
-    ("/etc/rancher/k3s", "k3s", None),
+/// Files left by Kubernetes distributions, and the id of the distribution that owns each, which
+/// an install of the same distribution does not report.
+const OTHERS: [(&str, &str, Option<&str>); 9] = [
+    ("/usr/local/bin/k3s", "K3s", Some("k3s")),
+    ("/etc/rancher/k3s", "K3s", Some("k3s")),
     ("/etc/kubernetes/admin.conf", "kubeadm", None),
     ("/var/lib/k0s", "k0s", None),
     ("/snap/bin/microk8s", "MicroK8s", None),
-    ("/usr/local/bin/rke2", "RKE2", Some(Node::Server)),
-    ("/etc/rancher/rke2", "RKE2", Some(Node::Server)),
-    (kubesolo::BINARY, "KubeSolo", Some(Node::KubeSolo)),
-    (kubesolo::DATA_DIR, "KubeSolo", Some(Node::KubeSolo)),
+    ("/usr/local/bin/rke2", "RKE2", Some("rke2")),
+    ("/etc/rancher/rke2", "RKE2", Some("rke2")),
+    (kubesolo::BINARY, "KubeSolo", Some("kubesolo")),
+    (kubesolo::DATA_DIR, "KubeSolo", Some("kubesolo")),
 ];
 const DISK_NEEDED_GIB: u64 = 10;
 const DISK_ROOMY_GIB: u64 = 30;
@@ -384,7 +387,7 @@ fn crash_reserve(raw: Option<&str>) -> Check {
 fn other_distributions(node: Node) -> Check {
     let found: Vec<(&str, &str)> = OTHERS
         .iter()
-        .filter(|(_, _, own)| own.is_none_or(|own| own.is_rke2() != node.is_rke2()))
+        .filter(|(_, _, own)| own.is_none_or(|own| own != node.kind()))
         .filter(|(path, ..)| Path::new(path).exists())
         .map(|&(path, name, _)| (path, name))
         .collect();
@@ -475,8 +478,8 @@ fn docker_check(found: &[String], iptables: &str) -> Check {
 #[must_use]
 pub fn needed_ports(node: Node) -> Vec<(u16, &'static str)> {
     match node {
-        Node::Server => node_ports(true),
-        Node::Agent => node_ports(false),
+        Node::Server(d) => d.node_ports(true),
+        Node::Agent(d) => d.node_ports(false),
         Node::KubeSolo => kubesolo::ports(),
     }
 }
@@ -689,10 +692,17 @@ mod tests {
                 .map(|(p, _)| p.to_string())
                 .collect()
         };
-        assert_eq!(and_list(&ports(Node::Agent)), "80, 443 and 10250");
         assert_eq!(
-            and_list(&ports(Node::Server)),
+            and_list(&ports(Node::Agent(Distribution::Rke2))),
+            "80, 443 and 10250"
+        );
+        assert_eq!(
+            and_list(&ports(Node::Server(Distribution::Rke2))),
             "80, 443, 6443, 9345 and 10250"
+        );
+        assert_eq!(
+            and_list(&ports(Node::Server(Distribution::K3s))),
+            "80, 443, 6443 and 10250"
         );
         assert_eq!(
             and_list(&ports(Node::KubeSolo)),

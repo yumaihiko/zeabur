@@ -6,7 +6,7 @@ access:
 
 sources:
   catalog: /root/catalog/index.json
-  # `docker save` archives; RKE2 imports them when it starts.
+  # `docker save` archives; K3s or RKE2 imports them when it starts.
   imageArchives: [/root/images/zeabur.tar, /root/images/zeabur-identity.tar]
   identityImage: docker.io/library/zeabur-identity:dev
   identityctl: /root/bin/zeabur-identityctl

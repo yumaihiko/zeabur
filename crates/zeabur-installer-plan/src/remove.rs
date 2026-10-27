@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 
 use crate::catalog::{Component, Index};
+use crate::cluster::ZOT_HOST;
 use crate::plan::{COMPONENT_ANNOTATION, ComponentPlan, MANAGER, Warning, ZOT, warning};
-use crate::rke2::ZOT_HOST;
 use crate::storage::LONGHORN;
 
 /// The leftover that means the chart's volumes stay.

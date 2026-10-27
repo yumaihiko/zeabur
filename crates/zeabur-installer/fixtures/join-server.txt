@@ -1,5 +1,5 @@
 Join https://10.0.0.5:9345 as a server (control plane and etcd)
-RKE2 server <rke2> (pinned, checked against this installer's digests), CIS profile, on vps-2 (amd64, 8192 MiB)
+RKE2 server <version> (pinned, checked against this installer's digests), CIS hardened, on vps-2 (amd64, 8192 MiB)
 Installs RKE2 only: Zeabur, Zeabur Identity and the catalog's components are already in the cluster.
 Node addresses   10.0.0.6, fd00::6 (temporary IPv6 addresses left out)
 
@@ -21,7 +21,7 @@ Ports on the server
   open    TCP 2379  etcd client
   CLOSED  TCP 2380  etcd peer
   unknown UDP 8472  Canal VXLAN
-Ports on this VM, free before RKE2 starts (apply checks them)
+Ports on this VM, free before the node starts (apply checks them)
   TCP 80    HTTP ingress: ServiceLB holds it on every node, for when Traefik runs there
   TCP 443   HTTPS ingress: ServiceLB holds it on every node, for when Traefik runs there
   TCP 6443  Kubernetes API

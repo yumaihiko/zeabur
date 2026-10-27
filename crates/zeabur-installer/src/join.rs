@@ -8,15 +8,11 @@ use serde_json::Value;
 use zeabur_installer_host::kubectl::{self, Kubectl};
 use zeabur_installer_host::preflight::{self, Encryption, Status};
 use zeabur_installer_host::{facts, files, network, systemd};
+use zeabur_installer_plan::cluster::{AUTHN_CONFIGMAP, Distribution};
 use zeabur_installer_plan::config::{self, JoinConfig, Role};
-use zeabur_installer_plan::join::{
-    self, JoinFacts, JoinPlan, Latency, RTT_SAMPLES, SUPERVISOR_PORT,
-};
-use zeabur_installer_plan::rke2::{
-    ADMIN_KUBECONFIG, AUTHN_CONFIGMAP, AUTHN_FILE, BIN_DIR, JOIN_TOKEN_FILE, KUBELET_KUBECONFIG,
-};
+use zeabur_installer_plan::join::{self, JoinFacts, JoinPlan, Latency, RTT_SAMPLES};
 
-use crate::apply::{self, Rke2Install};
+use crate::apply::{self, ClusterInstall};
 use crate::{InstallError, node, out, render};
 
 /// The join token, from the configuration or its file, checked against the role.
@@ -38,12 +34,13 @@ fn token(config: &JoinConfig) -> Result<String, InstallError> {
 
 /// Reads the host and the way to the server.
 fn read_facts(config: &JoinConfig, token: &str) -> Result<JoinFacts, InstallError> {
-    let (host, port) = config::server_address(&config.join.server)?;
+    let distribution = config.distribution;
+    let (host, port) = config::server_address(&config.join.server, distribution.join_port())?;
     let rtt_us = network::connect_times(&host, port, RTT_SAMPLES);
-    let ports = join::server_ports(config.join.role)
+    let ports = join::server_ports(distribution, config.join.role)
         .into_iter()
         .map(|(p, _)| {
-            let open = if p == SUPERVISOR_PORT {
+            let open = if p == port {
                 !rtt_us.is_empty()
             } else {
                 network::open(&host, p)
@@ -65,6 +62,20 @@ fn make_plan(config: &JoinConfig) -> Result<(JoinPlan, String), InstallError> {
     Ok((join::plan(config, &facts)?, token))
 }
 
+/// What the plan installs, for the preflight checks.
+const fn node(plan: &JoinPlan) -> preflight::Node {
+    match plan.role {
+        Role::Server => preflight::Node::Server(plan.cluster.distribution),
+        Role::Worker => preflight::Node::Agent(plan.cluster.distribution),
+    }
+}
+
+/// The node's own `kubectl`, with the kubelet's credentials, which an agent also has.
+fn own_kubectl(distribution: Distribution) -> Kubectl {
+    let layout = distribution.layout();
+    Kubectl::new(layout.kubectl, layout.kubelet_kubeconfig)
+}
+
 pub(crate) fn show_plan(config: &JoinConfig, json: bool) -> Result<(), InstallError> {
     let (plan, _) = make_plan(config)?;
     if json {
@@ -74,7 +85,7 @@ pub(crate) fn show_plan(config: &JoinConfig, json: bool) -> Result<(), InstallEr
     } else {
         out::line(render::join_plan(&plan).trim_end());
         if apply::show_checks(
-            plan.unit,
+            node(&plan),
             config.host.require_encrypted_disk,
             plan.node_prep.as_ref(),
         ) {
@@ -84,7 +95,7 @@ pub(crate) fn show_plan(config: &JoinConfig, json: bool) -> Result<(), InstallEr
     Ok(())
 }
 
-/// The node's name: RKE2 uses the host name, in lower case.
+/// The node's name: K3s and RKE2 use the host name, in lower case.
 fn node_name(hostname: &str) -> String {
     hostname.to_ascii_lowercase()
 }
@@ -96,29 +107,31 @@ pub(crate) fn apply(config: &JoinConfig) -> Result<(), InstallError> {
         return Err(InstallError::Message(blocker.text.clone()));
     }
     apply::check_host(
-        plan.unit,
+        node(&plan),
         config.host.require_encrypted_disk,
         plan.node_prep.as_ref(),
     )?;
     apply::prepare_node(plan.node_prep.as_ref())?;
 
+    let distribution = plan.cluster.distribution;
+    let layout = distribution.layout();
     let changed = files::write(
-        Path::new(JOIN_TOKEN_FILE),
+        Path::new(layout.join_token_file),
         0o600,
         format!("{token}\n").as_bytes(),
     )?;
-    let started = apply::install_rke2(&Rke2Install {
-        rke2: &plan.rke2,
+    let started = apply::install_cluster(&ClusterInstall {
+        cluster: &plan.cluster,
+        calico: None,
         files: &plan.host_files,
         image_archives: &config.sources.image_archives,
-        unit: plan.unit,
         server: plan.role == Role::Server,
         changed,
     })?;
 
     let name = node_name(&plan.facts.hostname);
     out::step(&format!("Waiting for node {name} to be Ready"));
-    let own = Kubectl::new(format!("{BIN_DIR}/kubectl"), KUBELET_KUBECONFIG);
+    let own = own_kubectl(distribution);
     kubectl::poll(
         Duration::from_mins(10),
         &format!("node {name} to be Ready"),
@@ -126,17 +139,19 @@ pub(crate) fn apply(config: &JoinConfig) -> Result<(), InstallError> {
     )?;
 
     if plan.role == Role::Server {
-        let admin = Kubectl::rke2();
+        let admin = Kubectl::admin(distribution);
         admin.wait_ready(Duration::from_mins(5))?;
-        sync_authn(&admin)?;
+        sync_authn(&admin, distribution)?;
         node::report_sync(&admin)?;
     }
 
     out::step("Done");
     out::line(&format!(
         "{name} joined the cluster as a {}. On a server, see it with:\n  \
-         {BIN_DIR}/kubectl --kubeconfig {ADMIN_KUBECONFIG} get nodes -o wide",
-        plan.role.as_str()
+         sudo {} --kubeconfig {} get nodes -o wide",
+        plan.role.as_str(),
+        layout.kubectl,
+        layout.admin_kubeconfig
     ));
     if plan.role == Role::Worker {
         out::line(
@@ -179,7 +194,7 @@ fn ready_since(node: &Value, since: Option<u64>) -> bool {
 
 /// Copies Zeabur Identity's authentication configuration from the cluster to this server, so its
 /// kube-apiserver trusts the same issuer as the others. Returns whether the file changed.
-fn sync_authn(admin: &Kubectl) -> Result<bool, InstallError> {
+fn sync_authn(admin: &Kubectl, distribution: Distribution) -> Result<bool, InstallError> {
     let Some(config) = authn_from_cluster(admin)? else {
         out::err(&format!(
             "    warning: kube-system/{AUTHN_CONFIGMAP} does not exist yet; run `zeabur-installer \
@@ -188,7 +203,7 @@ fn sync_authn(admin: &Kubectl) -> Result<bool, InstallError> {
         return Ok(false);
     };
     Ok(files::write(
-        Path::new(AUTHN_FILE),
+        Path::new(distribution.layout().authn_file),
         0o600,
         config.as_bytes(),
     )?)
@@ -209,9 +224,10 @@ pub(crate) fn doctor(config: &JoinConfig) -> ExitCode {
         return code;
     }
     let mut results: Vec<(Status, String)> = Vec::new();
+    let distribution = config.distribution;
     let unit = match config.join.role {
-        Role::Worker => "rke2-agent",
-        Role::Server => "rke2-server",
+        Role::Worker => distribution.agent_unit(),
+        Role::Server => distribution.server_unit(),
     };
     if !systemd::is_active(unit) {
         out::line(&format!(
@@ -222,7 +238,7 @@ pub(crate) fn doctor(config: &JoinConfig) -> ExitCode {
     results.push((Status::Pass, format!("{unit} is running")));
 
     let name = facts::read().map_or_else(|_| String::new(), |f| node_name(&f.hostname));
-    let own = Kubectl::new(format!("{BIN_DIR}/kubectl"), KUBELET_KUBECONFIG);
+    let own = own_kubectl(distribution);
     results.push(match node_ready(&own, &name, None) {
         Ok(true) => (Status::Pass, format!("node {name} is Ready")),
         Ok(false) => (
@@ -236,8 +252,9 @@ pub(crate) fn doctor(config: &JoinConfig) -> ExitCode {
     results.push(distance(config));
 
     if config.join.role == Role::Server {
-        let admin = Kubectl::rke2();
-        let local = std::fs::read_to_string(AUTHN_FILE).ok();
+        let admin = Kubectl::admin(distribution);
+        let authn_file = distribution.layout().authn_file;
+        let local = std::fs::read_to_string(authn_file).ok();
         results.push(match authn_from_cluster(&admin) {
             Ok(Some(cluster)) if Some(&cluster) == local.as_ref() => (
                 Status::Pass,
@@ -246,7 +263,7 @@ pub(crate) fn doctor(config: &JoinConfig) -> ExitCode {
             Ok(Some(_)) => (
                 Status::Warn,
                 format!(
-                    "{AUTHN_FILE} differs from kube-system/{AUTHN_CONFIGMAP}: run zeabur-installer apply here"
+                    "{authn_file} differs from kube-system/{AUTHN_CONFIGMAP}: run zeabur-installer apply here"
                 ),
             ),
             Ok(None) => (
@@ -313,7 +330,7 @@ fn address_check(name: &str, internal: &[String], host: &[facts::HostAddress]) -
             Status::Warn,
             format!(
                 "node {name}: {}; the network policies fall behind it. Run zeabur-installer \
-                 apply here, which registers the node with a stable address (RKE2 node-ip), \
+                 apply here, which registers the node with a stable address (node-ip), \
                  then zeabur-installer node sync on a server",
                 problems.join("; ")
             ),
@@ -323,7 +340,9 @@ fn address_check(name: &str, internal: &[String], host: &[facts::HostAddress]) -
 
 /// The round trip to the server, now.
 fn distance(config: &JoinConfig) -> (Status, String) {
-    let Ok((host, port)) = config::server_address(&config.join.server) else {
+    let Ok((host, port)) =
+        config::server_address(&config.join.server, config.distribution.join_port())
+    else {
         return (Status::Fail, "join.server is not a valid URL".to_owned());
     };
     let Some(rtt) = join::rtt(&network::connect_times(&host, port, RTT_SAMPLES)) else {
@@ -357,13 +376,13 @@ fn distance(config: &JoinConfig) -> (Status, String) {
 }
 
 /// A joined node has no Zeabur to remove: says how to take the node out and what stays, or with
-/// `purge`, once RKE2 is gone, removes what the installer left.
+/// `purge`, once K3s or RKE2 is gone, removes what the installer left.
 pub(crate) fn uninstall(config: &JoinConfig, path: &Path, purge: bool) -> Result<(), InstallError> {
     let left = crate::uninstall::leftovers(path, config.join.token_file.as_deref());
     if purge {
         return crate::uninstall::purge(&left, path);
     }
-    if !crate::uninstall::rke2_installed() {
+    if crate::uninstall::installed().is_none() {
         out::line(&crate::uninstall::leftovers_text(&left));
         return Ok(());
     }
@@ -379,12 +398,21 @@ pub(crate) fn uninstall(config: &JoinConfig, path: &Path, purge: bool) -> Result
 /// How to take a joined node out of the cluster.
 fn take_out(config: &JoinConfig) -> InstallError {
     let name = facts::read().map_or_else(|_| "<node>".to_owned(), |f| node_name(&f.hostname));
-    let kubectl = format!("{BIN_DIR}/kubectl --kubeconfig {ADMIN_KUBECONFIG}");
+    let distribution = config.distribution;
+    let layout = distribution.layout();
+    let kubectl = format!(
+        "{} --kubeconfig {}",
+        layout.kubectl, layout.admin_kubeconfig
+    );
+    let script = match config.join.role {
+        Role::Worker => layout.uninstall_agent,
+        Role::Server => layout.uninstall_server,
+    };
     let mut text = format!(
         "this node joined a cluster as a {}; Zeabur and Zeabur Identity run on the servers. To \
          take this node out:\n  on a server:  {kubectl} drain {name} --ignore-daemonsets \
          --delete-emptydir-data\n                {kubectl} delete node {name}\n  here:         \
-         /usr/local/bin/rke2-uninstall.sh\n  then, on a server:  zeabur-installer node sync   \
+         {script}\n  then, on a server:  zeabur-installer node sync   \
          # takes its addresses out of the network policies",
         config.join.role.as_str()
     );
@@ -455,18 +483,28 @@ mod tests {
     #[test]
     fn uninstall_says_how_to_take_the_node_out_with_the_servers_kubectl() {
         let hash = "a".repeat(64);
-        let config = JoinConfig::parse(&format!(
-            "join:\n  server: https://10.0.0.5:9345\n  token: K10{hash}::abcdef.0123456789abcdef\n"
-        ))
-        .unwrap();
-        let text = take_out(&config).to_string();
-        assert!(text.contains(
-            "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml drain "
-        ));
-        assert!(text.contains(
-            "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml delete node "
-        ));
-        assert!(text.contains("/usr/local/bin/rke2-uninstall.sh"));
-        assert!(text.contains("zeabur-installer node sync"));
+        for (distribution, kubectl, script) in [
+            (
+                "rke2",
+                "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml",
+                "/usr/local/bin/rke2-uninstall.sh",
+            ),
+            (
+                "k3s",
+                "/var/lib/rancher/k3s/data/current/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml",
+                "/usr/local/bin/k3s-agent-uninstall.sh",
+            ),
+        ] {
+            let config = JoinConfig::parse(&format!(
+                "distribution: {distribution}\njoin:\n  server: https://10.0.0.5:6443\n  \
+                 token: K10{hash}::abcdef.0123456789abcdef\n"
+            ))
+            .unwrap();
+            let text = take_out(&config).to_string();
+            assert!(text.contains(&format!("{kubectl} drain ")), "{text}");
+            assert!(text.contains(&format!("{kubectl} delete node ")), "{text}");
+            assert!(text.contains(script), "{text}");
+            assert!(text.contains("zeabur-installer node sync"));
+        }
     }
 }

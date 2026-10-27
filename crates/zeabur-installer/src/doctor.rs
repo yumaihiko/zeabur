@@ -9,6 +9,7 @@ use zeabur_installer_host::kubectl::Kubectl;
 use zeabur_installer_host::nodeprep::{self, Stage};
 use zeabur_installer_host::preflight::{self, Encryption, Status};
 use zeabur_installer_host::{facts, systemd};
+use zeabur_installer_plan::cluster::Distribution;
 use zeabur_installer_plan::plan::{IDENTITY_NAMESPACE, ZEABUR_NAMESPACE};
 use zeabur_installer_plan::storage;
 
@@ -23,8 +24,26 @@ pub(crate) fn cannot_run() -> Option<ExitCode> {
     if preflight::is_root() {
         return None;
     }
-    out::line("UNKNOWN  run doctor as root (sudo): the checks read RKE2's files");
+    out::line("UNKNOWN  run doctor as root (sudo): the checks read the cluster's files");
     Some(ExitCode::from(UNKNOWN))
+}
+
+/// Whether the network policies let in the traffic of every node.
+fn policies(kubectl: &Kubectl) -> (Status, String) {
+    match crate::node::policies_behind(kubectl) {
+        Ok(missing) if missing.is_empty() => (
+            Status::Pass,
+            "the network policies let every node's traffic in".to_owned(),
+        ),
+        Ok(missing) => (
+            Status::Warn,
+            format!(
+                "the network policies do not let {} in yet: zeabur-installer node sync",
+                missing.join(", ")
+            ),
+        ),
+        Err(e) => (Status::Warn, format!("reading the network policies: {e}")),
+    }
 }
 
 pub(crate) fn run() -> ExitCode {
@@ -32,18 +51,22 @@ pub(crate) fn run() -> ExitCode {
         return code;
     }
     let mut results: Vec<(Status, String)> = Vec::new();
-    if !systemd::is_active("rke2-server") {
-        out::line("CRITICAL rke2-server is not running: journalctl -u rke2-server");
+    let distribution = crate::node::server_distribution().unwrap_or_default();
+    let unit = distribution.server_unit();
+    if !systemd::is_active(unit) {
+        out::line(&format!(
+            "CRITICAL {unit} is not running: journalctl -u {unit}"
+        ));
         return ExitCode::from(2);
     }
-    let kubectl = Kubectl::rke2();
+    let kubectl = Kubectl::admin(distribution);
     if kubectl.wait_ready(Duration::from_secs(30)).is_err() {
         out::line("CRITICAL the Kubernetes API does not answer /readyz");
         return ExitCode::from(2);
     }
     results.push((
         Status::Pass,
-        "rke2-server is running and the API is ready".to_owned(),
+        format!("{unit} is running and the API is ready"),
     ));
 
     match kubectl.get("configmap", STATE_CONFIGMAP, Some("kube-system")) {
@@ -92,20 +115,7 @@ pub(crate) fn run() -> ExitCode {
             &host.hostname.to_ascii_lowercase(),
         ));
     }
-    results.push(match crate::node::policies_behind(&kubectl) {
-        Ok(missing) if missing.is_empty() => (
-            Status::Pass,
-            "the network policies let every node's traffic in".to_owned(),
-        ),
-        Ok(missing) => (
-            Status::Warn,
-            format!(
-                "the network policies do not let {} in yet: zeabur-installer node sync",
-                missing.join(", ")
-            ),
-        ),
-        Err(e) => (Status::Warn, format!("reading the network policies: {e}")),
-    });
+    results.push(policies(&kubectl));
     let encryption = match preflight::disk_encryption("/var/lib/rancher") {
         Encryption::Encrypted => (Status::Pass, "/var/lib/rancher is encrypted"),
         Encryption::Plain => (
@@ -118,23 +128,31 @@ pub(crate) fn run() -> ExitCode {
         ),
     };
     results.push((encryption.0, encryption.1.to_owned()));
+    let encryption_config = format!(
+        "/var/lib/rancher/{}/server/cred/encryption-config.json",
+        distribution.id()
+    );
     results.push(secrets_encryption(
-        std::fs::read_to_string(ENCRYPTION_CONFIG).ok().as_deref(),
+        distribution,
+        &encryption_config,
+        std::fs::read_to_string(&encryption_config).ok().as_deref(),
     ));
 
     report(&results)
 }
 
-/// The kube-apiserver encryption configuration RKE2 writes.
-const ENCRYPTION_CONFIG: &str = "/var/lib/rancher/rke2/server/cred/encryption-config.json";
-
-/// Whether kube-apiserver writes Secrets to etcd encrypted: the first provider for `secrets` is the
-/// one it writes with, and `identity` writes them as they are.
-fn secrets_encryption(config: Option<&str>) -> (Status, String) {
+/// Whether kube-apiserver writes Secrets to its datastore encrypted, from the encryption
+/// configuration K3s or RKE2 writes at `path`: the first provider for `secrets` is the one it
+/// writes with, and `identity` writes them as they are.
+fn secrets_encryption(
+    distribution: Distribution,
+    path: &str,
+    config: Option<&str>,
+) -> (Status, String) {
     let Some(config) = config else {
         return (
             Status::Fail,
-            format!("{ENCRYPTION_CONFIG} is missing: Secrets in etcd are not encrypted"),
+            format!("{path} is missing: Secrets are stored unencrypted"),
         );
     };
     let config: Value = serde_json::from_str(config).unwrap_or_default();
@@ -154,11 +172,14 @@ fn secrets_encryption(config: Option<&str>) -> (Status, String) {
     match writer.as_deref() {
         Some("identity") | None => (
             Status::Fail,
-            "Secrets in etcd are not encrypted: rke2 secrets-encrypt status".to_owned(),
+            format!(
+                "Secrets are stored unencrypted: {} secrets-encrypt status",
+                distribution.id()
+            ),
         ),
         Some(provider) => (
             Status::Pass,
-            format!("Secrets in etcd are encrypted ({provider})"),
+            format!("Secrets are stored encrypted ({provider})"),
         ),
     }
 }
@@ -474,11 +495,23 @@ mod tests {
         let rke2 = r#"{"kind":"EncryptionConfiguration","apiVersion":"apiserver.config.k8s.io/v1",
             "resources":[{"resources":["secrets"],
             "providers":[{"aescbc":{"keys":[{"name":"aescbckey","secret":"x"}]}},{"identity":{}}]}]}"#;
-        assert_eq!(secrets_encryption(Some(rke2)).0, Status::Pass);
+        assert_eq!(
+            secrets_encryption(Distribution::Rke2, "", Some(rke2)).0,
+            Status::Pass
+        );
         let identity = rke2.replacen("aescbc", "identity", 1);
-        assert_eq!(secrets_encryption(Some(&identity)).0, Status::Fail);
-        assert_eq!(secrets_encryption(Some("{}")).0, Status::Fail);
-        assert_eq!(secrets_encryption(None).0, Status::Fail);
+        assert_eq!(
+            secrets_encryption(Distribution::K3s, "", Some(&identity)).0,
+            Status::Fail
+        );
+        assert_eq!(
+            secrets_encryption(Distribution::K3s, "", Some("{}")).0,
+            Status::Fail
+        );
+        assert_eq!(
+            secrets_encryption(Distribution::K3s, "", None).0,
+            Status::Fail
+        );
     }
 
     #[test]

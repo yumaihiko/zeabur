@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::catalog::Index;
+use crate::cluster::HostFile;
 use crate::config::PersonalConfig;
 use crate::pins::{HELM_CONTROLLER, KUBECTL, KUBESOLO};
 use crate::plan::{
@@ -18,7 +19,6 @@ use crate::plan::{
     warning, zot_cluster_ip,
 };
 use crate::remove::Removal;
-use crate::rke2::HostFile;
 use crate::select::{self, BUILD_CAPABILITIES, PERSONAL_DISTRIBUTION, PERSONAL_PROFILE};
 use crate::storage::Storage;
 use crate::{PlanError, kubesolo};
@@ -156,7 +156,7 @@ pub fn plan(
         &[],
         "A personal install is for one person: whoever has the kubeconfig is cluster admin, \
          and nothing isolates apps from each other (KubeSolo enforces no NetworkPolicy). For a \
-         team, install with RKE2 on a server with 4 GiB."
+         team, install with K3s or RKE2 on a server with 4 GiB."
             .to_owned(),
     )];
     if !index

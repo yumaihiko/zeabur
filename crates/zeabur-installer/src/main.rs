@@ -1,5 +1,5 @@
-//! `zeabur-installer`: RKE2, Zeabur Catalog components, Zeabur Identity and Zeabur on one server,
-//! or `KubeSolo` and the components for one person.
+//! `zeabur-installer`: K3s or RKE2, Zeabur Catalog components, Zeabur Identity and Zeabur on one
+//! server, or `KubeSolo` and the components for one person.
 
 mod apply;
 mod doctor;
@@ -23,9 +23,9 @@ use zeabur_installer_host::{HostError, facts, token};
 use zeabur_installer_plan::config::{AccessMode, Role};
 use zeabur_installer_plan::{PlanError, plan};
 
-/// Install RKE2 hardened with the CIS profile, the Zeabur Catalog's components, Zeabur Identity
-/// and Zeabur on one Linux server, from one configuration file. With `use: personal`, install
-/// `KubeSolo` and the components for one person instead.
+/// Install K3s or RKE2 hardened to the CIS benchmark, the Zeabur Catalog's components, Zeabur
+/// Identity and Zeabur on one Linux server, from one configuration file. With `use: personal`,
+/// install `KubeSolo` and the components for one person instead.
 #[derive(Debug, Parser)]
 #[command(name = "zeabur-installer", version, about)]
 struct Cli {
@@ -87,16 +87,17 @@ enum Command {
     /// well, 1 for a warning, 2 for something critical, 3 when the checks cannot run (not root).
     /// An invalid command line also exits 2.
     Doctor,
-    /// Remove Zeabur, or Zeabur and Zeabur Identity. RKE2 itself is removed with
-    /// `/usr/local/bin/rke2-uninstall.sh`. On a node that joined a cluster, prints how to take
+    /// Remove Zeabur, or Zeabur and Zeabur Identity. K3s itself is removed with
+    /// `/usr/local/bin/k3s-uninstall.sh`, RKE2 with `/usr/local/bin/rke2-uninstall.sh`. On a node
+    /// that joined a cluster, prints how to take
     /// the node out. Says which of the installer's files stay after that. After Zeabur Identity
     /// is removed, the other servers stop trusting it once `apply` runs on each of them.
     Uninstall {
         /// What to remove; required on a server installed with Zeabur, unless with `--purge`.
         #[arg(value_enum)]
         what: Option<Product>,
-        /// Once RKE2 is uninstalled, remove the installer's download cache, local CA copy and
-        /// configuration. Volumes stay.
+        /// Once K3s or RKE2 is uninstalled, remove the installer's download cache, local CA copy
+        /// and configuration. Volumes stay.
         #[arg(long, conflicts_with = "what")]
         purge: bool,
     },
@@ -114,7 +115,7 @@ enum NodeCommand {
     /// the same hosting provider and in the same region; another availability zone is fine. After
     /// a worker joins, run `node sync` on a server.
     Add {
-        /// `worker` runs workloads; `server` also runs the control plane and etcd.
+        /// `worker` runs workloads; `server`, on RKE2 only, also runs the control plane and etcd.
         #[arg(long, value_enum, default_value_t = NodeRole::Worker)]
         role: NodeRole,
         /// The address the new VM reaches this server at; by default this node's `InternalIP`.
@@ -136,7 +137,7 @@ fn ttl(text: &str) -> Result<Duration, String> {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum NodeRole {
-    /// An RKE2 agent.
+    /// A K3s or RKE2 agent.
     Worker,
     /// An RKE2 server.
     Server,
@@ -208,7 +209,7 @@ fn main() -> ExitCode {
             let left = uninstall::leftovers(&cli.config, None);
             if *purge {
                 uninstall::purge(&left, &cli.config)
-            } else if uninstall::rke2_installed() {
+            } else if uninstall::installed().is_some() {
                 Err(InstallError::Message(
                     "name what to remove: zeabur-installer uninstall zeabur|identity".to_owned(),
                 ))
@@ -297,7 +298,7 @@ fn show_plan(cli: &Cli, json: bool) -> Result<(), InstallError> {
     } else {
         out::line(render::plan(&plan).trim_end());
         if apply::show_checks(
-            apply::UNIT,
+            zeabur_installer_host::preflight::Node::Server(config.distribution),
             config.host.require_encrypted_disk,
             plan.node_prep.as_ref(),
         ) {

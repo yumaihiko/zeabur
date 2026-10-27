@@ -1,14 +1,14 @@
-//! `uninstall`: removes Zeabur, and Zeabur Identity with it when asked. RKE2 and the catalog's
-//! components stay; RKE2's own script removes everything. `--purge` then removes what the
-//! installer itself left on the machine.
+//! `uninstall`: removes Zeabur, and Zeabur Identity with it when asked. K3s or RKE2 and the
+//! catalog's components stay; the uninstall script of K3s or RKE2 removes everything. `--purge`
+//! then removes what the installer itself left on the machine.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use zeabur_installer_host::facts;
 use zeabur_installer_host::kubectl::Kubectl;
+use zeabur_installer_plan::cluster::{Distribution, EMPTY_AUTHN};
 use zeabur_installer_plan::plan::{IDENTITY_NAMESPACE, ZEABUR_NAMESPACE};
-use zeabur_installer_plan::rke2::{EMPTY_AUTHN, PREFIX};
 use zeabur_installer_plan::storage::{MODULES_FILE, MULTIPATH_FILE};
 
 use crate::apply::{self, STATE_DIR};
@@ -22,7 +22,8 @@ const MEMBER_BINDINGS: &str = "app.kubernetes.io/managed-by=zeabur,zeabur.com/me
 const LONGHORN_DIR: &str = "/var/lib/longhorn";
 
 pub(crate) fn run(config: &Path, what: Product) -> Result<(), InstallError> {
-    let kubectl = Kubectl::rke2();
+    let distribution = installed().unwrap_or_default();
+    let kubectl = Kubectl::admin(distribution);
     out::step("Removing Zeabur");
     kubectl.run(
         &[
@@ -60,7 +61,7 @@ pub(crate) fn run(config: &Path, what: Product) -> Result<(), InstallError> {
     if matches!(what, Product::Identity) {
         out::step("Removing Zeabur Identity");
         // Stop trusting its tokens first.
-        apply::trust(&kubectl, EMPTY_AUTHN)?;
+        apply::trust(&kubectl, distribution, EMPTY_AUTHN)?;
         kubectl.run(
             &[
                 "delete",
@@ -84,7 +85,9 @@ pub(crate) fn run(config: &Path, what: Product) -> Result<(), InstallError> {
         }
     }
     out::line(&format!(
-        "RKE2 and the catalog's components stay; {PREFIX}/bin/rke2-uninstall.sh removes them."
+        "{} and the catalog's components stay; {} removes them.",
+        distribution.title(),
+        script(distribution)
     ));
     let left = leftovers_text(&leftovers(config, None));
     if !left.is_empty() {
@@ -112,13 +115,26 @@ fn other_servers(kubectl: &Kubectl) -> Result<Vec<String>, InstallError> {
         .collect())
 }
 
-/// RKE2 is still installed: `rke2-uninstall.sh` removes its binary.
-pub(crate) fn rke2_installed() -> bool {
-    Path::new(PREFIX).join("bin/rke2").exists()
+/// The distribution still installed here: its uninstall script removes itself last.
+pub(crate) fn installed() -> Option<Distribution> {
+    Distribution::ALL.into_iter().find(|d| {
+        let layout = d.layout();
+        Path::new(layout.uninstall_server).exists() || Path::new(layout.uninstall_agent).exists()
+    })
 }
 
-/// What the installer keeps on the machine after `rke2-uninstall.sh`: its download cache and
-/// local CA, the configuration (with a join token on a joined node), a token file it names, and
+/// The uninstall script of a server or an agent.
+pub(crate) fn script(distribution: Distribution) -> &'static str {
+    let layout = distribution.layout();
+    if Path::new(layout.uninstall_agent).exists() {
+        layout.uninstall_agent
+    } else {
+        layout.uninstall_server
+    }
+}
+
+/// What the installer keeps on the machine after the cluster's uninstall script: its download cache
+/// and local CA, the configuration (with a join token on a joined node), a token file it names, and
 /// the files it wrote for Longhorn. Packages it installed for Longhorn stay.
 pub(crate) fn leftovers(config: &Path, token_file: Option<&str>) -> Vec<PathBuf> {
     let mut paths = vec![
@@ -137,12 +153,14 @@ pub(crate) fn leftovers(config: &Path, token_file: Option<&str>) -> Vec<PathBuf>
 pub(crate) fn leftovers_text(paths: &[PathBuf]) -> String {
     let mut lines = Vec::new();
     if !paths.is_empty() {
-        lines.push("After rke2-uninstall.sh, the installer's own files stay:".to_owned());
+        lines.push(
+            "After the K3s or RKE2 uninstall script, the installer's own files stay:".to_owned(),
+        );
         for path in paths {
             lines.push(format!("  {}  {}", path.display(), size(path)));
         }
         lines.push(
-            "Remove them with `zeabur-installer uninstall --purge` once RKE2 is uninstalled."
+            "Remove them with `zeabur-installer uninstall --purge` once K3s or RKE2 is uninstalled."
                 .to_owned(),
         );
     }
@@ -160,11 +178,14 @@ pub(crate) fn leftovers_text(paths: &[PathBuf]) -> String {
 }
 
 /// Removes `paths`, and the configuration's directory when that leaves it empty. Refuses while
-/// RKE2 is installed: the configuration is how `apply`, `doctor` and `uninstall` know the node.
+/// K3s or RKE2 is installed: the configuration is how `apply`, `doctor` and `uninstall` know the
+/// node.
 pub(crate) fn purge(paths: &[PathBuf], config: &Path) -> Result<(), InstallError> {
-    if rke2_installed() {
+    if let Some(distribution) = installed() {
         return Err(InstallError::Message(format!(
-            "RKE2 is still installed ({PREFIX}/bin/rke2): run {PREFIX}/bin/rke2-uninstall.sh first"
+            "{} is still installed: run {} first",
+            distribution.title(),
+            script(distribution)
         )));
     }
     out::step("Removing what the installer left");

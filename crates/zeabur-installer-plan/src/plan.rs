@@ -11,10 +11,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::catalog::{Component, Encoding, Index, SecretRef};
+use crate::cluster::{self, Distribution, HostFile};
 use crate::config::{AccessMode, Config};
-use crate::pins::{self, RKE2};
+use crate::pins::{self, CALICO, K3S, K3s, RKE2};
 use crate::remove::Removal;
-use crate::rke2::{self, HostFile};
 use crate::select::{self, Selection, Why};
 use crate::storage::{self, NodePrep, Storage};
 use crate::{PlanError, values};
@@ -53,28 +53,9 @@ const EXTERNAL_SECRETS: &str = "external-secrets/external-secrets";
 const KUBE_API_CIDR_INPUT: &str = "kube-api-cidr";
 /// The `ClusterIssuer` of `domain` access, shipped by the catalog's cert-manager component.
 pub const ACME_ISSUER: &str = "letsencrypt";
-/// What a team host uses at idle before any catalog component: the OS, RKE2 and Zeabur with
-/// Identity. On a 4 GiB VM with the `standard` preset, `free` showed 2640 MiB used, about 500 of
-/// it the components (zot, Keel and `CloudNativePG` have no catalog measurement yet, so the
-/// estimate runs about 130 MiB short until they do). The rest is split by the process figures from
-/// that VM: kube-apiserver about 980, etcd 97, kube-controller-manager 92, canal 59, then kubelet,
-/// containerd and the rest of RKE2.
-const BASE_IDLE_MIB: u64 = OS_IDLE_MIB + RKE2_IDLE_MIB + ZEABUR_IDLE_MIB;
-/// Ubuntu Server at idle.
-const OS_IDLE_MIB: u64 = 350;
-/// RKE2 and its control plane at idle, containerd and kubelet included.
-const RKE2_IDLE_MIB: u64 = 1730;
-/// Zeabur and Identity at idle.
-const ZEABUR_IDLE_MIB: u64 = 60;
-/// The least memory a team install needs.
-///
-/// It is the idle base plus Traefik and cert-manager (about 150 MiB, what `minimal` installs) and
-/// 250 MiB of headroom, rounded up. A server with 4 GiB passes, also when a crash kernel reserve
-/// takes 512 MiB of it. A smaller host can only be a personal install.
-///
-/// `standard` needs more: with zot, Keel and `CloudNativePG` it idles at about 2640 MiB (`free`),
-/// which a 4 GiB VM (3379 MiB `MemTotal`) holds with about 740 MiB to spare.
-pub const MIN_MEMORY_MIB: u64 = 2600;
+/// From this much memory up, an interface suggests RKE2 over K3s: an 8 GiB server, less what the
+/// kernel and firmware keep. Below it, K3s leaves more of the host to the apps.
+pub const RKE2_SUGGESTED_MIB: u64 = 7 * 1024;
 
 /// Why components' pods need more than `restricted`: those the catalog does not mark privileged,
 /// and those whose reason is worth more than the catalog's flag.
@@ -100,7 +81,7 @@ pub struct Facts {
     pub hostname: String,
     /// Memory in MiB.
     pub memory_mib: u64,
-    /// The addresses the node registers with (RKE2's `node-ip`); empty leaves the choice to RKE2.
+    /// The addresses the node registers with (`node-ip`); empty leaves the choice to K3s or RKE2.
     pub node_ips: Vec<String>,
     /// The prefix length of the first IPv4 node address on its interface.
     pub node_prefix: Option<u8>,
@@ -112,9 +93,11 @@ pub struct Facts {
 pub struct Plan {
     /// Facts it was computed from.
     pub facts: Facts,
-    /// The RKE2 release.
-    pub rke2: Rke2Plan,
-    /// Files written before RKE2 starts.
+    /// The Kubernetes release.
+    pub cluster: ClusterPlan,
+    /// Calico's manifest, applied once K3s's API answers; `None` on RKE2, which brings Canal.
+    pub calico: Option<Download>,
+    /// Files written before K3s or RKE2 starts.
     #[serde(skip)]
     pub host_files: Vec<HostFile>,
     /// Their paths, for the JSON form.
@@ -141,7 +124,7 @@ pub struct Plan {
     pub identity: Option<IdentityPlan>,
     /// Zeabur, when installed.
     pub zeabur: Option<ZeaburPlan>,
-    /// Idle memory: RKE2 plus the measured components.
+    /// Idle memory: the distribution plus the measured components.
     pub memory: Memory,
     /// Things to read before applying.
     pub warnings: Vec<Warning>,
@@ -167,16 +150,36 @@ pub(crate) fn warning(code: &'static str, values: &[&str], text: String) -> Warn
     }
 }
 
-/// The RKE2 release and its downloads.
+/// The K3s or RKE2 release and its downloads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Rke2Plan {
+pub struct ClusterPlan {
+    /// K3s or RKE2.
+    pub distribution: Distribution,
     /// Release tag.
     pub version: String,
     /// Whether the digests come from this installer (`true`) or the release's own list.
     pub pinned: bool,
-    /// File name, URL and pinned SHA-256 (empty when unpinned).
-    pub downloads: Vec<Download>,
+    /// The release's checksum list, read first when the release is not pinned.
+    pub checksums: Option<Download>,
+    /// K3s's binary or RKE2's tarball.
+    pub release: Download,
+    /// The image archives it imports on start.
+    pub images: Vec<Download>,
+    /// K3s's `install.sh`, always the pinned one: it writes the systemd unit and the uninstall
+    /// script for any release.
+    pub install_script: Option<Download>,
+}
+
+impl ClusterPlan {
+    /// Every download, the checksum list first.
+    pub fn downloads(&self) -> impl Iterator<Item = &Download> {
+        self.checksums
+            .iter()
+            .chain(std::iter::once(&self.release))
+            .chain(&self.images)
+            .chain(&self.install_script)
+    }
 }
 
 /// One download.
@@ -217,7 +220,7 @@ impl From<pins::Asset> for Download {
 pub struct Namespace {
     /// Name.
     pub name: String,
-    /// Why it is `privileged` instead of RKE2's default `restricted`.
+    /// Why it is `privileged` instead of the default `restricted`.
     pub privileged: Option<String>,
     /// Why it is `baseline` instead of `restricted`; ignored when it is `privileged`.
     pub baseline: Option<String>,
@@ -291,7 +294,7 @@ pub enum SecretSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ReleasePlan {
-    /// A `HelmChart` object RKE2's helm-controller installs and keeps installed.
+    /// A `HelmChart` object the distribution's helm-controller installs and keeps installed.
     HelmChart {
         /// Release name.
         name: String,
@@ -359,7 +362,7 @@ pub struct ZeaburPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Memory {
-    /// The Kubernetes distribution itself: RKE2 or `KubeSolo`.
+    /// The Kubernetes distribution itself: K3s, RKE2 or `KubeSolo`, with the OS and Zeabur.
     pub cluster_mib: u64,
     /// The components with a measurement.
     pub components_mib: u64,
@@ -375,8 +378,13 @@ pub struct Memory {
 ///
 /// When the selection fails, values do not parse or a required input is missing.
 pub fn plan(index: &Index, config: &Config, facts: &Facts) -> Result<Plan, PlanError> {
-    if facts.memory_mib < MIN_MEMORY_MIB {
-        return Err(PlanError::TeamMemory(facts.memory_mib));
+    let distribution = config.distribution;
+    if facts.memory_mib < distribution.min_memory_mib() {
+        return Err(PlanError::TeamMemory {
+            distribution,
+            min: distribution.min_memory_mib(),
+            have: facts.memory_mib,
+        });
     }
     let selection = select::select(index, config)?;
     let profile = config.profile.as_str();
@@ -387,20 +395,18 @@ pub fn plan(index: &Index, config: &Config, facts: &Facts) -> Result<Plan, PlanE
         .collect();
     let mut warnings = Vec::new();
 
-    let rke2 = rke2_plan(config.rke2_version.as_deref(), &facts.arch, &mut warnings)?;
+    let cluster = cluster_plan(distribution, config.version(), &facts.arch, &mut warnings)?;
+    let kubernetes = distribution.kubernetes();
     if !index
         .kubernetes
         .iter()
-        .any(|v| v.starts_with(&format!("{}.", RKE2.kubernetes)))
+        .any(|v| v.starts_with(&format!("{kubernetes}.")))
     {
         let tested = index.kubernetes.join(", ");
         warnings.push(warning(
             "kubernetes.untested",
-            &[RKE2.kubernetes, &tested],
-            format!(
-                "The catalog was not tested on Kubernetes {}; it lists {tested}.",
-                RKE2.kubernetes
-            ),
+            &[kubernetes, &tested],
+            format!("The catalog was not tested on Kubernetes {kubernetes}; it lists {tested}."),
         ));
     }
 
@@ -431,12 +437,13 @@ pub fn plan(index: &Index, config: &Config, facts: &Facts) -> Result<Plan, PlanE
     let zot_cluster_ip = zot_cluster_ip(index, &config.inputs, &chosen);
     let host_files = server_files(config, &chosen, facts, zot_cluster_ip.as_deref());
 
-    let memory = memory(&components, facts.memory_mib, &mut warnings);
+    let memory = memory(distribution, &components, facts.memory_mib, &mut warnings);
 
     Ok(Plan {
         storage: storage_plan(&components, profile, &mut warnings),
         facts: facts.clone(),
-        rke2,
+        cluster,
+        calico: (distribution == Distribution::K3s).then(|| CALICO.manifest().into()),
         host_file_paths: host_files.iter().map(|f| f.path.clone()).collect(),
         host_files,
         namespaces: namespaces.into_values().collect(),
@@ -517,11 +524,11 @@ fn storage_plan(
     }
 }
 
-/// RKE2's packaged components the catalog replaces.
-fn packaged_to_disable(chosen: &BTreeSet<&str>) -> Vec<String> {
+/// The distribution's packaged components the catalog replaces.
+fn packaged_to_disable(distribution: Distribution, chosen: &BTreeSet<&str>) -> Vec<String> {
     chosen
         .contains("metrics/metrics-server")
-        .then(|| "rke2-metrics-server".to_owned())
+        .then(|| distribution.packaged_metrics_server().to_owned())
         .into_iter()
         .collect()
 }
@@ -674,14 +681,20 @@ pub fn products_only(
 }
 
 /// Idle memory, and a warning when the host is short of it.
-fn memory(components: &[ComponentPlan], host_mib: u64, warnings: &mut Vec<Warning>) -> Memory {
-    let memory = idle_memory(BASE_IDLE_MIB, components, host_mib);
+fn memory(
+    distribution: Distribution,
+    components: &[ComponentPlan],
+    host_mib: u64,
+    warnings: &mut Vec<Warning>,
+) -> Memory {
+    let memory = idle_memory(distribution.base_idle_mib(), components, host_mib);
     let idle = memory.cluster_mib + memory.components_mib;
     if idle > host_mib * 4 / 5 {
+        let title = distribution.title();
         warnings.push(warning(
             "memory.tight",
-            &[&idle.to_string(), &host_mib.to_string()],
-            format!("At idle, the system, RKE2 and the components use about {idle} MiB of this host's {host_mib} MiB."),
+            &[&idle.to_string(), &host_mib.to_string(), title],
+            format!("At idle, the system, {title} and the components use about {idle} MiB of this host's {host_mib} MiB."),
         ));
     }
     memory
@@ -699,63 +712,91 @@ pub(crate) fn idle_memory(cluster_mib: u64, components: &[ComponentPlan], host_m
     }
 }
 
-pub(crate) fn rke2_plan(
-    rke2_version: Option<&str>,
+/// The release of `distribution` and its downloads: the pinned one, or `version` checked against
+/// its own checksum list, with a warning.
+pub(crate) fn cluster_plan(
+    distribution: Distribution,
+    version: Option<&str>,
     arch: &str,
     warnings: &mut Vec<Warning>,
-) -> Result<Rke2Plan, PlanError> {
-    let files = RKE2
-        .files(arch)
-        .ok_or_else(|| PlanError::Arch(arch.to_owned()))?;
-    let (version, pinned) = match rke2_version {
-        Some(v) if v != RKE2.version => {
+) -> Result<ClusterPlan, PlanError> {
+    let unknown_arch = || PlanError::Arch(arch.to_owned());
+    let pinned_version = distribution.pinned_version();
+    let (version, pinned) = match version {
+        Some(v) if v != pinned_version => {
+            let title = distribution.title();
             warnings.push(warning(
-                "rke2.unsupported",
-                &[v],
+                "cluster.unsupported",
+                &[title, v],
                 format!(
-                    "RKE2 {v} is not supported by this installer release: its downloads are \
+                    "{title} {v} is not supported by this installer release: its downloads are \
                      checked only against the release's own checksum list, and the catalog may \
                      not have been tested on it."
                 ),
             ));
             (v.to_owned(), false)
         }
-        Some(_) | None => (RKE2.version.to_owned(), true),
+        Some(_) | None => (pinned_version.to_owned(), true),
     };
-    let named = [
-        (format!("rke2.linux-{arch}.tar.gz"), files.tarball),
-        (
-            format!("rke2-images-core.linux-{arch}.tar.zst"),
-            files.images_core,
+    let url: fn(&str, &str) -> String = match distribution {
+        Distribution::K3s => pins::k3s_url,
+        Distribution::Rke2 => pins::rke2_url,
+    };
+    let download = |file: String, sha: &str| Download {
+        url: url(&version, &file),
+        sha256: pinned.then(|| sha.to_owned()),
+        file,
+    };
+    let (release, images, install_script) = match distribution {
+        Distribution::K3s => (
+            download(
+                K3s::binary_file(arch),
+                K3S.binary.get(arch).ok_or_else(unknown_arch)?,
+            ),
+            vec![download(
+                format!("k3s-airgap-images-{arch}.tar.zst"),
+                K3S.images.get(arch).ok_or_else(unknown_arch)?,
+            )],
+            Some(Download {
+                file: "install.sh".to_owned(),
+                url: pins::k3s_install_script_url(K3S.version),
+                sha256: Some(K3S.install_script.to_owned()),
+            }),
         ),
-        (
-            format!("rke2-images-canal.linux-{arch}.tar.zst"),
-            files.images_canal,
-        ),
-    ];
-    let mut downloads: Vec<Download> = named
-        .into_iter()
-        .map(|(file, sha)| Download {
-            url: pins::rke2_url(&version, &file),
-            sha256: pinned.then(|| sha.to_owned()),
-            file,
-        })
-        .collect();
-    if !pinned {
+        Distribution::Rke2 => {
+            let files = RKE2.files(arch).ok_or_else(unknown_arch)?;
+            (
+                download(format!("rke2.linux-{arch}.tar.gz"), files.tarball),
+                vec![
+                    download(
+                        format!("rke2-images-core.linux-{arch}.tar.zst"),
+                        files.images_core,
+                    ),
+                    download(
+                        format!("rke2-images-canal.linux-{arch}.tar.zst"),
+                        files.images_canal,
+                    ),
+                ],
+                None,
+            )
+        }
+    };
+    let checksums = (!pinned).then(|| {
         let file = format!("sha256sum-{arch}.txt");
-        downloads.insert(
-            0,
-            Download {
-                url: pins::rke2_url(&version, &file),
-                sha256: None,
-                file,
-            },
-        );
-    }
-    Ok(Rke2Plan {
+        Download {
+            url: url(&version, &file),
+            sha256: None,
+            file,
+        }
+    });
+    Ok(ClusterPlan {
+        distribution,
         version,
         pinned,
-        downloads,
+        checksums,
+        release,
+        images,
+        install_script,
     })
 }
 
@@ -787,7 +828,7 @@ const INSTALLER_INPUTS: &[(&str, &str, &str, &str)] = &[(
 /// The value of an input the installer knows; a configured value wins over it.
 fn known_input(component: &str, input: &str, facts: &Facts) -> Option<Value> {
     match (component, input) {
-        (ZOT, ZOT_CLUSTER_IP_INPUT) => Some(json!(rke2::ZOT_CLUSTER_IP)),
+        (ZOT, ZOT_CLUSTER_IP_INPUT) => Some(json!(cluster::ZOT_CLUSTER_IP)),
         (EXTERNAL_SECRETS, KUBE_API_CIDR_INPUT) => {
             let ip = facts
                 .node_ips
@@ -1083,24 +1124,25 @@ fn baseline(component: &Component) -> Option<String> {
     })
 }
 
-/// The first server's RKE2 files.
+/// The first server's files.
 fn server_files(
     config: &Config,
     chosen: &BTreeSet<&str>,
     facts: &Facts,
     zot_cluster_ip: Option<&str>,
 ) -> Vec<HostFile> {
-    let mut files = rke2::host_files(&rke2::Options {
+    let distribution = config.distribution;
+    let mut files = distribution.server_files(&cluster::Options {
         tls_san: config.host.tls_san.clone(),
-        disable: packaged_to_disable(chosen),
+        disable: packaged_to_disable(distribution, chosen),
         identity: config.zeabur,
     });
-    files.extend(rke2::node_ip_file(&facts.node_ips));
-    files.extend(zot_cluster_ip.map(rke2::registries_file));
+    files.extend(distribution.node_ip_file(&facts.node_ips));
+    files.extend(zot_cluster_ip.map(|ip| distribution.registries_file(ip)));
     files
 }
 
-/// zot's fixed `ClusterIP`: the configured `cluster-ip` input, else [`rke2::ZOT_CLUSTER_IP`].
+/// zot's fixed `ClusterIP`: the configured `cluster-ip` input, else [`cluster::ZOT_CLUSTER_IP`].
 /// `None` when zot is not installed, or its catalog release takes no such input.
 pub(crate) fn zot_cluster_ip(
     index: &Index,
@@ -1116,7 +1158,7 @@ pub(crate) fn zot_cluster_ip(
         .get(ZOT)
         .and_then(|g| g.get(&input.name))
         .and_then(Value::as_str);
-    Some(given.unwrap_or(rke2::ZOT_CLUSTER_IP).to_owned())
+    Some(given.unwrap_or(cluster::ZOT_CLUSTER_IP).to_owned())
 }
 
 /// A `HelmChart` in `kube-system`, labelled as the installer's.
@@ -1192,23 +1234,49 @@ pub fn namespace_object(namespace: &Namespace) -> Value {
     json!({"apiVersion": "v1", "kind": "Namespace", "metadata": metadata})
 }
 
+/// Calico's annotations on a Node naming the addresses of its VXLAN interface.
+const CALICO_TUNNEL_ANNOTATIONS: [&str; 2] = [
+    "projectcalico.org/IPv4VXLANTunnelAddr",
+    "projectcalico.org/IPv6VXLANTunnelAddr",
+];
+
 /// The addresses node traffic comes from, read from `kubectl get nodes -o json`.
 ///
-/// The first address of each pod range: Canal's VXLAN interface holds it, and a node's traffic to
-/// pods on other nodes leaves from it. A node's traffic to its own pods passes without a rule.
-/// Sorted and without repeats.
+/// A node's traffic to pods on other nodes leaves from its VXLAN interface. Calico (K3s) names
+/// that interface's address in an annotation; Canal (RKE2) gives it the first address of the
+/// node's pod range. A node's traffic to its own pods passes without a rule. Sorted and without
+/// repeats.
 #[must_use]
 pub fn node_sources(nodes: &Value) -> Vec<String> {
-    let found: BTreeSet<String> = nodes
+    let mut found = BTreeSet::new();
+    for node in nodes
         .get("items")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|node| node.pointer("/spec/podCIDRs").and_then(Value::as_array))
-        .flatten()
-        .filter_map(Value::as_str)
-        .filter_map(|cidr| cidr.split_once('/').map(|(base, _)| base.to_owned()))
-        .collect();
+    {
+        let calico: Vec<String> = CALICO_TUNNEL_ANNOTATIONS
+            .iter()
+            .filter_map(|key| {
+                node.pointer("/metadata/annotations")
+                    .and_then(|a| a.get(*key))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .collect();
+        if calico.is_empty() {
+            found.extend(
+                node.pointer("/spec/podCIDRs")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter_map(|cidr| cidr.split_once('/').map(|(base, _)| base.to_owned())),
+            );
+        } else {
+            found.extend(calico);
+        }
+    }
     found.into_iter().collect()
 }
 
@@ -1297,16 +1365,16 @@ pub fn zot_builder_policy() -> Value {
     })
 }
 
-/// The namespace where RKE2 runs the `ServiceLB` pods.
+/// The namespace where K3s and RKE2 run the `ServiceLB` pods.
 pub const SERVICELB_NAMESPACE: &str = "kube-system";
 
 /// The `NetworkPolicy` that lets outside traffic into the `ServiceLB` pods.
 ///
-/// RKE2's `cis` profile adds `kube-system/default-network-policy`, which lets in only pods of
-/// `kube-system`. Without this policy, a `ServiceLB` pod on a worker gets no outside requests.
-/// RKE2 labels the pods `svccontroller.rke2.cattle.io/svcname`, not with the k3s prefix.
+/// `kube-system/default-network-policy` lets in only pods of `kube-system`: RKE2's `cis` profile
+/// adds it, and the installer adds it on K3s. Without this policy, a `ServiceLB` pod on a worker
+/// gets no outside requests. Each distribution labels the pods with its own prefix.
 #[must_use]
-pub fn servicelb_policy() -> Value {
+pub fn servicelb_policy(distribution: Distribution) -> Value {
     json!({
         "apiVersion": "networking.k8s.io/v1",
         "kind": "NetworkPolicy",
@@ -1317,7 +1385,7 @@ pub fn servicelb_policy() -> Value {
         },
         "spec": {
             "podSelector": {"matchExpressions": [
-                {"key": "svccontroller.rke2.cattle.io/svcname", "operator": "Exists"},
+                {"key": distribution.servicelb_label(), "operator": "Exists"},
             ]},
             "policyTypes": ["Ingress"],
             "ingress": [{}],
@@ -1511,11 +1579,11 @@ mod tests {
     }
 
     #[test]
-    fn standard_follows_the_catalog_and_leaves_out_k3s_only_components() {
+    fn standard_follows_the_catalog_and_leaves_out_components_of_another_distribution() {
         let mut index = Index::parse(INDEX.as_bytes()).unwrap();
         for component in &mut index.components {
             if component.id == "node-updates/system-upgrade-controller" {
-                component.distributions = vec!["k3s".to_owned()];
+                component.distributions = vec!["rke2".to_owned()];
             }
         }
         let plan = plan(&index, &config(""), &facts()).unwrap();
@@ -1535,9 +1603,11 @@ mod tests {
         );
         assert_eq!(
             &plan.left_out["node-updates/system-upgrade-controller"],
-            "runs on k3s only"
+            "runs on rke2 only"
         );
-        assert!(plan.rke2.pinned);
+        assert!(plan.cluster.pinned);
+        assert_eq!(plan.cluster.distribution, Distribution::K3s);
+        assert!(plan.calico.is_some());
         assert!(
             plan.host_file_paths
                 .iter()
@@ -1742,10 +1812,11 @@ mod tests {
         let index = Index::parse(INDEX.as_bytes()).unwrap();
         let without = plan(&index, &config("disable: [container-registry]\n"), &facts()).unwrap();
         assert_eq!(without.zot_cluster_ip, None);
+        let k3s = Distribution::K3s;
         assert!(
             !without
                 .host_file_paths
-                .contains(&rke2::REGISTRIES_FILE.to_owned())
+                .contains(&k3s.layout().registries_file.to_owned())
         );
 
         let with = plan(
@@ -1754,14 +1825,17 @@ mod tests {
             &facts(),
         )
         .unwrap();
-        assert_eq!(with.zot_cluster_ip.as_deref(), Some(rke2::ZOT_CLUSTER_IP));
+        assert_eq!(
+            with.zot_cluster_ip.as_deref(),
+            Some(cluster::ZOT_CLUSTER_IP)
+        );
         assert!(zot_values(&with).contains(r#""clusterIP":"10.43.0.50""#));
         let registries = with
             .host_files
             .iter()
-            .find(|f| f.path == rke2::REGISTRIES_FILE)
+            .find(|f| f.path == k3s.layout().registries_file)
             .unwrap();
-        assert_eq!(registries, &rke2::registries_file(rke2::ZOT_CLUSTER_IP));
+        assert_eq!(registries, &k3s.registries_file(cluster::ZOT_CLUSTER_IP));
 
         let chosen = plan(
             &index,
@@ -1814,13 +1888,50 @@ mod tests {
     }
 
     #[test]
-    fn another_rke2_version_is_a_warning_not_an_error() {
+    fn another_release_is_a_warning_not_an_error() {
         let index = Index::parse(INDEX.as_bytes()).unwrap();
-        let p = plan(&index, &config("rke2Version: v1.37.1+rke2r1\n"), &facts()).unwrap();
-        assert!(!p.rke2.pinned);
-        assert!(p.rke2.downloads.iter().all(|d| d.sha256.is_none()));
-        assert_eq!(p.rke2.downloads[0].file, "sha256sum-arm64.txt");
-        assert!(p.warnings.iter().any(|w| w.code == "rke2.unsupported"));
+        for extra in [
+            "distribution: rke2\nrke2Version: v1.37.1+rke2r1\n",
+            "k3sVersion: v1.37.1+k3s1\n",
+        ] {
+            let p = plan(&index, &config(extra), &facts()).unwrap();
+            assert!(!p.cluster.pinned);
+            assert_eq!(
+                p.cluster.downloads().next().unwrap().file,
+                "sha256sum-arm64.txt"
+            );
+            assert!(
+                p.cluster
+                    .downloads()
+                    .filter(|d| d.file != "install.sh")
+                    .all(|d| d.sha256.is_none()),
+                "{extra}"
+            );
+            assert!(p.warnings.iter().any(|w| w.code == "cluster.unsupported"));
+        }
+    }
+
+    #[test]
+    fn k3s_comes_with_its_binary_images_and_pinned_install_script() {
+        let index = Index::parse(INDEX.as_bytes()).unwrap();
+        let p = plan(&index, &config(""), &facts()).unwrap();
+        let files: Vec<&str> = p.cluster.downloads().map(|d| d.file.as_str()).collect();
+        assert_eq!(
+            files,
+            ["k3s-arm64", "k3s-airgap-images-arm64.tar.zst", "install.sh"]
+        );
+        assert!(p.cluster.downloads().all(|d| d.sha256.is_some()));
+        assert!(
+            p.cluster
+                .release
+                .url
+                .starts_with("https://github.com/k3s-io/k3s/releases/download/v1.36.5%2Bk3s1/")
+        );
+        assert!(p.host_file_paths.iter().all(|f| !f.contains("rke2")));
+        let rke2 = plan(&index, &config("distribution: rke2\n"), &facts()).unwrap();
+        assert_eq!(rke2.calico, None);
+        assert_eq!(rke2.cluster.install_script, None);
+        assert!(rke2.host_file_paths.iter().all(|f| !f.contains("k3s")));
     }
 
     #[test]
@@ -1971,17 +2082,20 @@ mod tests {
 
     #[test]
     fn servicelb_pods_alone_take_outside_traffic() {
-        let policy = servicelb_policy();
-        assert_eq!(policy["metadata"]["namespace"], "kube-system");
-        assert_eq!(
-            policy["spec"]["podSelector"],
-            json!({"matchExpressions": [
-                {"key": "svccontroller.rke2.cattle.io/svcname", "operator": "Exists"},
-            ]}),
-            "only ServiceLB pods"
-        );
-        assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress"]));
-        assert_eq!(policy["spec"]["ingress"], json!([{}]), "from any source");
+        for (distribution, label) in [
+            (Distribution::Rke2, "svccontroller.rke2.cattle.io/svcname"),
+            (Distribution::K3s, "svccontroller.k3s.cattle.io/svcname"),
+        ] {
+            let policy = servicelb_policy(distribution);
+            assert_eq!(policy["metadata"]["namespace"], "kube-system");
+            assert_eq!(
+                policy["spec"]["podSelector"],
+                json!({"matchExpressions": [{"key": label, "operator": "Exists"}]}),
+                "only ServiceLB pods"
+            );
+            assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress"]));
+            assert_eq!(policy["spec"]["ingress"], json!([{}]), "from any source");
+        }
     }
 
     #[test]
@@ -2127,14 +2241,20 @@ mod tests {
     #[test]
     fn a_team_install_needs_the_least_memory() {
         let index = Index::parse(INDEX.as_bytes()).unwrap();
-        let mut small = facts();
-        small.memory_mib = MIN_MEMORY_MIB;
-        assert!(plan(&index, &config(""), &small).is_ok());
-        small.memory_mib = MIN_MEMORY_MIB - 1;
-        let Err(error) = plan(&index, &config(""), &small) else {
-            panic!("{} MiB is too little for a team install", small.memory_mib);
-        };
-        assert!(error.to_string().contains("use: personal"), "{error}");
+        for (distribution, extra) in [
+            (Distribution::K3s, ""),
+            (Distribution::Rke2, "distribution: rke2\n"),
+        ] {
+            let mut small = facts();
+            small.memory_mib = distribution.min_memory_mib();
+            assert!(plan(&index, &config(extra), &small).is_ok());
+            small.memory_mib -= 1;
+            let Err(error) = plan(&index, &config(extra), &small) else {
+                panic!("{} MiB is too little for a team install", small.memory_mib);
+            };
+            assert!(error.to_string().contains("use: personal"), "{error}");
+            assert!(error.to_string().contains(distribution.title()), "{error}");
+        }
     }
 
     #[test]
@@ -2142,10 +2262,29 @@ mod tests {
         let index = Index::parse(INDEX.as_bytes()).unwrap();
         let mut host = facts();
         host.memory_mib = 3379;
-        let plan = plan(&index, &config(""), &host).unwrap();
-        let idle = plan.memory.cluster_mib + plan.memory.components_mib;
-        assert!(idle < host.memory_mib * 4 / 5, "{idle} MiB");
-        assert!(plan.warnings.iter().all(|w| w.code != "memory.tight"));
+        for extra in ["", "distribution: rke2\n"] {
+            let plan = plan(&index, &config(extra), &host).unwrap();
+            let idle = plan.memory.cluster_mib + plan.memory.components_mib;
+            assert!(idle < host.memory_mib * 4 / 5, "{idle} MiB");
+            assert!(plan.warnings.iter().all(|w| w.code != "memory.tight"));
+        }
+    }
+
+    #[test]
+    fn node_sources_are_the_vxlan_addresses_of_calico_or_canal() {
+        let nodes = json!({"items": [
+            {
+                "metadata": {"annotations": {
+                    "projectcalico.org/IPv4VXLANTunnelAddr": "10.42.8.64",
+                }},
+                "spec": {"podCIDRs": ["10.42.0.0/24"]},
+            },
+            {"metadata": {}, "spec": {"podCIDRs": ["10.42.1.0/24", "fd00:42:1::/64"]}},
+        ]});
+        assert_eq!(
+            node_sources(&nodes),
+            ["10.42.1.0", "10.42.8.64", "fd00:42:1::"]
+        );
     }
 
     #[test]

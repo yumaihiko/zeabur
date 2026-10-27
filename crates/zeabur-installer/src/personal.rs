@@ -12,6 +12,7 @@ use zeabur_installer_host::kubectl::{self, Kubectl};
 use zeabur_installer_host::preflight::{self, Node, Status};
 use zeabur_installer_host::{archive, cmd, download, facts, files, systemd};
 use zeabur_installer_plan::catalog::Index;
+use zeabur_installer_plan::cluster::ZOT_HOST;
 use zeabur_installer_plan::config::PersonalConfig;
 use zeabur_installer_plan::kubesolo::{
     ADMIN_KUBECONFIG, BINARY, DATA_DIR, KUBECTL, PERSONAL_KUBECONFIG, STATE_DIR, UNIT,
@@ -22,7 +23,6 @@ use zeabur_installer_plan::personal::{self, PersonalPlan};
 use zeabur_installer_plan::pins::HELM_CONTROLLER;
 use zeabur_installer_plan::plan::{self, ComponentPlan, MANAGER, NAMESPACE_MANAGER, Warning};
 use zeabur_installer_plan::remove::Removal;
-use zeabur_installer_plan::rke2::ZOT_HOST;
 use zeabur_installer_plan::select::PERSONAL_PROFILE;
 
 use crate::apply::STATE_CONFIGMAP;

@@ -1,8 +1,10 @@
 #![doc = include_str!("../README.md")]
 
 pub mod catalog;
+pub mod cluster;
 pub mod config;
 pub mod join;
+pub mod k3s;
 pub mod kubesolo;
 pub mod personal;
 pub mod pins;
@@ -60,11 +62,18 @@ pub enum PlanError {
     Arch(String),
     /// Too little memory for a team install.
     #[error(
-        "a team install needs a server with at least {min} MiB of memory (RKE2 and Zeabur); this one \
-         has {0} MiB. Install for yourself instead: set `use: personal` (docs/reference/installer-configuration.md)",
-        min = plan::MIN_MEMORY_MIB
+        "a team install on {} needs a server with at least {min} MiB of memory; this one has {have} \
+         MiB. Install for yourself instead: set `use: personal` (docs/reference/installer-configuration.md)",
+        .distribution.title()
     )]
-    TeamMemory(u64),
+    TeamMemory {
+        /// The distribution chosen.
+        distribution: cluster::Distribution,
+        /// What it needs.
+        min: u64,
+        /// What the host has.
+        have: u64,
+    },
     /// This build pins no release, and `sources` does not name these keys.
     #[error(
         "this installer is a development build and pins no release: set {} in the configuration \
@@ -78,4 +87,11 @@ pub enum PlanError {
          needs the server token from `zeabur-installer node add --role server`"
     )]
     BootstrapTokenForServer,
+    /// A second server was asked of K3s, which runs one.
+    #[error(
+        "configuration: join.role: server: K3s runs one server with SQLite and takes workers only. \
+         For a control plane that survives losing a server, install RKE2 (`distribution: rke2`) \
+         on three servers"
+    )]
+    SecondServer,
 }

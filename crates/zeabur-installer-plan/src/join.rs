@@ -1,5 +1,5 @@
-//! The plan of a node joining an existing cluster: RKE2 only, as an agent (worker) or a server,
-//! with what the joining VM measured about its distance to the server.
+//! The plan of a node joining an existing cluster: K3s or RKE2 only, as an agent (worker) or, on
+//! RKE2, a server, with what the joining VM measured about its distance to the server.
 //!
 //! Every node of a cluster belongs at one provider in one region. etcd waits for a majority on
 //! every write, the kubelet and the API server talk constantly, and volumes are local, so a node
@@ -9,12 +9,12 @@
 use serde::Serialize;
 
 use crate::PlanError;
+use crate::cluster::{self, Distribution, HostFile};
 use crate::config::{JoinConfig, Role};
-use crate::plan::{Facts, Rke2Plan, Warning, rke2_plan, warning};
-use crate::rke2::{self, HostFile};
+use crate::plan::{ClusterPlan, Facts, Warning, cluster_plan, warning};
 use crate::storage::{self, NodePrep};
 
-/// Connections timed to the server's port 9345.
+/// Connections timed to the server's join port.
 pub const RTT_SAMPLES: usize = 5;
 /// Above this median round trip, in microseconds, the server is farther than one region allows:
 /// between availability zones of one region round trips are about 0.5 to 2 ms.
@@ -23,17 +23,15 @@ pub const RTT_WARN_US: u64 = 10_000;
 /// 100 ms by default and every write waits for a majority round trip.
 pub const RTT_CRITICAL_US: u64 = 50_000;
 
-/// The supervisor port; a node cannot join without it.
-pub const SUPERVISOR_PORT: u16 = 9345;
-
-/// TCP ports on the server this node must reach.
+/// TCP ports on the server this node must reach. The first one is the join port; a node cannot
+/// join without it.
 #[must_use]
-pub fn server_ports(role: Role) -> Vec<(u16, &'static str)> {
-    let mut ports = vec![
-        (SUPERVISOR_PORT, "RKE2 supervisor"),
-        (6443, "Kubernetes API"),
-        (10250, "kubelet"),
-    ];
+pub fn server_ports(distribution: Distribution, role: Role) -> Vec<(u16, &'static str)> {
+    let mut ports = match distribution {
+        Distribution::K3s => vec![(6443, "Kubernetes API and K3s supervisor")],
+        Distribution::Rke2 => vec![(9345, "RKE2 supervisor"), (6443, "Kubernetes API")],
+    };
+    ports.push((10250, "kubelet"));
     if role == Role::Server {
         ports.extend([(2379, "etcd client"), (2380, "etcd peer")]);
     }
@@ -45,7 +43,7 @@ pub fn server_ports(role: Role) -> Vec<(u16, &'static str)> {
 pub struct JoinFacts {
     /// The host.
     pub facts: Facts,
-    /// TCP connect times to the server's port 9345, in microseconds; empty when it did not answer.
+    /// TCP connect times to the server's join port, in microseconds; empty when it did not answer.
     pub rtt_us: Vec<u64>,
     /// Each port of `server_ports` and whether a TCP connection to it succeeded.
     pub ports: Vec<(u16, bool)>,
@@ -133,13 +131,13 @@ pub struct JoinPlan {
     pub facts: Facts,
     /// `worker` or `server`.
     pub role: Role,
-    /// The supervisor URL.
+    /// The URL it joins through.
     pub server: String,
-    /// The systemd unit: `rke2-agent` or `rke2-server`.
+    /// The systemd unit, such as `k3s-agent` or `rke2-server`.
     pub unit: &'static str,
-    /// The RKE2 release; it must be the cluster's.
-    pub rke2: Rke2Plan,
-    /// Files written before RKE2 starts. The token file is not among them.
+    /// The release; it must be the cluster's.
+    pub cluster: ClusterPlan,
+    /// Files written before the node starts. The token file is not among them.
     #[serde(skip)]
     pub host_files: Vec<HostFile>,
     /// Their paths, for the JSON form.
@@ -150,7 +148,7 @@ pub struct JoinPlan {
     pub rtt: Option<Rtt>,
     /// Ports on the server, and UDP ports that cannot be checked.
     pub ports: Vec<Port>,
-    /// Ports on this VM that `apply` checks are free before RKE2 starts.
+    /// Ports on this VM that `apply` checks are free before the node starts.
     pub local_ports: Vec<Port>,
     /// Things to read before applying.
     pub warnings: Vec<Warning>,
@@ -158,7 +156,7 @@ pub struct JoinPlan {
     pub blockers: Vec<Warning>,
 }
 
-fn rtt_warning(rtt: Rtt) -> Option<Warning> {
+fn rtt_warning(rtt: Rtt, port: u16) -> Option<Warning> {
     let median = ms(rtt.median_us);
     match latency(rtt.median_us) {
         Latency::Fine => None,
@@ -166,8 +164,8 @@ fn rtt_warning(rtt: Rtt) -> Option<Warning> {
             "join.rtt.high",
             &[&median, &ms(RTT_WARN_US)],
             format!(
-                "The server is {median} ms away (median of {} TCP connects to port \
-                 {SUPERVISOR_PORT}); within a region it is usually under {} ms.",
+                "The server is {median} ms away (median of {} TCP connects to port {port}); \
+                 within a region it is usually under {} ms.",
                 rtt.samples,
                 ms(RTT_WARN_US)
             ),
@@ -176,8 +174,8 @@ fn rtt_warning(rtt: Rtt) -> Option<Warning> {
             "join.rtt.critical",
             &[&median, &ms(RTT_CRITICAL_US)],
             format!(
-                "The server is {median} ms away (median of {} TCP connects to port \
-                 {SUPERVISOR_PORT}). Above {} ms the cluster will be slow and unstable.",
+                "The server is {median} ms away (median of {} TCP connects to port {port}). \
+                 Above {} ms the cluster will be slow and unstable.",
                 rtt.samples,
                 ms(RTT_CRITICAL_US)
             ),
@@ -185,10 +183,16 @@ fn rtt_warning(rtt: Rtt) -> Option<Warning> {
     }
 }
 
-/// The server's ports with what was found, a warning for closed ones besides 9345 (a blocker of
-/// its own), and the UDP port that cannot be checked.
-fn ports(role: Role, found: &[(u16, bool)], host: &str, warnings: &mut Vec<Warning>) -> Vec<Port> {
-    let mut ports: Vec<Port> = server_ports(role)
+/// The server's ports with what was found, a warning for closed ones besides the join port (a
+/// blocker of its own), and the UDP port that cannot be checked.
+fn ports(
+    distribution: Distribution,
+    role: Role,
+    found: &[(u16, bool)],
+    host: &str,
+    warnings: &mut Vec<Warning>,
+) -> Vec<Port> {
+    let mut ports: Vec<Port> = server_ports(distribution, role)
         .into_iter()
         .map(|(port, purpose)| Port {
             number: port,
@@ -202,7 +206,7 @@ fn ports(role: Role, found: &[(u16, bool)], host: &str, warnings: &mut Vec<Warni
         .collect();
     let closed: Vec<String> = ports
         .iter()
-        .filter(|p| p.number != SUPERVISOR_PORT && p.open == Some(false))
+        .filter(|p| p.number != distribution.join_port() && p.open == Some(false))
         .map(|p| p.number.to_string())
         .collect();
     if !closed.is_empty() {
@@ -216,10 +220,11 @@ fn ports(role: Role, found: &[(u16, bool)], host: &str, warnings: &mut Vec<Warni
             ),
         ));
     }
+    let (number, purpose) = distribution.vxlan();
     ports.push(Port {
-        number: 8472,
+        number,
         protocol: "udp",
-        purpose: "Canal VXLAN",
+        purpose,
         open: None,
     });
     ports
@@ -239,10 +244,10 @@ fn same_region() -> Warning {
 /// What `node add` tells before a node joins: the same messages `plan` shows on the new VM, less
 /// what only the VM can find out.
 #[must_use]
-pub fn advice(role: Role, longhorn: bool) -> Vec<Warning> {
+pub fn advice(distribution: Distribution, role: Role, longhorn: bool) -> Vec<Warning> {
     let mut all = vec![same_region()];
     all.extend(
-        standing_warnings(role, true, longhorn)
+        standing_warnings(distribution, role, true, longhorn)
             .into_iter()
             .filter(|w| w.code != "join.udp"),
     );
@@ -251,22 +256,41 @@ pub fn advice(role: Role, longhorn: bool) -> Vec<Warning> {
 
 /// What every join is told: the ports, UDP, high availability for servers, where volumes live,
 /// and an unpinned token.
-fn standing_warnings(role: Role, token_pinned: bool, longhorn: bool) -> Vec<Warning> {
+fn standing_warnings(
+    distribution: Distribution,
+    role: Role,
+    token_pinned: bool,
+    longhorn: bool,
+) -> Vec<Warning> {
     let mut warnings = Vec::new();
-    warnings.push(warning(
-        "join.ports",
-        &[],
-        "Allow these between the nodes: TCP 9345 and 6443 to the servers, TCP 10250 and 9099 and \
-         UDP 8472 (Canal VXLAN) between all nodes, and TCP 2379 to 2381 between servers. Keep UDP \
-         8472 closed to the internet."
-            .to_owned(),
-    ));
+    let (udp, network) = distribution.vxlan();
+    let udp = udp.to_string();
+    warnings.push(match distribution {
+        Distribution::K3s => warning(
+            "join.ports",
+            &[&udp, network],
+            format!(
+                "Allow these between the nodes: TCP 6443 to the server, TCP 10250 and UDP {udp} \
+                 ({network}) between all nodes. Keep UDP {udp} closed to the internet."
+            ),
+        ),
+        Distribution::Rke2 => warning(
+            "join.ports",
+            &[&udp, network],
+            format!(
+                "Allow these between the nodes: TCP 9345 and 6443 to the servers, TCP 10250 and \
+                 9099 and UDP {udp} ({network}) between all nodes, and TCP 2379 to 2381 between \
+                 servers. Keep UDP {udp} closed to the internet."
+            ),
+        ),
+    });
     warnings.push(warning(
         "join.udp",
-        &[],
-        "UDP 8472 cannot be checked from here. If it is blocked, pods on different nodes cannot \
-         reach each other."
-            .to_owned(),
+        &[&udp],
+        format!(
+            "UDP {udp} cannot be checked from here. If it is blocked, pods on different nodes \
+             cannot reach each other."
+        ),
     ));
     if role == Role::Server {
         warnings.push(warning(
@@ -312,57 +336,59 @@ fn standing_warnings(role: Role, token_pinned: bool, longhorn: bool) -> Vec<Warn
 ///
 /// # Errors
 ///
-/// When the architecture has no RKE2 release.
+/// When the architecture has no release, or K3s is asked for a second server.
 pub fn plan(config: &JoinConfig, facts: &JoinFacts) -> Result<JoinPlan, PlanError> {
     let join = &config.join;
+    let distribution = config.distribution;
     let mut warnings = Vec::new();
     let mut blockers = Vec::new();
-    let rke2 = rke2_plan(
-        config.rke2_version.as_deref(),
-        &facts.facts.arch,
-        &mut warnings,
-    )?;
+    let version = match distribution {
+        Distribution::K3s => config.k3s_version.as_deref(),
+        Distribution::Rke2 => config.rke2_version.as_deref(),
+    };
+    let cluster = cluster_plan(distribution, version, &facts.facts.arch, &mut warnings)?;
 
     let (mut host_files, unit) = match join.role {
-        Role::Worker => (rke2::agent_files(), "rke2-agent"),
+        Role::Worker => (distribution.agent_files(), distribution.agent_unit()),
+        Role::Server if !distribution.takes_servers() => return Err(PlanError::SecondServer),
         Role::Server => {
             let server_config = join.server_config.clone().unwrap_or_default();
             (
-                rke2::host_files(&rke2::Options {
+                distribution.server_files(&cluster::Options {
                     tls_san: config.host.tls_san.clone(),
                     disable: server_config.disable,
                     identity: server_config.identity,
                 }),
-                "rke2-server",
+                distribution.server_unit(),
             )
         }
     };
-    host_files.push(rke2::join_file(&join.server));
-    host_files.extend(rke2::node_ip_file(&facts.facts.node_ips));
+    host_files.push(distribution.join_file(&join.server));
+    host_files.extend(distribution.node_ip_file(&facts.facts.node_ips));
     if let Some(zot) = &join.zot {
-        host_files.push(rke2::registries_file(&zot.cluster_ip.to_string()));
-        host_files.push(rke2::zot_ca_file(&zot.ca));
+        host_files.push(distribution.registries_file(&zot.cluster_ip.to_string()));
+        host_files.push(distribution.zot_ca_file(&zot.ca));
     }
 
     warnings.push(same_region());
 
-    let (host, _) = crate::config::server_address(&join.server)?;
+    let (host, port) = crate::config::server_address(&join.server, distribution.join_port())?;
     let rtt = rtt(&facts.rtt_us);
     match rtt {
         None => blockers.push(warning(
             "join.server.unreachable",
             &[&join.server],
             format!(
-                "Cannot connect to {}. Check the address and that TCP {SUPERVISOR_PORT} is open \
-                 from this VM.",
+                "Cannot connect to {}. Check the address and that TCP {port} is open from this VM.",
                 join.server
             ),
         )),
-        Some(rtt) => warnings.extend(rtt_warning(rtt)),
+        Some(rtt) => warnings.extend(rtt_warning(rtt, port)),
     }
 
-    let ports = ports(join.role, &facts.ports, &host, &mut warnings);
+    let ports = ports(distribution, join.role, &facts.ports, &host, &mut warnings);
     warnings.extend(standing_warnings(
+        distribution,
         join.role,
         facts.token_pinned,
         join.longhorn,
@@ -373,13 +399,14 @@ pub fn plan(config: &JoinConfig, facts: &JoinFacts) -> Result<JoinPlan, PlanErro
         role: join.role,
         server: join.server.clone(),
         unit,
-        rke2,
+        cluster,
         host_file_paths: host_files.iter().map(|f| f.path.clone()).collect(),
         host_files,
         node_prep: join.longhorn.then_some(storage::LONGHORN_PREP),
         rtt,
         ports,
-        local_ports: rke2::node_ports(join.role == Role::Server)
+        local_ports: distribution
+            .node_ports(join.role == Role::Server)
             .into_iter()
             .map(|(number, purpose)| Port {
                 number,
@@ -400,7 +427,7 @@ mod tests {
 
     fn config(extra: &str) -> JoinConfig {
         let yaml = format!(
-            "join:\n  server: https://10.0.0.5:9345\n  tokenFile: /etc/zeabur-installer/join-token\n{extra}"
+            "distribution: rke2\njoin:\n  server: https://10.0.0.5:9345\n  tokenFile: /etc/zeabur-installer/join-token\n{extra}"
         );
         match Document::parse(&yaml).unwrap() {
             Document::Join(c) => c,
@@ -451,8 +478,9 @@ mod tests {
             ca.trim_end().replace('\n', "\n      ")
         ));
         let p = plan(&c, &facts(&[500; 5])).unwrap();
-        assert!(p.host_files.contains(&rke2::registries_file("10.43.0.50")));
-        assert!(p.host_files.contains(&rke2::zot_ca_file(ca)));
+        let rke2 = Distribution::Rke2;
+        assert!(p.host_files.contains(&rke2.registries_file("10.43.0.50")));
+        assert!(p.host_files.contains(&rke2.zot_ca_file(ca)));
         let bad = "join:\n  server: https://10.0.0.5:9345\n  tokenFile: /etc/t\n  zot:\n    \
                    clusterIp: 10.43.0.50\n    ca: not a certificate\n";
         assert!(Document::parse(bad).is_err());
@@ -527,7 +555,7 @@ mod tests {
     #[test]
     fn node_add_gives_the_same_advice() {
         let codes = |role| {
-            advice(role, false)
+            advice(Distribution::Rke2, role, false)
                 .iter()
                 .map(|w| w.code)
                 .collect::<Vec<_>>()
