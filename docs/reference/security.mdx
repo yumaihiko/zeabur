@@ -337,7 +337,7 @@ Change `zeabur-system-hosts-zeabur-identity` the same way.
 
 The installer runs as root to write RKE2 configuration and systemd units, adjust kernel parameters, and create the `etcd` user. If you select Longhorn, it also installs host packages. The GUI uses plain HTTP. Keep it listening only on loopback and connect through an SSH tunnel.
 
-The default RKE2 version is verified against a SHA-256 digest compiled into the installer. Trust comes from the installer's own signature. If you specify another `rke2Version`, verification can only use the checksum list on that release's page. Files, images, and charts specified through `sources` aren't pinned. Their provider is responsible for their contents. Before using them, verify the source as described in [Releases and verification](./releases.mdx).
+The default RKE2 version is verified against a SHA-256 digest compiled into the installer. Trust comes from the installer's own signature. If you specify another `rke2Version`, verification can only use the checksum list on that release's page. Files, images, and charts specified through `sources` aren't pinned. Before using them, verify the source as described in [Releases and verification](./releases.mdx).
 
 The installer downloads component charts and manifests and compares them with the SHA-256 values in Zeabur Catalog. A mismatch stops installation. Verified charts are embedded directly in `HelmChart`, so helm-controller doesn't download them again. Component images are also specified by digest in Zeabur Catalog, so upstream changes to the contents of a tag won't change what gets installed. Older catalogs don't include digests. In that case, helm-controller downloads charts by version without this verification.
 

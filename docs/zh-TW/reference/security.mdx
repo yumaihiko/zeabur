@@ -1,7 +1,7 @@
 ---
 title: 安全性
 description: 了解登入、機密、變更套用、終端機與 installer 的權限及資料邊界。
-source: "af7d20f4a016"
+source: "7abd3575ac67"
 ---
 
 把同事設為 **開發者** 之前，先檢查專案裡有哪些 Secret 和 ServiceAccount：開發者都拿得到。開啟 **節點終端機** 等於取得整台主機的 root。Zeabur 沿用 Kubernetes 的身分和准入規則，下面依功能說明每一種存取的範圍。
@@ -338,7 +338,7 @@ kubectl patch validatingadmissionpolicybinding zeabur-system-hosts-zeabur \
 
 installer 以 root 寫入 RKE2 設定和 systemd unit、調整 kernel 參數、建立 `etcd` 使用者。選了 Longhorn 時還會安裝主機套件。GUI 以明文 HTTP 提供，讓它只監聽 loopback，透過 SSH tunnel 連線。
 
-預設的 RKE2 版本用編譯進 installer 的 SHA-256 digest 驗證，信任來自 installer 本身的簽章。指定其他 `rke2Version` 時，只能用該 release 頁面上的 checksum 清單驗證。`sources` 指定的檔案、映像檔和 chart 不在釘選範圍內，內容由提供的人負責，使用前先依[發行檔與驗證](./releases.mdx)確認來源。
+預設的 RKE2 版本用編譯進 installer 的 SHA-256 digest 驗證，信任來自 installer 本身的簽章。指定其他 `rke2Version` 時，只能用該 release 頁面上的 checksum 清單驗證。`sources` 指定的檔案、映像檔和 chart 不在釘選範圍內，使用前先依[發行檔與驗證](./releases.mdx)確認來源。
 
 Catalog 元件的 chart 和 manifest 檔，installer 會先下載，跟 Catalog 寫的 SHA-256 比對，不一樣就停止安裝。比對過的 chart 直接放進 `HelmChart`，helm-controller 不會再自己下載一次。元件的映像檔在 Catalog 裡也用 digest 指定，上游換掉同一個 tag 的內容也不會裝到。較舊的 Catalog 沒有寫 digest，這時 chart 照版本號由 helm-controller 下載，不做比對。
 

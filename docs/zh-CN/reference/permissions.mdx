@@ -1,7 +1,7 @@
 ---
 title: 权限
 description: 对照成员角色、管理员账号和 Kubernetes RBAC，确认各项操作的访问范围和登录有效期。
-source: "d90f29e1fe41"
+source: "571b4d9d8374"
 ---
 
 能看到项目却读不到日志时，先确认自己在项目中的角色：**查看者**只能看状态和事件，**开发者**才能读取日志、读取 Secret 和部署。Zeabur 用你自己的身份调用 kube-apiserver，能否执行操作由 Kubernetes RBAC 决定。
@@ -149,7 +149,7 @@ kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge
 
 启用 AAL3 后，管理员账号只能使用不会同步到其他设备的通行密钥，例如安全密钥，或仅保存在一台设备上的通行密钥。登录时，Zeabur Identity 会拒绝保存在 iCloud 钥匙串、Google 密码管理工具等服务中、会同步的通行密钥。界面会明确提示该通行密钥会同步，管理员账号需要使用安全密钥或仅保存在一台设备上的通行密钥。已经通过会同步的通行密钥登录的人，会在下次刷新令牌时退出登录。
 
-NIST SP 800-63B-4 规定，会同步的通行密钥最高只能达到 AAL2，不会同步的才可能达到 AAL3。通行密钥是否会同步，由验证器自行报告（WebAuthn 的 backup eligibility 标志，BE）。Zeabur Identity 不要求 attestation，因此没有人验证这一报告是否属实。AAL3 能拦截会同步的通行密钥，但不能证明密钥保存在什么硬件中。
+NIST SP 800-63B-4 规定，会同步的通行密钥最高只能达到 AAL2，不会同步的才可能达到 AAL3。通行密钥是否会同步，由验证器自行报告（WebAuthn 的 backup eligibility 标志，BE）。
 
 启用前，先确认每位管理员都有不会同步的通行密钥。如果你自己没有，Zeabur 不会允许你启用，以免将自己锁在账号外。启用后，其他没有此类通行密钥的管理员将无法登录，需要用 `sudo zeabur-installer setup-link --username <管理员> --reset` 生成新链接，让他注册安全密钥。检查每把通行密钥的方法见 Zeabur Identity 的 [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins)。
 

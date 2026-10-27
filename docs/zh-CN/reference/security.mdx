@@ -1,7 +1,7 @@
 ---
 title: 安全性
 description: 了解登录、机密、应用变更、终端和 installer 的权限及数据边界。
-source: "af7d20f4a016"
+source: "7abd3575ac67"
 ---
 
 把同事设为 **开发者** 之前，先检查项目里有哪些 Secret 和 ServiceAccount：开发者都能访问。打开 **节点终端** 就等于获得整台主机的 root 权限。Zeabur 沿用 Kubernetes 的身份和准入规则，下面按功能说明各类访问的范围。
@@ -338,7 +338,7 @@ kubectl patch validatingadmissionpolicybinding zeabur-system-hosts-zeabur \
 
 installer 以 root 身份写入 RKE2 配置和 systemd unit、调整 kernel 参数、创建 `etcd` 用户。选择 Longhorn 时，还会安装主机软件包。GUI 通过明文 HTTP 提供，应只监听 loopback，通过 SSH tunnel 连接。
 
-默认的 RKE2 版本使用编译进 installer 的 SHA-256 digest 验证，信任来自 installer 自身的签名。指定其他 `rke2Version` 时，只能使用该 release 页面上的 checksum 列表验证。`sources` 指定的文件、镜像和 chart 不在锁定范围内，内容由提供者负责，使用前先按[发行文件与验证](./releases.mdx)确认来源。
+默认的 RKE2 版本使用编译进 installer 的 SHA-256 digest 验证，信任来自 installer 自身的签名。指定其他 `rke2Version` 时，只能使用该 release 页面上的 checksum 列表验证。`sources` 指定的文件、镜像和 chart 不在锁定范围内，使用前先按[发行文件与验证](./releases.mdx)确认来源。
 
 对于 Catalog 组件的 chart 和 manifest 文件，installer 会先下载，再与 Catalog 中的 SHA-256 比对，不一致就停止安装。比对通过的 chart 直接放入 `HelmChart`，helm-controller 不会再次自行下载。Catalog 中的组件镜像也使用 digest 指定，即使上游更换同一 tag 的内容，也不会安装到替换后的镜像。较旧的 Catalog 没有填写 digest，此时 chart 由 helm-controller 按版本号下载，不做比对。
 
