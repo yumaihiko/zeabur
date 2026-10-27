@@ -11,9 +11,9 @@ For role details, see [Permissions](./permissions.mdx). For installation setting
 
 Zeabur running in the cluster uses Zeabur Identity for sign-in. Every request to Kubernetes carries the user's own token. Zeabur's ServiceAccount has no Role bindings, and its replica doesn't mount the ServiceAccount token. Sign-in sessions exist only in the server process's memory. Users must sign in again after Zeabur restarts.
 
-The only secrets Zeabur itself holds are the OAuth client secret and the change-token key. The chart only accepts a client secret created in advance as a Kubernetes Secret. It doesn't accept the client secret as a Helm value, so the value doesn't appear in Helm release records. Anyone who can read secrets in Zeabur's namespace, exec into its replica, or administer the node it runs on can access these secrets and users' sign-in tokens. Grant these permissions only to administrators.
+The only secrets Zeabur itself holds are the OAuth client secret and the change-token key. The chart only accepts a client secret created in advance as a Kubernetes Secret. It doesn't accept the client secret as a Helm value. Grant permission to read secrets in Zeabur's namespace or exec into its replica only to administrators.
 
-Admin accounts can only sign in with a passkey. Once signed in, they have full access to the entire cluster, with no further confirmation step. Administrators should use a separate regular account for everyday work. Sessions end after 1 hour of inactivity, or 15 minutes for admin accounts when set that way or when AAL3 is on. The maximum session duration is 12 hours. Tokens refresh automatically until then. Leaving a page open without interacting with it doesn't keep the session alive. For account types, timeouts, and AAL3, see [Permissions](./permissions.mdx#admin-accounts-and-regular-accounts).
+Admin accounts can only sign in with a passkey. Once signed in, they have full access to the entire cluster, with no further confirmation step. Administrators should use a separate regular account for everyday work. Sessions end after 1 hour of inactivity, or 15 minutes for admin accounts when set that way or when AAL3 is on. The maximum session duration is 12 hours. Tokens refresh automatically until then. For account types, timeouts, and AAL3, see [Permissions](./permissions.mdx#admin-accounts-and-regular-accounts).
 
 ### Zeabur Identity's internal certificate
 
@@ -25,7 +25,7 @@ Check with a cluster administrator's kubeconfig. Both certificates must show `Tr
 kubectl -n zeabur-identity get certificate
 ```
 
-The root CA's private key is stored in the Secret `zeabur-identity-internal-ca` in the `zeabur-identity` namespace. Anyone who can read secrets in this namespace can issue a certificate for Zeabur Identity's ClusterIP. If they can also intercept connections to that ClusterIP inside the cluster, they can make the API server accept tokens they sign. Grant this permission only to administrators. Zeabur Identity's own ServiceAccount can't read this secret.
+The root CA's private key is stored in the Secret `zeabur-identity-internal-ca` in the `zeabur-identity` namespace. Only administrators should be able to read it.
 
 If you suspect the private key has leaked, or the root CA is about to expire, replace the root CA:
 
@@ -46,9 +46,7 @@ From the time you delete `zeabur-identity-internal-tls` until `apply` finishes, 
 - The `Host` header must be `127.0.0.1` or `localhost` with that port, blocking DNS rebinding.
 - The random token in the launch link can be exchanged for a session cookie only once.
 - The cookie uses `HttpOnly` and `SameSite=Strict`.
-- Requests that make changes must also pass a same-origin check that includes the port and carry a header sent by the Zeabur web interface. Pages on other local ports can't use the cookie to impersonate the user.
-
-Other programs running as the same operating system user can already read the kubeconfig directly. These checks don't address that case.
+- Requests that make changes must also pass a same-origin check that includes the port and carry a header sent by the Zeabur web interface.
 
 ## Put the dashboard behind a VPN
 
@@ -97,7 +95,7 @@ New projects set Pod Security `enforce`, `audit`, and `warn` to `baseline`, so d
 
 When you add a Docker image service, Zeabur reads the image's `User`. It selects **Strict** for a numeric UID other than 0, such as `101` or `1000:1000`. It selects **Compatible** if no user is specified, or if the user is `root`, `0`, or a username such as `nginx`. The form explains the choice, and you can change it before creating the service. For Git deployments, Railpack images run as UID 1000 and default to **Strict**. Dockerfile deployments default to **Compatible**, which you can also change. Services imported from Compose use **Compatible**.
 
-Switching an existing service between **Strict** and **Compatible** affects only that service. It doesn't change namespace labels or require admin rights. Applying the change replaces the service's replicas. The chart's `zeabur-project-namespace` policy still prevents developers from changing namespace labels, including any Pod Security labels, so they can't set the project to `privileged` themselves.
+Switching an existing service between **Strict** and **Compatible** affects only that service. It doesn't change namespace labels or require admin rights. Applying the change replaces the service's replicas. The chart's `zeabur-project-namespace` policy still prevents developers from changing namespace labels, including any Pod Security labels.
 
 Projects that an administrator has explicitly set to `restricted` still reject root containers. Service settings display: “This project only allows Strict services. Compatible services can't start. Ask an administrator to change the project's Pod Security level to baseline.” An administrator must run this once for each affected project's namespace:
 
@@ -174,7 +172,7 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: blog}
 ```
 
-kube-apiserver sets `kubernetes.io/metadata.name` to the namespace's name. Other users can't change it. Connection rules can only allow traffic, not deny it, and rules from multiple NetworkPolicy objects are additive. This object only adds access from `blog`; it doesn't affect `zeabur-project`. To revoke access, delete it:
+Connection rules can only allow traffic, not deny it, and rules from multiple NetworkPolicy objects are additive. This object only adds access from `blog`; it doesn't affect `zeabur-project`. To revoke access, delete it:
 
 ```sh
 kubectl -n shop delete networkpolicy zeabur-allow-from-blog
@@ -204,29 +202,27 @@ For containers without a shell, Zeabur adds a debug container. If the replica or
 
 Zeabur provides `kubectl` and `helm` in a temporary tools replica, using the signed-in user's current token. Open a project's kubectl terminal from search. For a cluster-wide terminal, select **Open kubectl terminal** beside the title on the **Cluster** page. The kubeconfig is written through exec's standard input to an in-memory `emptyDir`. It doesn't appear in the replica's spec, environment variables, config files, or secrets.
 
-All tools replicas run in the chart-created `zeabur-terminals` namespace (`terminal.namespace`). kubectl defaults to the project where you opened the terminal. Members have no permissions in this namespace and can't see or enter other users' tools replicas. Zeabur first asks kube-apiserver to confirm that you can run commands in the project's containers. A cluster-wide terminal requires a cluster administrator. Zeabur then uses its own ServiceAccount to create the replica and open the terminal. This ServiceAccount can only create, read, and delete replicas and run commands in `zeabur-terminals`. It has no other permissions.
+All tools replicas run in the chart-created `zeabur-terminals` namespace (`terminal.namespace`). kubectl defaults to the project where you opened the terminal. Zeabur first asks kube-apiserver to confirm that you can run commands in the project's containers. A cluster-wide terminal requires a cluster administrator. Zeabur then uses its own ServiceAccount to create the replica and open the terminal.
 
 <Callout type="warn">
 Until the token expires, only Zeabur itself, cluster administrators, and administrators of the node running the replica can read this kubeconfig. Don't grant anyone else permissions in `zeabur-terminals`.
 </Callout>
 
-Tools replicas run for at most 30 minutes by default. When the last terminal closes, Zeabur deletes the kubeconfig immediately and deletes the replica 60 seconds later. If Zeabur restarts in the meantime, the replica still stops when `activeDeadlineSeconds` expires. Zeabur deletes it the next time it checks the tools replica's status. Once the token has been written to the tools replica, Zeabur can't revoke it. kube-apiserver accepts it until it expires.
+Tools replicas run for at most 30 minutes by default. When the last terminal closes, Zeabur deletes the kubeconfig immediately and deletes the replica 60 seconds later.
 
 ### Node terminal
 
 The **Node terminal** uses a privileged replica, the host's PID, network, and IPC namespaces, and `nsenter` to enter the host with full root access. Actions in this terminal bypass **Review changes**.
 
-Only cluster administrators can use the node terminal. Its replica runs in a dedicated privileged namespace. If any RBAC binding lets anyone other than administrators and Kubernetes components create replicas or run commands there, Zeabur refuses to open the terminal. Each time it opens, Zeabur records an Event on the node. `kubectl describe node` shows who opened it and when. Zeabur deletes the replica when the terminal closes. If Zeabur or the browser exits first, the replica also stops on its own once it detects that all shells have ended. It runs for at most 30 minutes.
+Only cluster administrators can use the node terminal. Its replica runs in a dedicated privileged namespace. If any RBAC binding lets anyone other than administrators and Kubernetes components create replicas or run commands there, Zeabur refuses to open the terminal. Each time it opens, Zeabur records an Event on the node. `kubectl describe node` shows who opened it and when. Zeabur deletes the replica when the terminal closes.
 
 ## Metrics and historical logs
 
 Anyone who can query a metrics store through `services/proxy` can also query metrics for other projects in that store.
 
-When Zeabur Proxy is enabled, it reads usage history from the default metrics store. Users must have `get metrics.proxy.zeabur.com` in the namespace. Each query also includes VictoriaMetrics' `extra_label=namespace=<Namespace>`, so it only returns series from that namespace. The Proxy exposes only the query, range query, series, label names, and label values APIs. It rejects export, federate, and TSDB status requests. Projects don't have permission to create scrape configurations such as VMServiceScrape, so they can't write metrics for other namespaces. Range selectors, subqueries, and `offset` can read data from before the query's start time. If a namespace is deleted and recreated with the same name, usage from around the previous namespace's creation may appear.
+When Zeabur Proxy is enabled, it reads usage history from the default metrics store. Users must have `get metrics.proxy.zeabur.com` in the namespace. Each query also includes VictoriaMetrics' `extra_label=namespace=<Namespace>`, so it only returns series from that namespace. The Proxy exposes only the query, range query, series, label names, and label values APIs. It rejects export, federate, and TSDB status requests.
 
 When Zeabur Proxy is enabled, users must have `get logs.proxy.zeabur.com` in a namespace to read its historical logs, and queries are limited to that namespace. The chart disables the Proxy by default. The installer enables it when VictoriaLogs or VictoriaMetrics is installed. Without VictoriaLogs, `proxy.logs.enabled` is set to false, and the Proxy only provides usage history. Direct access to VictoriaLogs bypasses these checks and must be restricted separately.
-
-Preventing a project from using fake labels to impersonate another project's logs relies on VictoriaLogs dropping an entire line when stream fields are duplicated. This is a side effect, not guaranteed behavior. Check it again after upgrading VictoriaLogs.
 
 ## Secret encryption and access logs
 
@@ -278,12 +274,12 @@ sudo grep '"resource":"secrets"' /var/lib/rancher/rke2/server/logs/audit.log \
 
 A `watch` records `ResponseStarted` when it begins and `ResponseComplete` only when it ends. A `list` or `watch` of all secrets in a namespace doesn't record a name. Remove the name-filtering line and filter by namespace instead.
 
-The installer writes `/etc/rancher/rke2/audit-policy.yaml` with permissions `0600`, and RKE2 uses it to record audit logs. Each server stores its logs at `/var/lib/rancher/rke2/server/logs/audit.log`, readable only by root. Entries contain only request metadata, not request or response bodies, so secret values don't appear in the logs.
+The installer writes `/etc/rancher/rke2/audit-policy.yaml` with permissions `0600`, and RKE2 uses it to record audit logs. Each server stores its logs at `/var/lib/rancher/rke2/server/logs/audit.log`, readable only by root. Entries contain only request metadata, not request or response bodies.
 
 - **Secrets**: Every request from everyone, including nodes, is recorded: `get`, `list`, `watch`, `create`, `update`, `patch`, and `delete`. Each entry includes the user, the identity impersonated with `--as`, groups, source IP, user agent, operation, namespace, and name.
 - **Other resources**: Only creates, updates, and deletes by people and workloads are recorded. Reads, Events, Leases, token reviews, access reviews, health checks, and requests from nodes, the API server, controller manager, scheduler, and kube-proxy aren't recorded.
 
-RKE2 rotates the file at 100 MB, keeps at most 10 old files, and retains them for at most 30 days. A single server with little activity writes about 13 to 23 KB every 5 minutes, or less than 7 MB a day. To store logs elsewhere, collect this file with a log collection tool. Zeabur doesn't read it.
+RKE2 rotates the file at 100 MB, keeps at most 10 old files, and retains them for at most 30 days. A single server with little activity writes about 13 to 23 KB every 5 minutes, or less than 7 MB a day. To store logs elsewhere, collect this file with a log collection tool.
 
 ## Domains for Zeabur and Zeabur Identity
 
@@ -339,9 +335,9 @@ The installer runs as root to write RKE2 configuration and systemd units, adjust
 
 The default RKE2 version is verified against a SHA-256 digest compiled into the installer. Trust comes from the installer's own signature. If you specify another `rke2Version`, verification can only use the checksum list on that release's page. Files, images, and charts specified through `sources` aren't pinned. Before using them, verify the source as described in [Releases and verification](./releases.mdx).
 
-The installer downloads component charts and manifests and compares them with the SHA-256 values in Zeabur Catalog. A mismatch stops installation. Verified charts are embedded directly in `HelmChart`, so helm-controller doesn't download them again. Component images are also specified by digest in Zeabur Catalog, so upstream changes to the contents of a tag won't change what gets installed. Older catalogs don't include digests. In that case, helm-controller downloads charts by version without this verification.
+The installer downloads component charts and manifests and compares them with the SHA-256 values in Zeabur Catalog. A mismatch stops installation. Verified charts are embedded directly in `HelmChart`, so helm-controller doesn't download them again. Component images are also specified by digest in Zeabur Catalog, so upstream changes to the contents of a tag won't change what gets installed.
 
-RKE2 is installed with a CIS profile and encrypts secrets in etcd. See [Secret encryption and access logs](#secret-encryption-and-access-logs). Host disk encryption is checked separately. With `host.requireEncryptedDisk: true`, installation won't proceed on an unencrypted disk. Configure access and encryption for backup destinations in the backup tool and storage service.
+RKE2 is installed with a CIS profile and encrypts secrets in etcd. See [Secret encryption and access logs](#secret-encryption-and-access-logs). Host disk encryption is checked separately. With `host.requireEncryptedDisk: true`, installation won't proceed on an unencrypted disk.
 
 ### Personal installations
 

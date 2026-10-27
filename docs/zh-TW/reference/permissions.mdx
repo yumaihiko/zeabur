@@ -1,7 +1,7 @@
 ---
 title: 權限
 description: 對照成員角色、管理員帳號與 Kubernetes RBAC，確認每項操作的存取範圍和登入能維持多久。
-source: "571b4d9d8374"
+source: "4d65535f6503"
 ---
 
 看得到專案卻讀不到日誌時，先確認自己在這個專案的角色：**檢視者**只能看狀態和事件，**開發者**才能讀日誌、讀 Secret 和部署。Zeabur 用你自己的身分呼叫 kube-apiserver，能不能做由 Kubernetes RBAC 決定。
@@ -81,7 +81,7 @@ zeabur.com/icon
 開發者能讀專案的 Secret，也能建立 Pod、修改工作負載、在容器裡執行指令，因此拿得到工作負載掛載的機密，也能以專案裡任何 ServiceAccount 的權限執行。權限比團隊該有的更大的 ServiceAccount 或管理員認證資訊，不要放進專案。
 </Callout>
 
-開發者角色不能寫入 RBAC 物件和 ServiceAccount，也沒有 `bind`、`escalate`、`impersonate`、`nodes/proxy` 或 service／pod proxy 權限，所以不能自己擴大權限。實際能做到什麼，還要看專案裡既有的 ServiceAccount 有哪些權限。
+開發者角色不能寫入 RBAC 物件和 ServiceAccount，也沒有 `bind`、`escalate`、`impersonate`、`nodes/proxy` 或 service／pod proxy 權限，所以不能自己擴大權限。
 
 檢視者讀不到 Secret 和日誌，但讀得到 ConfigMap 和工作負載的設定。直接寫在這些地方的密碼，檢視者也看得到。
 
@@ -94,11 +94,11 @@ Zeabur Identity 的帳號分成兩種。在 **成員** 把某人設為 **管理�
 | 登入方式 | Zeabur Identity 開放的每一種：通行密鑰，以及有設定的 GitHub、Google | 只能用通行密鑰 |
 | 權限 | 成員頁給的專案角色，加上另外綁定的 RBAC 規則 | 整個叢集的完整權限：權杖帶 `admins` 群組，綁定 `cluster-admin` |
 
-管理員帳號登入後就能做任何事，中間沒有再確認的步驟。所以管理員最好另外有一個一般帳號處理日常工作，只有要改叢集、管理成員時才用管理員帳號登入。Zeabur 沒有 sudo 模式，管理員帳號本身就是這道關卡；要更嚴格，可以開啟下方的 [AAL3](#只接受不會同步的通行密鑰aal3)。
+管理員帳號登入後就能做任何事，中間沒有再確認的步驟。所以管理員最好另外有一個一般帳號處理日常工作，只有要改叢集、管理成員時才用管理員帳號登入。要更嚴格，可以開啟下方的 [AAL3](#只接受不會同步的通行密鑰aal3)。
 
 一般帳號權限不夠時，畫面會說需要更多權限，並列出缺少的規則。把它交給管理員，請他調整你的角色或幫你處理。
 
-把成員設為 **管理員** 後，他之後只能用通行密鑰登入，原本用 GitHub 或 Google 登入的工作階段會在下次換權杖時結束。已經發出的權杖在到期前仍然有效，最多 5 或 10 分鐘。
+把成員設為 **管理員** 後，他之後只能用通行密鑰登入，原本用 GitHub 或 Google 登入的工作階段會在下次換權杖時結束。
 
 第一位管理員來自安裝時的設定連結（`zeabur-installer setup-link`）。在命令列也能邀請管理員，或改變既有帳號的類型：
 
@@ -107,7 +107,7 @@ zeabur-identityctl invite --username alice --admin
 zeabur-identityctl account-type alice admin     # 改回一般帳號：regular
 ```
 
-`admins` 群組只能從帳號類型取得，Zeabur Identity 不接受把它寫進使用者的 `groups`。細節見 Zeabur Identity 的[管理員帳號](https://oss.zeabur.com/docs/identity/managing-users#admin-accounts)。
+`admins` 群組只能從帳號類型取得。細節見 Zeabur Identity 的[管理員帳號](https://oss.zeabur.com/docs/identity/managing-users#admin-accounts)。
 
 ## 登入能維持多久
 
@@ -143,21 +143,17 @@ kubectl -n zeabur-identity create configmap zeabur-identity-settings --from-lite
 kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge -p '{"data":{"teams":"single"}}'
 ```
 
-沒有這個 ConfigMap 或沒有某個鍵時用預設值。寫了 Zeabur Identity 看不懂的值，就當成比較嚴格的那一個（`multiple` 或 `true`）。
+沒有這個 ConfigMap 或沒有某個鍵時用預設值。
 
 ### 只接受不會同步的通行密鑰（AAL3）
 
 開啟 AAL3 後，管理員帳號只能用不會同步到其他裝置的通行密鑰，例如安全金鑰，或只存在一台裝置上的通行密鑰。存在 iCloud 鑰匙圈、Google 密碼管理工具這類會同步的通行密鑰，登入時會被拒絕，畫面會直接說這把通行密鑰會同步、管理員帳號要用安全金鑰或只存在一台裝置上的通行密鑰。已經用會同步的通行密鑰登入的人，下次換權杖時就會被登出。
-
-NIST SP 800-63B-4 規定會同步的通行密鑰最高只到 AAL2，不會同步的才可能達到 AAL3。通行密鑰會不會同步，是驗證器自己回報的（WebAuthn 的 backup eligibility 旗標，BE）。
 
 開啟前，先確認每位管理員都有不會同步的通行密鑰。你自己沒有的話，Zeabur 不會讓你開啟，避免把自己鎖在外面。其他沒有的管理員開啟後就登不進來，要用 `sudo zeabur-installer setup-link --username <管理員> --reset` 產生新連結，讓他註冊安全金鑰。檢查每把通行密鑰的方式見 Zeabur Identity 的 [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins)。
 
 ## 用 kubectl 操作
 
 管理員帳號和一般帳號的 kubeconfig 都是一般的 kubelogin（`oidc-login`）context，靠 refresh token 換新權杖，直接下 kubectl 指令就好，不會每幾分鐘要你按一次通行密鑰。期限和上面的表一樣。
-
-kubectl 沒有額外的確認步驟。管理員帳號在 kubectl 的保護，只有通行密鑰登入和上面的時間限制。
 
 kubelogin 預設把 refresh token 存在 `~/.kube/cache/oidc-login`。不想把它留在磁碟上，在 context 的 exec 參數加上：
 
@@ -178,4 +174,4 @@ kubectl auth can-i create pods/exec --namespace shop
 kubectl auth can-i patch deployments.apps --namespace shop
 ```
 
-Zeabur 用 `SelfSubjectRulesReview` 判斷介面上該顯示哪些操作。叢集回傳的規則不完整時，Zeabur 不確定你能不能做，會讓套用前的 dry run 決定。被政策或用量上限拒絕時，要修正政策指出的條件。管理員帳號也一樣要通過 admission policy。
+Zeabur 用 `SelfSubjectRulesReview` 判斷介面上該顯示哪些操作。被政策或用量上限拒絕時，要修正政策指出的條件。管理員帳號也一樣要通過 admission policy。

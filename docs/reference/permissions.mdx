@@ -80,7 +80,7 @@ This restriction doesn't apply to anyone with `zeabur-manage` permission on that
 Developers can read the project's secrets, create replicas, edit workloads, and run commands in containers. This gives them access to secrets mounted by workloads and lets them run with the permissions of any ServiceAccount in the project. Don't put admin credentials or ServiceAccounts with more permissions than the team should have in the project.
 </Callout>
 
-The Developer role can't write RBAC objects or ServiceAccounts and has no `bind`, `escalate`, `impersonate`, `nodes/proxy`, or service/pod proxy permissions, so developers can't grant themselves more permissions. What they can actually do also depends on the permissions of existing ServiceAccounts in the project.
+The Developer role can't write RBAC objects or ServiceAccounts and has no `bind`, `escalate`, `impersonate`, `nodes/proxy`, or service/pod proxy permissions, so developers can't grant themselves more permissions.
 
 Viewers can't read secrets or logs, but they can read config files and workload configurations. They can also see passwords written directly in those places.
 
@@ -93,11 +93,11 @@ Zeabur Identity has two account types. Assigning someone the **Admin** role in *
 | Sign-in methods | Every method enabled in Zeabur Identity: passkeys, plus GitHub and Google if configured | Passkeys only |
 | Permissions | Project roles assigned on the Members page, plus any additional RBAC bindings | Full access to the entire cluster: the token includes the `admins` group, which is bound to `cluster-admin` |
 
-Admin accounts can do anything as soon as they sign in, with no additional confirmation. Admins should keep a separate regular account for daily work and sign in with their admin account only to change the cluster or manage members. Zeabur has no sudo mode; the admin account itself is the access boundary. For stricter controls, enable [AAL3](#require-device-bound-passkeys-aal3) below.
+Admin accounts can do anything as soon as they sign in, with no additional confirmation. Admins should keep a separate regular account for daily work and sign in with their admin account only to change the cluster or manage members. For stricter controls, enable [AAL3](#require-device-bound-passkeys-aal3) below.
 
 When a regular account lacks permissions, the interface says more permissions are needed and lists the missing rules. Send the list to an admin and ask them to adjust your role or perform the operation for you.
 
-After a member becomes an **Admin**, they can only sign in with a passkey. Existing GitHub or Google sessions end the next time they refresh their tokens. Tokens already issued remain valid until they expire, for up to 5 or 10 minutes.
+After a member becomes an **Admin**, they can only sign in with a passkey. Existing GitHub or Google sessions end the next time they refresh their tokens.
 
 The first admin comes from the setup link generated during installation (`zeabur-installer setup-link`). You can also invite admins or change an existing account's type from the command line:
 
@@ -106,7 +106,7 @@ zeabur-identityctl invite --username alice --admin
 zeabur-identityctl account-type alice admin     # back to a regular account: regular
 ```
 
-Only the account type can grant the `admins` group. Zeabur Identity doesn't accept it in a user's `groups`. For details, see [Admin accounts](https://oss.zeabur.com/docs/identity/managing-users#admin-accounts) in the Zeabur Identity docs.
+Only the account type can grant the `admins` group. For details, see [Admin accounts](https://oss.zeabur.com/docs/identity/managing-users#admin-accounts) in the Zeabur Identity docs.
 
 ## How long sign-in lasts
 
@@ -142,21 +142,17 @@ kubectl -n zeabur-identity create configmap zeabur-identity-settings --from-lite
 kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge -p '{"data":{"teams":"single"}}'
 ```
 
-If the config file or a key is missing, Zeabur Identity uses the default. If it doesn't recognize a value, it uses the stricter option (`multiple` or `true`).
+If the config file or a key is missing, Zeabur Identity uses the default.
 
 ### Require device-bound passkeys (AAL3)
 
 With AAL3 enabled, admin accounts can only use passkeys that don't sync to other devices, such as security keys or passkeys stored on a single device. Synced passkeys stored in services such as iCloud Keychain or Google Password Manager are rejected at sign-in. The interface explains that the passkey syncs and that admin accounts require a security key or a passkey stored on a single device. Anyone already signed in with a synced passkey is signed out at the next token refresh.
-
-NIST SP 800-63B-4 limits synced passkeys to AAL2. Only device-bound passkeys can potentially meet AAL3. The authenticator reports whether a passkey can sync through WebAuthn's backup eligibility flag (BE).
 
 Before enabling AAL3, make sure every admin has a device-bound passkey. Zeabur won't let you enable it without one yourself, to prevent you from locking yourself out. Other admins without one won't be able to sign in after you enable it. Use `sudo zeabur-installer setup-link --username <admin> --reset` to generate a new link so they can register a security key. For steps to check each passkey, see [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins) in the Zeabur Identity docs.
 
 ## Using kubectl
 
 Both admin and regular accounts use standard kubelogin (`oidc-login`) contexts in kubeconfig. They use refresh tokens to get new tokens, so you can run kubectl commands without using your passkey every few minutes. The time limits are the same as in the table above.
-
-kubectl has no additional confirmation step. For admin accounts, the only protections in kubectl are passkey sign-in and the time limits above.
 
 By default, kubelogin stores refresh tokens in `~/.kube/cache/oidc-login`. To avoid leaving them on disk, add one of these options to the context's exec arguments:
 
@@ -177,4 +173,4 @@ kubectl auth can-i create pods/exec --namespace shop
 kubectl auth can-i patch deployments.apps --namespace shop
 ```
 
-Zeabur uses `SelfSubjectRulesReview` to decide which operations to show in the interface. If the cluster returns incomplete rules, Zeabur can't determine whether you have permission and lets the dry run before applying decide. If a policy or quota rejects the operation, fix the conditions it identifies. Admin accounts must also pass admission policies.
+Zeabur uses `SelfSubjectRulesReview` to decide which operations to show in the interface. If a policy or quota rejects the operation, fix the conditions it identifies. Admin accounts must also pass admission policies.

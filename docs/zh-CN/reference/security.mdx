@@ -1,7 +1,7 @@
 ---
 title: 安全性
 description: 了解登录、机密、应用变更、终端和 installer 的权限及数据边界。
-source: "7abd3575ac67"
+source: "7c01e28d1d0b"
 ---
 
 把同事设为 **开发者** 之前，先检查项目里有哪些 Secret 和 ServiceAccount：开发者都能访问。打开 **节点终端** 就等于获得整台主机的 root 权限。Zeabur 沿用 Kubernetes 的身份和准入规则，下面按功能说明各类访问的范围。
@@ -12,9 +12,9 @@ source: "7abd3575ac67"
 
 集群内的 Zeabur 通过 Zeabur Identity 登录，发往 Kubernetes 的每个请求都携带用户自己的令牌。Zeabur 的 ServiceAccount 没有绑定任何 Role，副本也不挂载它的 token。登录会话只保存在服务器进程的内存中，Zeabur 重启后需要重新登录。
 
-Zeabur 自身持有的机密只有 OAuth client secret 和变更令牌密钥。Chart 只接受预先创建的 client Secret，不接受将 client secret 写成 Helm value，因此它不会出现在 Helm 的 release 记录中。能读取 Zeabur Namespace 中的 Secret、能 exec 进入 Zeabur 副本或管理其所在节点的人，都能接触到这些机密和用户的登录令牌。这些权限只授予管理员。
+Zeabur 自身持有的机密只有 OAuth client secret 和变更令牌密钥。Chart 只接受预先创建的 client Secret，不接受将 client secret 写成 Helm value。能读取 Zeabur Namespace 中的 Secret，或能 exec 进入 Zeabur 副本的权限，只授予管理员。
 
-管理员账号只能用通行密钥登录，登录后就有整个集群的完整权限，没有再次确认的步骤，因此建议管理员日常工作时改用另一个普通账号。会话闲置 1 小时后结束；管理员账号可改为 15 分钟，开启 AAL3 时也是 15 分钟。会话最长持续 12 小时，在此之前令牌会自动更新。只打开页面、不操作，不会延长会话。账号类型、时长和 AAL3 见[权限](./permissions.mdx#管理员账号和普通账号)。
+管理员账号只能用通行密钥登录，登录后就有整个集群的完整权限，没有再次确认的步骤，因此建议管理员日常工作时改用另一个普通账号。会话闲置 1 小时后结束；管理员账号可改为 15 分钟，开启 AAL3 时也是 15 分钟。会话最长持续 12 小时，在此之前令牌会自动更新。账号类型、时长和 AAL3 见[权限](./permissions.mdx#管理员账号和普通账号)。
 
 ### Zeabur Identity 的内部证书
 
@@ -26,7 +26,7 @@ API server 从集群内部连接 Zeabur Identity，获取验证令牌所需的�
 kubectl -n zeabur-identity get certificate
 ```
 
-根 CA 的私钥保存在 `zeabur-identity` Namespace 的 Secret `zeabur-identity-internal-ca` 中。能读取这个 Namespace 的 Secret，就能签发 Zeabur Identity ClusterIP 的证书；如果还能在集群中拦截发往这个 ClusterIP 的连接，就能让 API server 接受自己签发的令牌。这个权限只授予管理员。Zeabur Identity 自身的 ServiceAccount 无法读取这个 Secret。
+根 CA 的私钥保存在 `zeabur-identity` Namespace 的 Secret `zeabur-identity-internal-ca` 中，这个 Secret 只允许管理员读取。
 
 怀疑私钥泄露，或根 CA 即将到期时，更换根 CA：
 
@@ -47,9 +47,7 @@ sudo zeabur-installer apply
 - `Host` header 只能是使用该端口的 `127.0.0.1` 或 `localhost`，以阻止 DNS rebinding。
 - 启动链接中的随机令牌只能兑换一次会话 cookie。
 - cookie 设为 `HttpOnly` 和 `SameSite=Strict`。
-- 修改内容的请求还必须通过包含端口的同源检查，并携带 Zeabur 网页发送的 header，因此本地其他端口的网页无法冒用 cookie。
-
-以同一操作系统用户运行的其他程序，本来就能直接读取 kubeconfig，这些检查不处理这种情况。
+- 修改内容的请求还必须通过包含端口的同源检查，并携带 Zeabur 网页发送的 header。
 
 ## 把面板放到 VPN 后面
 
@@ -98,7 +96,7 @@ sudo zeabur-installer apply
 
 添加 Docker 镜像服务时，Zeabur 会读取镜像的 `User`。数字 UID 不为 0（例如 `101`、`1000:1000`）时选择 **严格**；未指定用户，或指定 `root`、`0`、`nginx` 这类用户名时选择 **兼容**。表单会说明选择原因，创建前仍可切换。从 Git 部署时，Railpack 镜像以 UID 1000 运行，默认选择 **严格**；Dockerfile 默认选择 **兼容**，也可以自行切换。通过 Compose 导入的服务使用 **兼容**。
 
-已有服务切换 **严格** 或 **兼容** 时，变更只影响该服务，不修改 Namespace 标签，也不需要管理员权限。应用后会替换服务副本。Chart 的 `zeabur-project-namespace` 策略仍禁止开发者修改 Namespace 标签，包括任何 Pod Security 标签，因此开发者无法自行设为 `privileged`。
+已有服务切换 **严格** 或 **兼容** 时，变更只影响该服务，不修改 Namespace 标签，也不需要管理员权限。应用后会替换服务副本。Chart 的 `zeabur-project-namespace` 策略仍禁止开发者修改 Namespace 标签，包括任何 Pod Security 标签。
 
 管理员特意设为 `restricted` 的项目仍会拒绝 root 容器。服务设置会显示“这个项目只允许‘严格’的服务，‘兼容’的服务无法启动。请管理员把项目的 Pod Security 级别改为 baseline。”管理员需要对这些项目的 Namespace 各运行一次：
 
@@ -175,7 +173,7 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: blog}
 ```
 
-`kubernetes.io/metadata.name` 由 kube-apiserver 设置，等于 Namespace 的名称，其他人无法修改。NetworkPolicy 只能允许、不能拒绝，多个 NetworkPolicy 的规则会叠加，因此这个对象只会额外允许 `blog`，不会影响 `zeabur-project`。要撤销，删除它即可：
+NetworkPolicy 只能允许、不能拒绝，多个 NetworkPolicy 的规则会叠加，因此这个对象只会额外允许 `blog`，不会影响 `zeabur-project`。要撤销，删除它即可：
 
 ```sh
 kubectl -n shop delete networkpolicy zeabur-allow-from-blog
@@ -205,29 +203,27 @@ kubectl -n shop delete networkpolicy zeabur-allow-from-blog
 
 Zeabur 在临时的 tools 副本中提供 `kubectl` 和 `helm`，使用登录者当前的令牌。项目的 kubectl 终端从搜索中打开，整个集群的终端从 **集群** 页标题旁的 **打开 kubectl 终端** 打开。kubeconfig 通过 exec 的标准输入写入内存型 `emptyDir`，不会出现在 Pod spec、环境变量、ConfigMap 或 Secret 中。
 
-所有 tools 副本都位于 chart 创建的 `zeabur-terminals` Namespace（`terminal.namespace`），kubectl 默认使用打开终端时所在的项目。成员在这个 Namespace 中没有任何权限，无法查看或进入其他人的 tools 副本。Zeabur 先请求 kube-apiserver 确认你有权在项目的容器中运行命令（整个集群的终端则要求你是集群管理员），再用 Zeabur 自身的 ServiceAccount 创建副本并打开终端。这个 ServiceAccount 只能在 `zeabur-terminals` 中创建、读取、删除副本和运行命令，不能执行其他操作。
+所有 tools 副本都位于 chart 创建的 `zeabur-terminals` Namespace（`terminal.namespace`），kubectl 默认使用打开终端时所在的项目。Zeabur 先请求 kube-apiserver 确认你有权在项目的容器中运行命令（整个集群的终端则要求你是集群管理员），再用 Zeabur 自身的 ServiceAccount 创建副本并打开终端。
 
 <Callout type="warn">
 在令牌到期前，只有 Zeabur 本身、集群管理员，以及副本所在节点的管理员能读取这份 kubeconfig。不要把 `zeabur-terminals` 的权限授予其他人。
 </Callout>
 
-tools 副本默认最多运行 30 分钟。最后一个终端关闭时，Zeabur 立即删除 kubeconfig，60 秒后删除副本。如果 Zeabur 中途重启，副本仍会在 `activeDeadlineSeconds` 到期时停止，之后查询 tools 副本状态时再删除。令牌写入 tools 副本后，Zeabur 无法撤销，kube-apiserver 会接受它直到过期。
+tools 副本默认最多运行 30 分钟。最后一个终端关闭时，Zeabur 立即删除 kubeconfig，60 秒后删除副本。
 
 ### 节点终端
 
 **节点终端** 使用 privileged 副本、host PID／network／IPC 和 `nsenter` 进入主机，获得完整的 root 权限。在其中执行的操作不会经过 **检查变更**。
 
-节点终端仅供集群管理员使用，副本位于专用的 privileged Namespace。只要有 RBAC binding 允许管理员和 Kubernetes 组件以外的身份在那里创建副本或运行命令，Zeabur 就会拒绝打开。每次打开都会在节点上记录一条事件，通过 `kubectl describe node` 可以看到谁在什么时间打开过。终端关闭时，Zeabur 会删除副本。如果 Zeabur 或浏览器先退出，副本发现所有 shell 都已结束后也会自行停止，最多运行 30 分钟。
+节点终端仅供集群管理员使用，副本位于专用的 privileged Namespace。只要有 RBAC binding 允许管理员和 Kubernetes 组件以外的身份在那里创建副本或运行命令，Zeabur 就会拒绝打开。每次打开都会在节点上记录一条事件，通过 `kubectl describe node` 可以看到谁在什么时间打开过。终端关闭时，Zeabur 会删除副本。
 
 ## 指标与历史日志
 
 能通过 `services/proxy` 查询 metrics store 的人，也能查询同一 metrics store 中其他项目的指标。
 
-启用 Zeabur Proxy 后，用量历史改由它读取默认的 metrics store。用户必须在该 Namespace 中拥有 `get metrics.proxy.zeabur.com` 权限，每次查询也会添加 VictoriaMetrics 的 `extra_label=namespace=<Namespace>`，因此只能获取这个 Namespace 的 series。Proxy 只开放查询、范围查询、series、label 名称和 label 值这几个 API，拒绝导出、federate 和 TSDB 状态请求。项目无权创建 VMServiceScrape 这类采集配置，无法为其他 Namespace 写入指标。范围选择器、subquery 和 `offset` 会读取查询起点之前的数据，因此删除后再以同名重建的 Namespace，可能看到前一个 Namespace 刚创建前后的用量。
+启用 Zeabur Proxy 后，用量历史改由它读取默认的 metrics store。用户必须在该 Namespace 中拥有 `get metrics.proxy.zeabur.com` 权限，每次查询也会添加 VictoriaMetrics 的 `extra_label=namespace=<Namespace>`，因此只能获取这个 Namespace 的 series。Proxy 只开放查询、范围查询、series、label 名称和 label 值这几个 API，拒绝导出、federate 和 TSDB 状态请求。
 
 启用 Zeabur Proxy 后（chart 默认关闭，安装器在安装 VictoriaLogs 或 VictoriaMetrics 时会开启；未安装 VictoriaLogs 时，`proxy.logs.enabled` 设为 false，Proxy 只提供用量历史），用户必须在该 Namespace 中拥有 `get logs.proxy.zeabur.com` 权限，才能读取它的历史日志，查询也仅限于这个 Namespace。如果能直接连接 VictoriaLogs 本身，就能绕过这层检查，需要单独限制。
-
-防止项目使用虚假标签冒充其他项目的日志，依靠的是 VictoriaLogs 会丢弃 stream 字段重复的整行数据。这是它的副作用，并非它保证的行为，升级 VictoriaLogs 后需要重新确认。
 
 ## 机密的加密与访问记录
 
@@ -279,12 +275,12 @@ sudo grep '"resource":"secrets"' /var/lib/rancher/rke2/server/logs/audit.log \
 
 `watch` 开始时记录一条 `ResponseStarted`，结束时才有 `ResponseComplete`。一次 `list` 或 `watch` 整个 Namespace 的 Secret 时，记录中没有名称，需要去掉按名称筛选的那一行，改用 Namespace 筛选。
 
-installer 写入 `/etc/rancher/rke2/audit-policy.yaml`（权限为 `0600`），让 RKE2 按该策略记录。记录保存在每台 server 的 `/var/lib/rancher/rke2/server/logs/audit.log` 中，只有 root 能读取。每条记录只有请求的 metadata，没有请求和响应的内容，因此 Secret 的值不会出现在记录中。
+installer 写入 `/etc/rancher/rke2/audit-policy.yaml`（权限为 `0600`），让 RKE2 按该策略记录。记录保存在每台 server 的 `/var/lib/rancher/rke2/server/logs/audit.log` 中，只有 root 能读取。每条记录只有请求的 metadata，没有请求和响应的内容。
 
 - **Secret**：记录所有人（包括节点）的每个请求，涵盖 `get`、`list`、`watch`、`create`、`update`、`patch`、`delete`。每条记录包含用户、使用 `--as` 代为操作的身份、组、来源 IP、user agent、操作、Namespace 和名称。
 - **其他资源**：只记录用户和工作负载的创建、修改和删除操作。不记录读取、Event、Lease、token review、access review、健康检查，以及节点、API server、controller manager、scheduler 和 kube-proxy 的请求。
 
-文件达到 100 MB 时，RKE2 会轮换到新文件，最多保留 10 个旧文件，最长保留 30 天。操作较少的单台 server 每 5 分钟约写入 13 到 23 KB，一天不到 7 MB。要将记录保存在其他位置，使用日志采集工具收集这个文件，Zeabur 不会读取它。
+文件达到 100 MB 时，RKE2 会轮换到新文件，最多保留 10 个旧文件，最长保留 30 天。操作较少的单台 server 每 5 分钟约写入 13 到 23 KB，一天不到 7 MB。要将记录保存在其他位置，使用日志采集工具收集这个文件。
 
 ## Zeabur 和 Zeabur Identity 的域名
 
@@ -340,9 +336,9 @@ installer 以 root 身份写入 RKE2 配置和 systemd unit、调整 kernel 参�
 
 默认的 RKE2 版本使用编译进 installer 的 SHA-256 digest 验证，信任来自 installer 自身的签名。指定其他 `rke2Version` 时，只能使用该 release 页面上的 checksum 列表验证。`sources` 指定的文件、镜像和 chart 不在锁定范围内，使用前先按[发行文件与验证](./releases.mdx)确认来源。
 
-对于 Catalog 组件的 chart 和 manifest 文件，installer 会先下载，再与 Catalog 中的 SHA-256 比对，不一致就停止安装。比对通过的 chart 直接放入 `HelmChart`，helm-controller 不会再次自行下载。Catalog 中的组件镜像也使用 digest 指定，即使上游更换同一 tag 的内容，也不会安装到替换后的镜像。较旧的 Catalog 没有填写 digest，此时 chart 由 helm-controller 按版本号下载，不做比对。
+对于 Catalog 组件的 chart 和 manifest 文件，installer 会先下载，再与 Catalog 中的 SHA-256 比对，不一致就停止安装。比对通过的 chart 直接放入 `HelmChart`，helm-controller 不会再次自行下载。Catalog 中的组件镜像也使用 digest 指定，即使上游更换同一 tag 的内容，也不会安装到替换后的镜像。
 
-RKE2 使用 CIS profile 安装，并加密 etcd 中的 Secret，见[机密的加密与访问记录](#机密的加密与访问记录)。主机磁盘是否加密会单独检查。设置 `host.requireEncryptedDisk: true` 时，未加密就不安装。备份目标的访问权限和加密需要在备份工具和存储服务中配置。
+RKE2 使用 CIS profile 安装，并加密 etcd 中的 Secret，见[机密的加密与访问记录](#机密的加密与访问记录)。主机磁盘是否加密会单独检查。设置 `host.requireEncryptedDisk: true` 时，未加密就不安装。
 
 ### 个人使用的安装
 
