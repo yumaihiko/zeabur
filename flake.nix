@@ -20,12 +20,6 @@
     # signed release at that commit (scripts/release-pins.sh).
     # git+ssh while the repository is private (VMs redirect it to their mirror); github: once public.
     catalog.url = "git+ssh://git@github.com/zeabur-oss/catalog.git";
-    # Compiler cache, built from source at a release tag.
-    kache = {
-      url = "github:kunobi-ninja/kache/v1.2.2";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.rust-overlay.follows = "rust-overlay";
-    };
   };
 
   outputs =
@@ -47,7 +41,6 @@
               inherit system;
               overlays = [
                 inputs.rust-overlay.overlays.default
-                inputs.kache.overlays.kache
                 inputs.self.overlays.default
               ];
             };
@@ -55,7 +48,7 @@
         );
     in
     {
-      overlays.default = final: prev: {
+      overlays.default = final: _: {
         # The newest nightly in the locked rust-overlay that has all these components and targets.
         rustToolchain = final.rust-bin.selectLatestNightlyWith (
           toolchain:
@@ -72,8 +65,6 @@
             ];
           }
         );
-        # kache's own CI tests each release. Its 4,500 tests take 6 min here and some are timing-sensitive.
-        kache = prev.kache.overrideAttrs { doCheck = false; };
       };
 
       devShells = forEachSupportedSystem (
@@ -86,7 +77,6 @@
               # Quality and supply chain
               cargo-deny
               cargo-nextest
-              kache
               cargo-auditable
               cargo-cyclonedx
               # Mutation testing, weekly in CI (.github/workflows/mutants.yml); a report, not a gate
@@ -123,8 +113,6 @@
             ];
 
             env = {
-              # Compiler cache shared by every checkout and worktree; release builds turn it off.
-              RUSTC_WRAPPER = "kache";
               # Required by rust-analyzer
               RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
               # Mozilla's CA bundle (MPL-2.0), copied into the image for outgoing TLS (Zeabur Identity's

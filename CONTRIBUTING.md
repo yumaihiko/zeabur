@@ -81,11 +81,16 @@ written in English.
 - Renovate's lock file maintenance (`renovate.json`) updates `flake.lock` every Monday, and with it
   the nightly. A new nightly can bring new clippy lints or change a nightly-only setting; fix those
   on that pull request before merging.
-- `nix develop` sets `RUSTC_WRAPPER=kache`, a compiler cache (https://github.com/kunobi-ninja/kache)
-  shared by every checkout and worktree on the machine. `scripts/release-build.sh` turns it off, so
-  release binaries are always compiled. kache is pinned to a release tag in `flake.nix`.
 
 Release binaries are built with `trim-paths = "all"`, so they carry no build-host paths.
+
+## Compiler cache (optional)
+
+The repository sets up no compiler cache. To share compiled crates between checkouts and
+worktrees on your machine, install [kache](https://ninja.kunobi.com/docs/kache/getting-started/c-cpp)
+and set `RUSTC_WRAPPER=kache` in your shell profile; `nix develop` keeps it. The C code that build
+scripts compile (aws-lc-sys) goes through kache too, with no further setup.
+`scripts/release-build.sh` unsets `RUSTC_WRAPPER`, so release binaries are always compiled.
 
 ## Lints and formatting
 
