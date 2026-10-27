@@ -34,11 +34,22 @@ export const zhCN: Messages = {
 
   "use.title": "给谁用",
   "use.personal": "自己用",
-  "use.personalHint":
-    "只装 KubeSolo 和组件，在自己的电脑上用 zeaburctl ui 打开。没有团队账号、隔离，也不能加节点。1.5 GiB 内存就能跑。",
+  "use.personalHint": "最省资源。1.5 GiB 就够。只有你自己，没有数据库，也不能邀请别人。",
   "use.team": "团队用",
-  "use.teamHint": "装 RKE2 和 Zeabur 面板，有账号、角色和项目隔离。需要 4 GiB 内存。",
+  "use.teamHint": "需要 4 GiB。有账号、成员和数据库。",
   "use.teamTooSmall": "需要 4 GiB 内存的服务器。这台不够，只能装自己用的版本。",
+  "dist.title": "用哪一种 Kubernetes",
+  "dist.suggested": "推荐",
+  "dist.suggestK3s": (gib) =>
+    `这台有 ${gib} GiB 内存，推荐用 K3s：最平衡。它本身用得少，留给应用的比较多。`,
+  "dist.suggestRke2": (gib) =>
+    `这台有 ${gib} GiB 内存，推荐用 RKE2：最能扩展。之后可以用三台服务器一起跑控制平面，坏一台也不会停。`,
+  "dist.k3sHint": "最平衡。比 RKE2 省内存，之后可以加工作节点。",
+  "dist.rke2Hint":
+    "最能扩展。可以加工作节点，也能用三台服务器一起跑控制平面，坏一台也不会停。8 GiB 以上比较合适。",
+  "dist.tooSmall": "这台的内存不够。",
+  "dist.rke2NotSuggested":
+    "这台不到 8 GiB。RKE2 本身比 K3s 多用一些内存，如果之后不打算加服务器，用 K3s 更合适。",
   "host.title": "检查服务器",
   "host.description": "点击安装之前不会做任何更改。未通过的项目需要先修复，警告最好也看一下。",
   "host.server": "这台服务器",
@@ -192,7 +203,7 @@ export const zhCN: Messages = {
   "components.notPersonal": "自己用的版本没有这个",
   "components.needsMemory": (mib) =>
     `构建应用至少要 ${mib.toLocaleString("zh-CN")} MiB 内存，这台不够`,
-  "components.unsupported": "不支持 RKE2",
+  "components.unsupported": (distribution) => `不支持 ${distribution}`,
   "components.runsOn": (where) => `仅能在 ${where} 上运行`,
   "components.unsupportedOn": (profile) => `不支持 ${profile}`,
   "components.details": (name) => `关于 ${name}`,
@@ -268,8 +279,8 @@ export const zhCN: Messages = {
     `以下是将要安装的内容。配置会保存到 ${path}，之后也可以在命令行重复同样的安装。`,
   "review.summary": "摘要",
   "review.kubernetes": "Kubernetes",
-  "review.rke2": (version) => `RKE2 ${version}`,
-  "review.rke2Custom": (version) => `RKE2 ${version}（不受支持）`,
+  "review.cluster": (distribution, version) => `${distribution} ${version}`,
+  "review.clusterCustom": (distribution, version) => `${distribution} ${version}（不受支持）`,
   "review.kubesolo": (version) => `KubeSolo ${version}`,
   "review.personalAccess": "在自己的电脑上用 zeaburctl ui",
   "review.personalLimits": "拿到 kubeconfig 的人可以控制整个集群，应用之间也没有隔离。",
@@ -361,15 +372,15 @@ export const zhCN: Messages = {
   "warning.local.dns": (identity, zeabur) =>
     `${zeabur} 和 ${identity} 必须在 DNS 上解析到这台服务器，浏览器和服务器本身都要查得到。只改 hosts 文件不够，Pod 不会读取它。`,
   "warning.personal.isolation": () =>
-    "自己用的版本只适合一个人。拿到 kubeconfig 的人可以控制整个集群，应用之间也没有隔离，因为 KubeSolo 不会执行网络规则。要给团队用，请在 4 GiB 内存的服务器上用 RKE2 安装。",
+    "自己用的版本只适合一个人。拿到 kubeconfig 的人可以控制整个集群，应用之间也没有隔离，因为 KubeSolo 不会执行网络规则。要给团队用，请在 4 GiB 内存的服务器上用 K3s 或 RKE2 安装。",
   "warning.memory.personal.low": (host) =>
     `自己用的版本至少需要 1.5 GiB 内存，这台机器只有 ${mib(host)}。`,
   "warning.memory.personal.tight": (idle, host) =>
     `空闲时 KubeSolo 和组件大约用掉 ${mib(idle)}，这台机器总共 ${mib(host)}。`,
-  "warning.memory.tight": (idle, host) =>
-    `空闲时，系统、RKE2 和组件约使用 ${mib(idle)}，这台服务器共有 ${mib(host)}。`,
-  "warning.rke2.unsupported": (version) =>
-    `此安装程序不支持 RKE2 ${version}：下载的文件只能用该版本自带的校验和验证。`,
+  "warning.memory.tight": (idle, host, distribution) =>
+    `空闲时，系统、${distribution} 和组件约使用 ${mib(idle)}，这台服务器共有 ${mib(host)}。`,
+  "warning.cluster.unsupported": (distribution, version) =>
+    `此安装程序不支持 ${distribution} ${version}：下载的文件只能用该版本自带的校验和验证。`,
   "warning.join.sameRegion": () =>
     "所有节点都要在同一家云服务商的同一个区域。同一区域内的不同可用区没有问题；跨服务商或跨区域时，延迟会拖慢 etcd、Kubernetes API 和存储，甚至让集群不稳定。",
   "warning.join.rtt.high": (median, limit) =>
@@ -422,7 +433,7 @@ export const zhCN: Messages = {
   "install.next.log": "日志最后几行说明了出错原因。",
   "install.toComponents": "选择组件",
   "phase.host": "检查服务器",
-  "phase.rke2": (version) => `安装 Kubernetes（RKE2 ${version}）`,
+  "phase.cluster": (distribution, version) => `安装 Kubernetes（${distribution} ${version}）`,
   "phase.kubesolo": (version) => `安装 Kubernetes（KubeSolo ${version}）`,
   "phase.helmController": "Helm controller",
   "phase.namespacesOnly": "Namespace",

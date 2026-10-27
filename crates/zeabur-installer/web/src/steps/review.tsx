@@ -3,7 +3,13 @@ import CaretRightIcon from "~icons/ph/caret-right"
 import DownloadIcon from "~icons/ph/download-simple"
 import WarningIcon from "~icons/ph/warning"
 
-import type { CatalogComponent, Plan, PlannedComponent, Removal } from "@/api"
+import {
+  distributionTitle,
+  type CatalogComponent,
+  type Plan,
+  type PlannedComponent,
+  type Removal,
+} from "@/api"
 import type { Wizard } from "@/app"
 import { Code, Panel, Row, Rows } from "@/components/bits"
 import { MemoryVerdict, memoryAdvice } from "@/components/memory"
@@ -40,7 +46,7 @@ export function ReviewStep({ wizard }: { wizard: Wizard }) {
   const { config, planned, server } = wizard
   const personal = wizard.use === "personal"
   const catalog = server.catalog?.components ?? []
-  const checks = personal ? server.personalChecks : server.checks
+  const checks = personal ? server.personalChecks : server.checks[config.distribution]
   const failed = checks.filter((c) => c.status === "fail")
   const result = planned && "plan" in planned ? planned : null
   const plan = result?.plan
@@ -164,9 +170,17 @@ export function ReviewStep({ wizard }: { wizard: Wizard }) {
             <Row label={t("review.kubernetes")}>
               {plan.use === "personal"
                 ? t("review.kubesolo", plan.kubesolo.version)
-                : plan.rke2.pinned
-                  ? t("review.rke2", plan.rke2.version)
-                  : t("review.rke2Custom", plan.rke2.version)}
+                : plan.cluster.pinned
+                  ? t(
+                      "review.cluster",
+                      distributionTitle[plan.cluster.distribution],
+                      plan.cluster.version,
+                    )
+                  : t(
+                      "review.clusterCustom",
+                      distributionTitle[plan.cluster.distribution],
+                      plan.cluster.version,
+                    )}
             </Row>
             {plan.use === "personal" ? (
               <Row label={t("review.access")}>

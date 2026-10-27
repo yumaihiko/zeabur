@@ -6,8 +6,8 @@
 // `vite preview` serves the built pages with the same API, for scripts/docs-shots.sh. There,
 // ZEABUR_DEMO_INSTALL gives the whole log at the first read: `done`, `running` (stops before
 // Zeabur) or `fail`. ZEABUR_DEMO_HOST changes the server: `small` (1.5 GiB, so only a personal
-// install fits and Zeabur Builder is out of reach) or `docker` (Docker found, which stops a
-// personal install).
+// install fits and Zeabur Builder is out of reach), `medium` (a 4 GiB VPS, where K3s is suggested)
+// or `docker` (Docker found, which stops a personal install).
 import { readFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { resolve } from "node:path"
@@ -53,7 +53,7 @@ const log = (fail: boolean, personal: boolean) => {
   return [...lines.slice(0, stop), `error: timed out after 5m0s waiting for ${waiting}`]
 }
 
-const memoryMib = host === "small" ? 1536 : 7936
+const memoryMib = host === "small" ? 1536 : host === "medium" ? 3793 : 7936
 const buildsMinMib = 1800
 const builder = "builds/zeabur-builder"
 

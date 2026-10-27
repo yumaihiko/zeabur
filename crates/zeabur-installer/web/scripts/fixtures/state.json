@@ -15,8 +15,7 @@
         "personal": true,
         "personalMinMemoryMib": 1800,
         "privileged": true,
-        "security": "ClusterRole: manages Builds, BuildRuns and Jobs in every namespace; reads Pods and Namespaces; reads, creates, updates and deletes Secrets in every namespace (the Git credentials Builds name, and the copies it puts in build namespaces). Runs one privileged buildkitd per building namespace in its own namespace, with a user namespace and an egress policy.\n",
-        "supported": true
+        "security": "ClusterRole: manages Builds, BuildRuns and Jobs in every namespace; reads Pods and Namespaces; reads, creates, updates and deletes Secrets in every namespace (the Git credentials Builds name, and the copies it puts in build namespaces). Runs one privileged buildkitd per building namespace in its own namespace, with a user namespace and an egress policy.\n"
       },
       {
         "capability": "certificates",
@@ -30,8 +29,7 @@
         "personal": true,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Writes Secrets in all namespaces and manages webhook CA bundles.",
-        "supported": true
+        "security": "Writes Secrets in all namespaces and manages webhook CA bundles."
       },
       {
         "capability": "config-reload",
@@ -45,8 +43,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "ClusterRole: reads, lists and watches every Secret and ConfigMap; reads, updates and patches Deployments, StatefulSets and DaemonSets; creates Events. Role in its namespace: lists, reads, watches, creates and updates every ConfigMap there, not only its own, and on multi-node the leader-election Lease.\n",
-        "supported": true
+        "security": "ClusterRole: reads, lists and watches every Secret and ConfigMap; reads, updates and patches Deployments, StatefulSets and DaemonSets; creates Events. Role in its namespace: lists, reads, watches, creates and updates every ConfigMap there, not only its own, and on multi-node the leader-election Lease.\n"
       },
       {
         "capability": "container-registry",
@@ -70,8 +67,7 @@
         "personal": true,
         "personalMinMemoryMib": 1800,
         "privileged": false,
-        "security": "No RBAC: a ServiceAccount without roles. Serves the OCI registry API over TLS on port 5000 inside the cluster.\n",
-        "supported": true
+        "security": "No RBAC: a ServiceAccount without roles. Serves the OCI registry API over TLS on port 5000 inside the cluster.\n"
       },
       {
         "capability": "databases",
@@ -85,8 +81,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages pods, Services, Secrets and PVCs for Clusters in every namespace.",
-        "supported": true
+        "security": "Manages pods, Services, Secrets and PVCs for Clusters in every namespace."
       },
       {
         "capability": "databases",
@@ -100,8 +95,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages pods, StatefulSets, Services and PDBs for Dragonfly objects in every namespace.",
-        "supported": true
+        "security": "Manages pods, StatefulSets, Services and PDBs for Dragonfly objects in every namespace."
       },
       {
         "capability": "databases",
@@ -115,8 +109,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages pods, Services, Secrets, PVCs, Jobs and RBAC for MariaDB objects in every namespace.",
-        "supported": true
+        "security": "Manages pods, Services, Secrets, PVCs, Jobs and RBAC for MariaDB objects in every namespace."
       },
       {
         "capability": "databases",
@@ -130,8 +123,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages pods, StatefulSets, Services, Secrets, PVCs, CronJobs, Jobs and Roles for MySQLClusters in every namespace, and copies certificates into them.\n",
-        "supported": true
+        "security": "Manages pods, StatefulSets, Services, Secrets, PVCs, CronJobs, Jobs and Roles for MySQLClusters in every namespace, and copies certificates into them.\n"
       },
       {
         "capability": "databases",
@@ -145,8 +137,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages pods, Services, Secrets and PVCs for MongoDB clusters in every namespace.",
-        "supported": true
+        "security": "Manages pods, Services, Secrets and PVCs for MongoDB clusters in every namespace."
       },
       {
         "capability": "event-autoscaling",
@@ -160,8 +151,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Reads scale targets and trigger secrets cluster-wide; serves the external metrics API.",
-        "supported": true
+        "security": "Reads scale targets and trigger secrets cluster-wide; serves the external metrics API."
       },
       {
         "capability": "event-autoscaling",
@@ -175,8 +165,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Reads HTTPScaledObjects, Services and EndpointSlices cluster-wide; creates ScaledObjects.",
-        "supported": true
+        "security": "Reads HTTPScaledObjects, Services and EndpointSlices cluster-wide; creates ScaledObjects."
       },
       {
         "capability": "external-secrets",
@@ -200,8 +189,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "ClusterRole: reads, creates, updates and deletes Secrets in every namespace; creates ServiceAccount tokens in every namespace (for SecretStores that authenticate as a ServiceAccount); reads ConfigMaps, ServiceAccounts and its own CRDs; reads and updates Namespaces; creates Events. The webhook has no RBAC. The chart aggregates read access to its CRDs into view, and write access into edit and admin.\n",
-        "supported": true
+        "security": "ClusterRole: reads, creates, updates and deletes Secrets in every namespace; creates ServiceAccount tokens in every namespace (for SecretStores that authenticate as a ServiceAccount); reads ConfigMaps, ServiceAccounts and its own CRDs; reads and updates Namespaces; creates Events. The webhook has no RBAC. The chart aggregates read access to its CRDs into view, and write access into edit and admin.\n"
       },
       {
         "capability": "image-updates",
@@ -215,8 +203,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "ClusterRole: reads, lists and watches every Secret (registry credentials of tracked workloads), Namespace and Node; reads, updates and deletes Pods, ReplicaSets, ReplicationControllers, Deployments, StatefulSets, DaemonSets, Jobs and CronJobs in every namespace.\n",
-        "supported": true
+        "security": "ClusterRole: reads, lists and watches every Secret (registry credentials of tracked workloads), Namespace and Node; reads, updates and deletes Pods, ReplicaSets, ReplicationControllers, Deployments, StatefulSets, DaemonSets, Jobs and CronJobs in every namespace.\n"
       },
       {
         "capability": "ingress",
@@ -230,8 +217,7 @@
         "personal": true,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Reads Services, Secrets and routes cluster-wide; writes route status.",
-        "supported": true
+        "security": "Reads Services, Secrets and routes cluster-wide; writes route status."
       },
       {
         "capability": "intrusion-prevention",
@@ -273,8 +259,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "The agent reads node log files read-only and makes no API writes.",
-        "supported": true
+        "security": "The agent reads node log files read-only and makes no API writes."
       },
       {
         "capability": "logs",
@@ -292,8 +277,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "The collector reads pod metadata and node log files.",
-        "supported": true
+        "security": "The collector reads pod metadata and node log files."
       },
       {
         "capability": "metrics",
@@ -307,8 +291,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Reads kubelet metrics; registers an aggregated API.",
-        "supported": true
+        "security": "Reads kubelet metrics; registers an aggregated API."
       },
       {
         "capability": "metrics",
@@ -326,8 +309,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages VictoriaMetrics objects, scrapes pods in all namespaces, and reads builds, databases, backups and certificates in all namespaces for alerts.\n",
-        "supported": true
+        "security": "Manages VictoriaMetrics objects, scrapes pods in all namespaces, and reads builds, databases, backups and certificates in all namespaces for alerts.\n"
       },
       {
         "capability": "node-updates",
@@ -341,8 +323,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "Cordons and drains nodes, and creates privileged Jobs that run Plan images on the host.",
-        "supported": true
+        "security": "Cordons and drains nodes, and creates privileged Jobs that run Plan images on the host."
       },
       {
         "capability": "object-storage",
@@ -356,8 +337,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages pods, StatefulSets, Services, Secrets, PVCs, Jobs and Ingresses for Seaweed objects in every namespace, and calls each cluster's admin API.\n",
-        "supported": true
+        "security": "Manages pods, StatefulSets, Services, Secrets, PVCs, Jobs and Ingresses for Seaweed objects in every namespace, and calls each cluster's admin API.\n"
       },
       {
         "capability": "observability-operator",
@@ -371,8 +351,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Manages VictoriaMetrics and VictoriaLogs objects and their workloads in all namespaces. It can read every Secret, create pods in any namespace, and create ClusterRoles and bindings, so its token equals cluster-admin.\n",
-        "supported": true
+        "security": "Manages VictoriaMetrics and VictoriaLogs objects and their workloads in all namespaces. It can read every Secret, create pods in any namespace, and create ClusterRoles and bindings, so its token equals cluster-admin.\n"
       },
       {
         "capability": "remote-access",
@@ -405,8 +384,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "Creates, updates and deletes Services and Ingresses (and their status) in every namespace; reads nodes and EndpointSlices; manages ValidatingAdmissionPolicies and their bindings. In its own namespace it manages Secrets, ConfigMaps, ServiceAccounts, StatefulSets, Deployments, Roles and RoleBindings. Installs eight CRDs (connectors, dnsconfigs, peerrelays, proxyclasses, proxygrouppolicies, proxygroups, recorders, tailnets) and the IngressClass tailscale.\n",
-        "supported": true
+        "security": "Creates, updates and deletes Services and Ingresses (and their status) in every namespace; reads nodes and EndpointSlices; manages ValidatingAdmissionPolicies and their bindings. In its own namespace it manages Secrets, ConfigMaps, ServiceAccounts, StatefulSets, Deployments, Roles and RoleBindings. Installs eight CRDs (connectors, dnsconfigs, peerrelays, proxyclasses, proxygrouppolicies, proxygroups, recorders, tailnets) and the IngressClass tailscale.\n"
       },
       {
         "capability": "replicated-storage",
@@ -420,8 +398,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "Privileged pods on every node: they mount /dev, /proc, /boot, /etc and /var/lib/longhorn from the host, run iscsiadm and mount in the host's namespaces, and manage pods, PVs and storage classes cluster-wide. The chart binds the longhorn-support-bundle ServiceAccount to cluster-admin; only support bundle pods mount its token.\n",
-        "supported": true
+        "security": "Privileged pods on every node: they mount /dev, /proc, /boot, /etc and /var/lib/longhorn from the host, run iscsiadm and mount in the host's namespaces, and manage pods, PVs and storage classes cluster-wide. The chart binds the longhorn-support-bundle ServiceAccount to cluster-admin; only support bundle pods mount its token.\n"
       },
       {
         "capability": "resource-recommendations",
@@ -435,8 +412,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Reads pods, workloads and metrics in all namespaces; writes VPA status.",
-        "supported": true
+        "security": "Reads pods, workloads and metrics in all namespaces; writes VPA status."
       },
       {
         "capability": "runtime-security",
@@ -450,8 +426,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": true,
-        "security": "Reads pod and node metadata to enrich alerts; falcosidekick writes PolicyReports in every namespace.\n",
-        "supported": true
+        "security": "Reads pod and node metadata to enrich alerts; falcosidekick writes PolicyReports in every namespace.\n"
       },
       {
         "capability": "uptime-probes",
@@ -470,8 +445,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Has no API access and only makes outbound probes.",
-        "supported": true
+        "security": "Has no API access and only makes outbound probes."
       },
       {
         "capability": "volume-backup",
@@ -485,8 +459,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Watches K8up objects cluster-wide; backup Jobs mount PVCs in their own namespace.",
-        "supported": true
+        "security": "Watches K8up objects cluster-wide; backup Jobs mount PVCs in their own namespace."
       },
       {
         "capability": "volume-backup",
@@ -555,8 +528,7 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Bound to cluster-admin; reads and restores every object. By default no Pod is privileged and the velero namespace needs only the baseline Pod Security level. With the file-backup input, a root node agent on every node holds the same token, mounts host paths and needs the privileged level.\n",
-        "supported": true
+        "security": "Bound to cluster-admin; reads and restores every object. By default no Pod is privileged and the velero namespace needs only the baseline Pod Security level. With the file-backup input, a root node agent on every node holds the same token, mounts host paths and needs the privileged level.\n"
       },
       {
         "capability": "vulnerability-scanning",
@@ -570,77 +542,143 @@
         "personal": false,
         "personalMinMemoryMib": null,
         "privileged": false,
-        "security": "Reads workloads cluster-wide, runs scan Jobs and writes reports next to workloads.",
-        "supported": true
+        "security": "Reads workloads cluster-wide, runs scan Jobs and writes reports next to workloads."
       }
     ]
   },
   "catalogError": null,
-  "checks": [
-    {
-      "code": "root.ok",
-      "detail": "running as root",
-      "name": "root",
-      "status": "pass",
-      "values": []
-    },
-    {
-      "code": "systemd.ok",
-      "detail": "systemd is the init system",
-      "name": "systemd",
-      "status": "pass",
-      "values": []
-    },
-    {
-      "code": "time.ok",
-      "detail": "the clock is synchronised",
-      "name": "time",
-      "status": "pass",
-      "values": []
-    },
-    {
-      "code": "swap.off",
-      "detail": "swap is off",
-      "name": "swap",
-      "status": "pass",
-      "values": []
-    },
-    {
-      "code": "crash.none",
-      "detail": "no memory kept for a crash kernel",
-      "name": "crashKernel",
-      "status": "pass",
-      "values": []
-    },
-    {
-      "code": "others.none",
-      "detail": "none found",
-      "name": "otherKubernetes",
-      "status": "pass",
-      "values": []
-    },
-    {
-      "code": "ports.free",
-      "detail": "80, 443, 6443, 9345 and 10250 are free",
-      "name": "ports",
-      "status": "pass",
-      "values": ["80", "443", "6443", "9345", "10250"]
-    },
-    {
-      "code": "disk.ok",
-      "detail": "152.3 GiB free under /var/lib",
-      "name": "diskSpace",
-      "status": "pass",
-      "values": ["152.3", "/var/lib"]
-    },
-    {
-      "code": "crypt.no",
-      "detail": "/var/lib is not on an encrypted device; Secrets are encrypted in etcd, volumes are not",
-      "name": "diskEncryption",
-      "status": "warn",
-      "values": ["/var/lib"]
-    }
-  ],
+  "checks": {
+    "k3s": [
+      {
+        "code": "root.ok",
+        "detail": "running as root",
+        "name": "root",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "systemd.ok",
+        "detail": "systemd is the init system",
+        "name": "systemd",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "time.ok",
+        "detail": "the clock is synchronised",
+        "name": "time",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "swap.off",
+        "detail": "swap is off",
+        "name": "swap",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "crash.none",
+        "detail": "no memory kept for a crash kernel",
+        "name": "crashKernel",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "others.none",
+        "detail": "none found",
+        "name": "otherKubernetes",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "ports.free",
+        "detail": "80, 443, 6443 and 10250 are free",
+        "name": "ports",
+        "status": "pass",
+        "values": ["80", "443", "6443", "9345", "10250"]
+      },
+      {
+        "code": "disk.ok",
+        "detail": "152.3 GiB free under /var/lib",
+        "name": "diskSpace",
+        "status": "pass",
+        "values": ["152.3", "/var/lib"]
+      },
+      {
+        "code": "crypt.no",
+        "detail": "/var/lib is not on an encrypted device; Secrets are encrypted in etcd, volumes are not",
+        "name": "diskEncryption",
+        "status": "warn",
+        "values": ["/var/lib"]
+      }
+    ],
+    "rke2": [
+      {
+        "code": "root.ok",
+        "detail": "running as root",
+        "name": "root",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "systemd.ok",
+        "detail": "systemd is the init system",
+        "name": "systemd",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "time.ok",
+        "detail": "the clock is synchronised",
+        "name": "time",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "swap.off",
+        "detail": "swap is off",
+        "name": "swap",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "crash.none",
+        "detail": "no memory kept for a crash kernel",
+        "name": "crashKernel",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "others.none",
+        "detail": "none found",
+        "name": "otherKubernetes",
+        "status": "pass",
+        "values": []
+      },
+      {
+        "code": "ports.free",
+        "detail": "80, 443, 6443, 9345 and 10250 are free",
+        "name": "ports",
+        "status": "pass",
+        "values": ["80", "443", "6443", "9345", "10250"]
+      },
+      {
+        "code": "disk.ok",
+        "detail": "152.3 GiB free under /var/lib",
+        "name": "diskSpace",
+        "status": "pass",
+        "values": ["152.3", "/var/lib"]
+      },
+      {
+        "code": "crypt.no",
+        "detail": "/var/lib is not on an encrypted device; Secrets are encrypted in etcd, volumes are not",
+        "name": "diskEncryption",
+        "status": "warn",
+        "values": ["/var/lib"]
+      }
+    ]
+  },
   "config": {
     "access": {
       "identity": "login.203.0.113.10.sslip.io",
@@ -657,6 +695,8 @@
     "inputs": {},
     "preset": "standard",
     "profile": "single-node",
+    "distribution": "k3s",
+    "k3sVersion": null,
     "rke2Version": null,
     "secretFiles": {},
     "sources": {
@@ -763,6 +803,10 @@
       "values": ["/var/lib"]
     }
   ],
-  "teamMinMemoryMib": 2600,
-  "use": "team"
+  "teamMinMemoryMib": {
+    "k3s": 2400,
+    "rke2": 2600
+  },
+  "use": "team",
+  "rke2SuggestedMib": 7168
 }

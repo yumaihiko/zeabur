@@ -2,7 +2,14 @@ import { useId, useState } from "react"
 import CaretDownIcon from "~icons/ph/caret-down"
 import CaretRightIcon from "~icons/ph/caret-right"
 
-import type { CatalogComponent, Config, Input as CatalogInput, Preset } from "@/api"
+import {
+  distributionTitle,
+  runsOn,
+  type CatalogComponent,
+  type Config,
+  type Input as CatalogInput,
+  type Preset,
+} from "@/api"
 import type { Wizard } from "@/app"
 import { Panel, Segmented } from "@/components/bits"
 import { MemoryVerdict, memoryAdvice } from "@/components/memory"
@@ -157,7 +164,7 @@ export function ComponentsStep({ wizard }: { wizard: Wizard }) {
                 supported={
                   personal
                     ? component.personal === true && !tooSmall(component)
-                    : component.supported
+                    : runsOn(component, wizard.config.distribution)
                 }
                 tooSmall={tooSmall(component)}
                 wizard={wizard}
@@ -219,7 +226,7 @@ function ComponentRow({
       ? t("components.runsOn", t("common.list", component.distributions))
       : leftOut
         ? leftOutReason(t, leftOut)
-        : t("components.unsupported")
+        : t("components.unsupported", distributionTitle[wizard.config.distribution])
   return (
     <div className="px-5 py-2">
       <Collapsible className="flex flex-col">

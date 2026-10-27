@@ -600,26 +600,18 @@
       }
     ],
     "nodePrep": null,
-    "rke2": {
-      "downloads": [
-        {
-          "file": "rke2.linux-amd64.tar.gz",
-          "sha256": "4fdbe8a8a32517fbcb6e80c71ca393b96828fbb87685102d9058b51527f9278d",
-          "url": "https://github.com/rancher/rke2/releases/download/v1.36.5%2Brke2r1/rke2.linux-amd64.tar.gz"
-        },
-        {
-          "file": "rke2-images-core.linux-amd64.tar.zst",
-          "sha256": "adc5fe6ca25a3ebc8866e3dad3ff3690d38c8af4a5d312e71bf954e6e3213203",
-          "url": "https://github.com/rancher/rke2/releases/download/v1.36.5%2Brke2r1/rke2-images-core.linux-amd64.tar.zst"
-        },
-        {
-          "file": "rke2-images-canal.linux-amd64.tar.zst",
-          "sha256": "294426213e146205f37037d2ab7bc629225d53a785e3f89d5a5f7405d2f0c98d",
-          "url": "https://github.com/rancher/rke2/releases/download/v1.36.5%2Brke2r1/rke2-images-canal.linux-amd64.tar.zst"
-        }
-      ],
+    "cluster": {
+      "distribution": "k3s",
+      "version": "v1.36.5+k3s1",
       "pinned": true,
-      "version": "v1.36.5+rke2r1"
+      "checksums": null,
+      "release": {
+        "file": "k3s",
+        "url": "https://github.com/k3s-io/k3s/releases/download/v1.36.5%2Bk3s1/k3s",
+        "sha256": "d73847bc"
+      },
+      "images": [],
+      "installScript": null
     },
     "storage": {
       "defaultClass": "local-path",
@@ -681,6 +673,6 @@
     },
     "removals": []
   },
-  "text": "RKE2 v1.36.5+rke2r1 (pinned, checked against this installer's digests), CIS profile, on vps-1 (amd64, 7936 MiB)\nNode addresses   203.0.113.10 (temporary IPv6 addresses left out)\n\nComponents\n  ingress/traefik                                  preset     23 MiB\n      manifests gateway-api-crds (1 URLs)\n      chart traefik 42.1.3\n  certificates/cert-manager                        preset     51 MiB\n      chart cert-manager v1.21.3\n      manifests issuers\n  container-registry/zot                           preset     unmeasured\n      manifests tls\n      chart zot 0.1.128\n  databases/cloudnative-pg                         preset     unmeasured\n      chart cnpg 0.29.1\n      chart plugin-barman-cloud 0.8.1\n  image-updates/keel                               preset     unmeasured\n      chart keel v1.2.3\n      manifests webhook-policy\n  observability-operator/victoria-metrics-operator preset     20 MiB\n      chart victoria-metrics-operator 0.68.1\n  logs/victoria-logs                               preset     38 MiB\n      manifests logs\n  metrics/metrics-server                           preset     17 MiB\n      chart metrics-server 3.14.0\n  metrics/victoria-metrics                         preset     207 MiB\n      chart vm 0.96.0\n      manifests notifications\n  node-updates/system-upgrade-controller           preset     12 MiB\n      manifests crds (1 URLs)\n      manifests controller (1 URLs)\n\nNamespaces exempt from the restricted Pod Security level\n  observability (logs/victoria-logs is privileged)\n  system-upgrade (node-updates/system-upgrade-controller is privileged)\n\nStorage          local-path (default)\n\nZeabur           https://zeabur.203.0.113.10.sslip.io (certificates from a CA made on this server)\nZeabur Identity  https://login.203.0.113.10.sslip.io\n\nMemory at idle   about 1668 MiB of 7936 (RKE2 1300, components 368, plus 3 unmeasured)\nwarning: Local access: login.203.0.113.10.sslip.io and zeabur.203.0.113.10.sslip.io must resolve to this server for browsers and for the server itself, through DNS (names such as <address>.sslip.io do) rather than a hosts file, which pods do not read.\nwarning: This server has no public address, so new services get no suggested URL. Add `suffixes: [203-0-113-10.sslip.io]` under access for URLs only this network reaches, signed by the local CA.\n",
+  "text": "K3s v1.36.5+k3s1 (pinned, checked against this installer's digests), CIS hardened, on vps-1 (amd64, 7936 MiB)\nNode addresses   203.0.113.10 (temporary IPv6 addresses left out)\n\nComponents\n  ingress/traefik                                  preset     23 MiB\n      manifests gateway-api-crds (1 URLs)\n      chart traefik 42.1.3\n  certificates/cert-manager                        preset     51 MiB\n      chart cert-manager v1.21.3\n      manifests issuers\n  container-registry/zot                           preset     unmeasured\n      manifests tls\n      chart zot 0.1.128\n  databases/cloudnative-pg                         preset     unmeasured\n      chart cnpg 0.29.1\n      chart plugin-barman-cloud 0.8.1\n  image-updates/keel                               preset     unmeasured\n      chart keel v1.2.3\n      manifests webhook-policy\n  observability-operator/victoria-metrics-operator preset     20 MiB\n      chart victoria-metrics-operator 0.68.1\n  logs/victoria-logs                               preset     38 MiB\n      manifests logs\n  metrics/metrics-server                           preset     17 MiB\n      chart metrics-server 3.14.0\n  metrics/victoria-metrics                         preset     207 MiB\n      chart vm 0.96.0\n      manifests notifications\n  node-updates/system-upgrade-controller           preset     12 MiB\n      manifests crds (1 URLs)\n      manifests controller (1 URLs)\n\nNamespaces exempt from the restricted Pod Security level\n  observability (logs/victoria-logs is privileged)\n  system-upgrade (node-updates/system-upgrade-controller is privileged)\n\nStorage          local-path (default)\n\nZeabur           https://zeabur.203.0.113.10.sslip.io (certificates from a CA made on this server)\nZeabur Identity  https://login.203.0.113.10.sslip.io\n\nMemory at idle   about 1668 MiB of 7936 (K3s 1300, components 368, plus 3 unmeasured)\nwarning: Local access: login.203.0.113.10.sslip.io and zeabur.203.0.113.10.sslip.io must resolve to this server for browsers and for the server itself, through DNS (names such as <address>.sslip.io do) rather than a hosts file, which pods do not read.\nwarning: This server has no public address, so new services get no suggested URL. Add `suffixes: [203-0-113-10.sslip.io]` under access for URLs only this network reaches, signed by the local CA.\n",
   "yaml": "preset: standard\nenable: []\ndisable: []\nprofile: single-node\naccess:\n  mode: local\n  identity: login.203.0.113.10.sslip.io\n  zeabur: zeabur.203.0.113.10.sslip.io\n  invitations: true\nzeabur: true\ninputs: {}\nsecretFiles: {}\nrke2Version: null\nhost:\n  tlsSan: []\n  requireEncryptedDisk: false\nsources:\n  catalog: null\n  imageArchives: []\n  identityImage: null\n  identityctl: null\n  zeaburImage: null\n  zeaburChart: null\n"
 }

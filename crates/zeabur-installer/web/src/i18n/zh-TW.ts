@@ -34,11 +34,22 @@ export const zhTW: Messages = {
 
   "use.title": "給誰用",
   "use.personal": "自己用",
-  "use.personalHint":
-    "只裝 KubeSolo 和元件，在自己的電腦用 zeaburctl ui 打開。沒有團隊帳號、隔離，也不能加節點。1.5 GiB 記憶體就能跑。",
+  "use.personalHint": "最省資源。1.5 GiB 就夠。只有你自己，沒有資料庫，也不能邀請別人。",
   "use.team": "團隊用",
-  "use.teamHint": "裝 RKE2 和 Zeabur 面板，有帳號、角色和專案隔離。需要 4 GiB 記憶體。",
+  "use.teamHint": "需要 4 GiB。有帳號、成員和資料庫。",
   "use.teamTooSmall": "需要 4 GiB 記憶體的伺服器。這台不夠，只能裝自己用的版本。",
+  "dist.title": "用哪一種 Kubernetes",
+  "dist.suggested": "建議",
+  "dist.suggestK3s": (gib) =>
+    `這台有 ${gib} GiB 記憶體，建議用 K3s：最平衡。它本身用得少，留給應用程式的比較多。`,
+  "dist.suggestRke2": (gib) =>
+    `這台有 ${gib} GiB 記憶體，建議用 RKE2：最能擴充。之後可以用三台伺服器一起跑控制平面，壞一台也不會停。`,
+  "dist.k3sHint": "最平衡。比 RKE2 省記憶體，之後可以加工作節點。",
+  "dist.rke2Hint":
+    "最能擴充。可以加工作節點，也能用三台伺服器一起跑控制平面，壞一台也不會停。8 GiB 以上比較適合。",
+  "dist.tooSmall": "這台的記憶體不夠。",
+  "dist.rke2NotSuggested":
+    "這台不到 8 GiB。RKE2 本身比 K3s 多用一些記憶體，如果之後不打算加伺服器，用 K3s 比較合適。",
   "host.title": "檢查伺服器",
   "host.description": "按下安裝之前不會變更任何東西。未通過的項目要先修正，警告最好也看一下。",
   "host.server": "這台伺服器",
@@ -193,7 +204,7 @@ export const zhTW: Messages = {
   "components.notPersonal": "自己用的版本沒有這個",
   "components.needsMemory": (mib) =>
     `建置應用程式至少要 ${mib.toLocaleString("zh-TW")} MiB 記憶體，這台不夠`,
-  "components.unsupported": "不支援 RKE2",
+  "components.unsupported": (distribution) => `不支援 ${distribution}`,
   "components.runsOn": (where) => `只能在 ${where} 上執行`,
   "components.unsupportedOn": (profile) => `不支援 ${profile}`,
   "components.details": (name) => `關於 ${name}`,
@@ -269,8 +280,8 @@ export const zhTW: Messages = {
     `以下是要安裝的內容。設定會存到 ${path}，之後也能在命令列重跑同樣的安裝。`,
   "review.summary": "摘要",
   "review.kubernetes": "Kubernetes",
-  "review.rke2": (version) => `RKE2 ${version}`,
-  "review.rke2Custom": (version) => `RKE2 ${version}（不受支援）`,
+  "review.cluster": (distribution, version) => `${distribution} ${version}`,
+  "review.clusterCustom": (distribution, version) => `${distribution} ${version}（不受支援）`,
   "review.kubesolo": (version) => `KubeSolo ${version}`,
   "review.personalAccess": "在自己的電腦用 zeaburctl ui",
   "review.personalLimits": "拿到 kubeconfig 的人可以控制整個叢集，應用程式之間也沒有隔離。",
@@ -362,15 +373,15 @@ export const zhTW: Messages = {
   "warning.local.dns": (identity, zeabur) =>
     `${zeabur} 和 ${identity} 必須在 DNS 上解析到這台伺服器，瀏覽器和伺服器本身都要查得到。只改 hosts 檔不夠，Pod 不會讀它。`,
   "warning.personal.isolation": () =>
-    "自己用的版本只適合一個人。拿到 kubeconfig 的人可以控制整個叢集，應用程式之間也沒有隔離，因為 KubeSolo 不會執行網路規則。要給團隊用，請在 4 GiB 記憶體的伺服器上用 RKE2 安裝。",
+    "自己用的版本只適合一個人。拿到 kubeconfig 的人可以控制整個叢集，應用程式之間也沒有隔離，因為 KubeSolo 不會執行網路規則。要給團隊用，請在 4 GiB 記憶體的伺服器上用 K3s 或 RKE2 安裝。",
   "warning.memory.personal.low": (host) =>
     `自己用的版本至少需要 1.5 GiB 記憶體，這台機器只有 ${mib(host)}。`,
   "warning.memory.personal.tight": (idle, host) =>
     `閒置時 KubeSolo 和元件大約用掉 ${mib(idle)}，這台機器總共 ${mib(host)}。`,
-  "warning.memory.tight": (idle, host) =>
-    `閒置時，系統、RKE2 和元件約使用 ${mib(idle)}，這台伺服器共有 ${mib(host)}。`,
-  "warning.rke2.unsupported": (version) =>
-    `這個安裝程式不支援 RKE2 ${version}：下載的檔案只能用該版本自己附的檢查碼驗證。`,
+  "warning.memory.tight": (idle, host, distribution) =>
+    `閒置時，系統、${distribution} 和元件約使用 ${mib(idle)}，這台伺服器共有 ${mib(host)}。`,
+  "warning.cluster.unsupported": (distribution, version) =>
+    `這個安裝程式不支援 ${distribution} ${version}：下載的檔案只能用該版本自己附的檢查碼驗證。`,
   "warning.join.sameRegion": () =>
     "所有節點都要在同一家主機服務商的同一個區域。同一區域內的不同可用區域沒有問題；跨服務商或跨區域時，延遲會拖慢 etcd、Kubernetes API 和儲存，甚至讓叢集不穩定。",
   "warning.join.rtt.high": (median, limit) =>
@@ -423,7 +434,7 @@ export const zhTW: Messages = {
   "install.next.log": "出錯的原因寫在日誌的最後幾行。",
   "install.toComponents": "選擇元件",
   "phase.host": "檢查伺服器",
-  "phase.rke2": (version) => `安裝 Kubernetes（RKE2 ${version}）`,
+  "phase.cluster": (distribution, version) => `安裝 Kubernetes（${distribution} ${version}）`,
   "phase.kubesolo": (version) => `安裝 Kubernetes（KubeSolo ${version}）`,
   "phase.helmController": "Helm controller",
   "phase.namespacesOnly": "Namespace",

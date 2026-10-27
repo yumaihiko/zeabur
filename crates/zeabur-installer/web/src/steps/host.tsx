@@ -1,12 +1,13 @@
 import ArrowClockwiseIcon from "~icons/ph/arrow-clockwise"
 import CaretRightIcon from "~icons/ph/caret-right"
 
-import type { Check, Use } from "@/api"
-import type { Wizard } from "@/app"
+import { distributionTitle, type Check, type Distribution, type Use } from "@/api"
+import { fits, type Wizard } from "@/app"
 import { Panel, Row, Rows, StatusDot, StatusPill, type Health } from "@/components/bits"
 import { coded, useT } from "@/i18n"
 import { StepPage } from "@/steps/frame"
 import { Alert, AlertDescription, AlertTitle } from "@zeabur/design-system/components/alert"
+import { Badge } from "@zeabur/design-system/components/badge"
 import { Button } from "@zeabur/design-system/components/button"
 import { RadioGroup, RadioOption } from "@zeabur/design-system/components/radio"
 import {
@@ -18,6 +19,7 @@ import {
 const health: Record<string, Health> = { pass: "ok", warn: "warn", fail: "fail" }
 const order: Record<Check["status"], number> = { fail: 0, warn: 1, pass: 2 }
 const checkKey = (check: Check) => [check.name, check.code, ...check.values].join(" ")
+const distributions: Distribution[] = ["k3s", "rke2"]
 
 export function CheckRow({ check }: { check: Check }) {
   const t = useT()
@@ -36,11 +38,57 @@ export function CheckRow({ check }: { check: Check }) {
   )
 }
 
+/** K3s or RKE2, with the one this server's memory suggests and why. */
+function DistributionPanel({ wizard }: { wizard: Wizard }) {
+  const t = useT()
+  const { config, server, suggested } = wizard
+  const gib = ((server.facts?.memoryMib ?? 0) / 1024).toFixed(1)
+  const hint = (d: Distribution) =>
+    !fits(server, d) ? t("dist.tooSmall") : d === "k3s" ? t("dist.k3sHint") : t("dist.rke2Hint")
+  return (
+    <Panel title={t("dist.title")}>
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-main">
+          {suggested === "k3s" ? t("dist.suggestK3s", gib) : t("dist.suggestRke2", gib)}
+        </p>
+        <RadioGroup
+          aria-label={t("dist.title")}
+          value={config.distribution}
+          onValueChange={(value) =>
+            wizard.setConfig({ ...config, distribution: value as Distribution })
+          }
+        >
+          {distributions.map((d) => (
+            <RadioOption
+              key={d}
+              value={d}
+              label={
+                <span className="flex items-center gap-2">
+                  {distributionTitle[d]}
+                  {d === suggested ? (
+                    <Badge variant="secondary">{t("dist.suggested")}</Badge>
+                  ) : null}
+                </span>
+              }
+              description={hint(d)}
+              disabled={!fits(server, d)}
+            />
+          ))}
+        </RadioGroup>
+        {config.distribution === "rke2" && suggested === "k3s" ? (
+          <p className="text-sm text-secondary">{t("dist.rke2NotSuggested")}</p>
+        ) : null}
+      </div>
+    </Panel>
+  )
+}
+
 export function HostStep({ wizard }: { wizard: Wizard }) {
   const t = useT()
   const { server } = wizard
   const facts = server.facts
-  const checks = wizard.use === "personal" ? server.personalChecks : server.checks
+  const checks =
+    wizard.use === "personal" ? server.personalChecks : server.checks[wizard.config.distribution]
   const failed = checks.filter((c) => c.status === "fail").length
   const warned = checks.filter((c) => c.status === "warn").length
   const exceptions = checks
@@ -94,6 +142,8 @@ export function HostStep({ wizard }: { wizard: Wizard }) {
           />
         </RadioGroup>
       </Panel>
+
+      {wizard.use === "team" ? <DistributionPanel wizard={wizard} /> : null}
 
       <Panel title={t("host.server")}>
         <Rows>

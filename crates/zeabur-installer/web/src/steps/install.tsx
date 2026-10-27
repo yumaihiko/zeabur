@@ -4,7 +4,7 @@ import CaretRightIcon from "~icons/ph/caret-right"
 import DownloadIcon from "~icons/ph/download-simple"
 import WarningCircleIcon from "~icons/ph/warning-circle"
 
-import type { Plan } from "@/api"
+import { distributionTitle, type Plan } from "@/api"
 import type { Wizard } from "@/app"
 import { Code, Panel, Row, Rows, StatusPill } from "@/components/bits"
 import { useT, type Translate } from "@/i18n"
@@ -44,10 +44,13 @@ function phases(t: Translate, plan: Plan | undefined, local: boolean): Phase[] {
       { title: t("phase.done"), starts: (s) => s === "Done" },
     ]
   }
-  const rke2 = plan?.rke2.version ?? ""
+  const title = plan ? distributionTitle[plan.cluster.distribution] : ""
   return [
     { title: t("phase.host"), starts: (s) => s === "Checking the host" },
-    { title: t("phase.rke2", rke2), starts: (s) => s.startsWith("RKE2 ") },
+    {
+      title: t("phase.cluster", title, plan?.cluster.version ?? ""),
+      starts: (s) => s.startsWith(`${title} `),
+    },
     { title: t("phase.namespaces"), starts: (s) => s === "Namespaces and network policies" },
     { title: t("phase.storage"), starts: (s) => s === "Storage" },
     ...components,

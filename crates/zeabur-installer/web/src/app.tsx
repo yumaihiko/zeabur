@@ -6,6 +6,7 @@ import SunIcon from "~icons/ph/sun"
 import {
   api,
   type Config,
+  type Distribution,
   type PersonalConfig,
   type Plan,
   type Planned,
@@ -35,8 +36,21 @@ export type Step = (typeof steps)[number]
 /** A personal install has no Zeabur panel, so nothing to reach it by. */
 const personalSteps: readonly Step[] = steps.filter((s) => s !== "access")
 
-/** The memory below which a team install is refused (plan.rs, `MIN_MEMORY_MIB`). */
-const teamMinMemoryMib = 2600
+/** The memory below which a team install is refused, when the server does not say
+ * (`Distribution::min_memory_mib`). */
+const teamMinMemoryMib: Record<Distribution, number> = { k3s: 2400, rke2: 2600 }
+/** From this much memory RKE2 is suggested (`RKE2_SUGGESTED_MIB`). */
+const rke2SuggestedMib = 7 * 1024
+
+const memoryOf = (server: ServerState | null) => server?.facts?.memoryMib ?? Infinity
+
+/** Whether a team install on the distribution fits the server's memory. */
+export const fits = (server: ServerState | null, distribution: Distribution) =>
+  memoryOf(server) >= (server?.teamMinMemoryMib?.[distribution] ?? teamMinMemoryMib[distribution])
+
+/** The distribution to suggest for the server's memory. */
+export const suggested = (server: ServerState | null): Distribution =>
+  memoryOf(server) >= (server?.rke2SuggestedMib ?? rke2SuggestedMib) ? "rke2" : "k3s"
 
 const emptyPersonal: PersonalConfig = {
   use: "personal",
@@ -56,6 +70,8 @@ export interface Wizard {
   use: Use
   /** Whether a team install fits this server's memory. */
   teamFits: boolean
+  /** The distribution suggested for this server. */
+  suggested: Distribution
   setUse: (use: Use) => void
   config: Config
   personal: PersonalConfig
@@ -97,13 +113,18 @@ export function App() {
     api.state().then(
       (state) => {
         setServer(state)
-        setConfigState((current) => current ?? state.config)
+        setConfigState(
+          (current) =>
+            current ??
+            (state.config && !state.configExists
+              ? { ...state.config, distribution: suggested(state) }
+              : state.config),
+        )
         if (state.personal)
           setPersonal((current) => (current === emptyPersonal ? state.personal! : current))
-        const fits =
-          (state.facts?.memoryMib ?? Infinity) >= (state.teamMinMemoryMib ?? teamMinMemoryMib)
+        const teamFits = fits(state, "k3s") || fits(state, "rke2")
         setUseState(
-          (current) => current ?? (state.use === "personal" || !fits ? "personal" : "team"),
+          (current) => current ?? (state.use === "personal" || !teamFits ? "personal" : "team"),
         )
         if (state.applying) {
           setStep("install")
@@ -175,8 +196,7 @@ export function App() {
     )
   }
 
-  const teamFits =
-    (server?.facts?.memoryMib ?? Infinity) >= (server?.teamMinMemoryMib ?? teamMinMemoryMib)
+  const teamFits = fits(server, "k3s") || fits(server, "rke2")
   const shownSteps = use === "personal" ? personalSteps : steps
   const wizard: Wizard | null =
     server && config && use && active
@@ -184,6 +204,7 @@ export function App() {
           server,
           use,
           teamFits,
+          suggested: suggested(server),
           setUse: (next) => {
             if (next === "team" && !teamFits) return
             setUseState(next)

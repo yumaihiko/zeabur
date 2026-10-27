@@ -40,12 +40,23 @@ export const en = {
   "use.title": "Who is it for",
   "use.personal": "Just me",
   "use.personalHint":
-    "KubeSolo and the components only. You run zeaburctl ui on your own computer. No team accounts, isolation or extra nodes. Works from 1.5 GiB of memory.",
+    "Uses the least. 1.5 GiB is enough. Only you: no databases, and you cannot invite anyone.",
   "use.team": "A team",
-  "use.teamHint":
-    "RKE2 and the Zeabur panel, with accounts, roles and project isolation. Needs 4 GiB of memory.",
+  "use.teamHint": "Needs 4 GiB. Accounts, members and databases.",
   "use.teamTooSmall":
     "Needs a server with 4 GiB of memory. This one has less, so only a personal install fits.",
+  "dist.title": "Kubernetes",
+  "dist.suggested": "Suggested",
+  "dist.suggestK3s": (gib: string) =>
+    `This server has ${gib} GiB of memory, so K3s is suggested: the most balanced. It uses less itself and leaves more for your apps.`,
+  "dist.suggestRke2": (gib: string) =>
+    `This server has ${gib} GiB of memory, so RKE2 is suggested: the easiest to grow. You can later run the control plane on three servers, so losing one does not stop it.`,
+  "dist.k3sHint": "The most balanced. Uses less memory than RKE2, and you can add workers later.",
+  "dist.rke2Hint":
+    "The easiest to grow. Add workers, or run the control plane on three servers so losing one does not stop it. Best from 8 GiB.",
+  "dist.tooSmall": "This server does not have enough memory for it.",
+  "dist.rke2NotSuggested":
+    "This server has less than 8 GiB. RKE2 itself uses more memory than K3s, so unless you plan to add servers, K3s fits better.",
   "host.title": "Check the server",
   "host.description":
     "Nothing changes until you install. A failed check has to be fixed first; a warning is worth reading.",
@@ -214,7 +225,7 @@ export const en = {
   "components.notPersonal": "Not in a personal install",
   "components.needsMemory": (mib: number) =>
     `Needs ${mib.toLocaleString("en")} MiB of memory to build apps, and this server has less`,
-  "components.unsupported": "Not on RKE2",
+  "components.unsupported": (distribution: string) => `Not on ${distribution}`,
   "components.runsOn": (where: string) => `Runs on ${where} only`,
   "components.unsupportedOn": (profile: string) => `Not supported on ${profile}`,
   "components.details": (name: string) => `About ${name}`,
@@ -294,8 +305,9 @@ export const en = {
     `This is what will be installed. The configuration is saved to ${path}, so the same install can be repeated from the command line.`,
   "review.summary": "Summary",
   "review.kubernetes": "Kubernetes",
-  "review.rke2": (version: string) => `RKE2 ${version}`,
-  "review.rke2Custom": (version: string) => `RKE2 ${version} (unsupported)`,
+  "review.cluster": (distribution: string, version: string) => `${distribution} ${version}`,
+  "review.clusterCustom": (distribution: string, version: string) =>
+    `${distribution} ${version} (unsupported)`,
   "review.kubesolo": (version: string) => `KubeSolo ${version}`,
   "review.personalAccess": "zeaburctl ui on your own computer",
   "review.personalLimits":
@@ -394,15 +406,15 @@ export const en = {
   "warning.local.dns": (identity: string, zeabur: string) =>
     `${zeabur} and ${identity} must resolve to this server through DNS, for browsers and for the server itself. A hosts file is not enough: pods do not read it.`,
   "warning.personal.isolation": () =>
-    "A personal install is for one person. Whoever has the kubeconfig has full control, and apps are not isolated from each other: KubeSolo ignores network policies. For a team, install with RKE2 on a server with 4 GiB of memory.",
+    "A personal install is for one person. Whoever has the kubeconfig has full control, and apps are not isolated from each other: KubeSolo ignores network policies. For a team, install with K3s or RKE2 on a server with 4 GiB of memory.",
   "warning.memory.personal.low": (host: string) =>
     `A personal install needs at least 1.5 GiB of memory; this machine has ${mib(host)}.`,
   "warning.memory.personal.tight": (idle: string, host: string) =>
     `At idle, KubeSolo and the components use about ${mib(idle)} of this machine's ${mib(host)}.`,
-  "warning.memory.tight": (idle: string, host: string) =>
-    `At idle, the system, RKE2 and the components use about ${mib(idle)} of this server's ${mib(host)}.`,
-  "warning.rke2.unsupported": (version: string) =>
-    `RKE2 ${version} is not supported by this installer: its downloads are checked only against the release's own checksums.`,
+  "warning.memory.tight": (idle: string, host: string, distribution: string) =>
+    `At idle, the system, ${distribution} and the components use about ${mib(idle)} of this server's ${mib(host)}.`,
+  "warning.cluster.unsupported": (distribution: string, version: string) =>
+    `${distribution} ${version} is not supported by this installer: its downloads are checked only against the release's own checksums.`,
   "warning.join.sameRegion": () =>
     "Put every node at the same hosting provider and in the same region. Different availability zones in one region are fine. Between providers or regions, latency slows etcd, the Kubernetes API and storage, and can make the cluster unstable.",
   "warning.join.rtt.high": (median: string, limit: string) =>
@@ -457,7 +469,8 @@ export const en = {
   "install.next.log": "The end of the log says what went wrong.",
   "install.toComponents": "Choose components",
   "phase.host": "Check the server",
-  "phase.rke2": (version: string) => `Install Kubernetes (RKE2 ${version})`,
+  "phase.cluster": (distribution: string, version: string) =>
+    `Install Kubernetes (${distribution} ${version})`,
   "phase.kubesolo": (version: string) => `Install Kubernetes (KubeSolo ${version})`,
   "phase.helmController": "Helm controller",
   "phase.namespacesOnly": "Namespaces",

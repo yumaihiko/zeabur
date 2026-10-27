@@ -1,4 +1,4 @@
-RKE2 v1.36.5+rke2r1 (pinned, checked against this installer's digests), CIS profile, on vps-1 (amd64, 7936 MiB)
+K3s v1.36.5+k3s1 (pinned, checked against this installer's digests), CIS hardened, on vps-1 (amd64, 7936 MiB)
 Node addresses   203.0.113.10 (temporary IPv6 addresses left out)
 
 Components
@@ -26,7 +26,7 @@ Storage          local-path (default)
 Zeabur           https://zeabur.203.0.113.10.sslip.io (certificates from a CA made on this server)
 Zeabur Identity  https://login.203.0.113.10.sslip.io
 
-Memory at idle   about 1656 MiB of 7936 (RKE2 1300, components 356)
+Memory at idle   about 1656 MiB of 7936 (K3s 1300, components 356)
 warning: Local access: login.203.0.113.10.sslip.io and zeabur.203.0.113.10.sslip.io must resolve to this server for browsers and for the server itself, through DNS (names such as <address>.sslip.io do) rather than a hosts file, which pods do not read.
 ==> Checking the host
     ok   root               running as root
@@ -34,15 +34,15 @@ warning: Local access: login.203.0.113.10.sslip.io and zeabur.203.0.113.10.sslip
     ok   time               the clock is synchronised
     ok   swap               swap is off
     ok   other Kubernetes   none found
-    ok   ports              80, 443, 6443, 9345 and 10250 are free
+    ok   ports              80, 443, 6443 and 10250 are free
     ok   disk space         152.3 GiB free under /var/lib
     warn disk encryption    /var/lib is not on an encrypted device; Secrets are encrypted in etcd, volumes are not
-==> RKE2 v1.36.5+rke2r1
-    https://github.com/rancher/rke2/releases/download/v1.36.5%2Brke2r1/rke2.linux-amd64.tar.gz
-    https://github.com/rancher/rke2/releases/download/v1.36.5%2Brke2r1/sha256sum-amd64.txt
-    https://github.com/rancher/rke2/releases/download/v1.36.5%2Brke2r1/rke2-images-core.linux-amd64.tar.zst
-    https://github.com/rancher/rke2/releases/download/v1.36.5%2Brke2r1/rke2-images-canal.linux-amd64.tar.zst
-    starting rke2-server; the first start takes a few minutes
+==> K3s v1.36.5+k3s1 (k3s)
+    https://raw.githubusercontent.com/projectcalico/calico/v3.32.2/manifests/calico-vxlan.yaml
+    https://github.com/k3s-io/k3s/releases/download/v1.36.5%2Bk3s1/k3s
+    https://github.com/k3s-io/k3s/releases/download/v1.36.5%2Bk3s1/k3s-airgap-images-amd64.tar.zst
+    https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh
+    starting k3s; the first start takes a few minutes
 ==> Namespaces and network policies
 ==> Storage
 namespace/local-path-storage serverside-applied

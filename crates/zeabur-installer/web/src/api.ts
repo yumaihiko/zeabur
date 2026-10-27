@@ -27,7 +27,6 @@ export interface CatalogComponent {
   capability: string
   displayName: string
   default: "recommended" | "optional" | "unsupported"
-  supported: boolean
   /** Offered in a personal install. */
   personal: boolean
   /** A personal install offers it only on a server with this much memory. */
@@ -44,6 +43,14 @@ export interface CatalogComponent {
 }
 
 export type Preset = "minimal" | "standard" | "secure"
+/** The Kubernetes of a team install. */
+export type Distribution = "k3s" | "rke2"
+
+export const distributionTitle: Record<Distribution, string> = { k3s: "K3s", rke2: "RKE2" }
+
+/** Whether a component runs on the distribution: an empty list means everywhere. */
+export const runsOn = (component: CatalogComponent, distribution: string) =>
+  component.distributions.length === 0 || component.distributions.includes(distribution)
 export type AccessMode = "domain" | "local"
 
 export interface Config {
@@ -57,12 +64,15 @@ export interface Config {
   secretFiles: Record<string, Record<string, string>>
   /** Components apply may remove although that deletes the data they keep. */
   allowDataLoss?: string[]
+  distribution: Distribution
+  k3sVersion?: string | null
   rke2Version?: string | null
   host: { tlsSan: string[]; requireEncryptedDisk: boolean }
   sources: Record<string, unknown>
 }
 
-/** Who the install is for: one person on KubeSolo, or a team on RKE2 with the Zeabur panel. */
+/** Who the install is for: one person on KubeSolo, or a team on K3s or RKE2 with the Zeabur
+ * panel. */
 export type Use = "personal" | "team"
 
 export interface PersonalConfig {
@@ -78,7 +88,8 @@ export interface PersonalConfig {
 
 export interface ServerState {
   facts: { arch: string; hostname: string; memoryMib: number } | null
-  checks: Check[]
+  /** The checks for a team install on each distribution. */
+  checks: Record<Distribution, Check[]>
   /** The checks for a personal install. */
   personalChecks: Check[]
   addresses: string[]
@@ -86,8 +97,10 @@ export interface ServerState {
   use: Use
   config: Config | null
   personal?: PersonalConfig
-  /** Below this, only a personal install fits. */
-  teamMinMemoryMib?: number
+  /** Below this, a team install on the distribution does not fit. */
+  teamMinMemoryMib?: Record<Distribution, number>
+  /** From this much memory, RKE2 is the suggested distribution. */
+  rke2SuggestedMib?: number
   configExists: boolean
   configPath: string
   catalog: { components: CatalogComponent[] } | null
@@ -137,14 +150,14 @@ interface PlanBase {
   components: PlannedComponent[]
   leftOut: Record<string, string>
   removals: Removal[]
-  /** The distribution itself (RKE2 or KubeSolo), then the measured components. */
+  /** The distribution itself (K3s, RKE2 or KubeSolo), then the measured components. */
   memory: { clusterMib: number; componentsMib: number; unmeasured: number; hostMib: number }
   warnings: Warning[]
 }
 
 export interface TeamPlan extends PlanBase {
   use?: undefined
-  rke2: { version: string; pinned: boolean }
+  cluster: { distribution: Distribution; version: string; pinned: boolean }
   access: AccessMode
   identity: { issuer: string; host: string } | null
   zeabur: { url: string; values?: { domains?: { suffixes?: string[] } } } | null
