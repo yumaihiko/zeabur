@@ -153,8 +153,10 @@ mod tests {
         assert!(health["checks"].as_u64().unwrap() > 5, "{body}");
         assert_eq!(health["leaders"], json!([]), "{body}");
 
-        // Backups: discovery says no provider is installed on a plain k3s, before any of the
-        // person's rights matter (Velero's objects would be read cluster-wide).
+        // Backups: discovery says Velero and K8up are not installed on a plain k3s, before any of
+        // the person's rights matter (Velero's objects would be read cluster-wide). CloudNativePG
+        // may be served meanwhile: project_deletion makes a stand-in of its CRD, which this person
+        // cannot list.
         let (status, body) = call(&app, "GET", &format!("/api/v1/projects/{ns}/backups")).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         let backups: Value = serde_json::from_str(&body).unwrap();
@@ -166,7 +168,8 @@ mod tests {
         modules.sort_unstable();
         assert_eq!(modules, ["cloudnative-pg", "k8up", "velero"]);
         assert!(
-            providers.iter().all(|p| p["state"] == "not-installed"),
+            providers.iter().all(|p| p["state"] == "not-installed"
+                || (p["module"] == "cloudnative-pg" && p["state"] == "refused")),
             "{body}"
         );
 

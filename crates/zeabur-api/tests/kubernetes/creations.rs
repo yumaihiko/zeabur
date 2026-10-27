@@ -416,15 +416,16 @@ async fn a_quota_refuses_at_the_plan_or_part_way_with_a_cleanup() {
     )
     .await;
     let deadline = Instant::now() + Duration::from_secs(60);
-    while quotas
-        .get("limits")
-        .await
-        .unwrap()
-        .data
-        .pointer("/status/used/count~1configmaps")
-        != Some(&json!("1"))
-    {
-        assert!(Instant::now() < deadline, "no quota status");
+    loop {
+        let quota = quotas.get("limits").await.unwrap().data;
+        if quota.pointer("/status/used/count~1configmaps") == Some(&json!("1")) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no quota status; last seen: {}",
+            quota.get("status").unwrap_or(&Value::Null)
+        );
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     let app = app(sandbox.user());
