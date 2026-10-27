@@ -460,5 +460,5 @@ export const zhCN: Messages = {
     "Zeabur、登录页和应用域名的证书都由它签发。请把它导入系统或浏览器，并设为信任网站。信任之前，浏览器会对这些网站显示警告，也无法注册通行密钥。",
   "done.caDownload": "下载证书",
   "done.noLink":
-    "Zeabur 之前已经设置过，因此没有生成新链接。需要时请运行 zeabur-identityctl setup-link --username admin。",
+    "Zeabur 之前已经设置过，因此没有生成新链接。需要时请运行 sudo zeabur-installer setup-link。",
 }

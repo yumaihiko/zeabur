@@ -2715,7 +2715,8 @@ export const zhCN: Messages = {
   "db.backup.last": "上次备份",
   "db.backup.noRun": "还没有备份",
   "db.backup.setUp": "设置备份",
-  "db.backup.setUpBody": "还没有备份。设置 S3 位置后，这个数据库会每天自动备份。",
+  "db.backup.setUpBody":
+    "还没有备份。设置 S3 位置后，默认每天自动备份。密钥会保存为这个项目的机密变量。",
   "db.backup.getBucket": "没有 S3 存储桶？用 Cloudflare R2 或 Backblaze B2 申请",
   "githubApp.title": "GitHub App",
   "githubApp.body":

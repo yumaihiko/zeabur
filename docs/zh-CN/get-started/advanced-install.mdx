@@ -1,7 +1,7 @@
 ---
 title: 使用配置文件和命令安装
 description: 将安装选项写入 YAML，用 plan 检查、apply 安装，适合重复安装和版本控制。
-source: "09de689cf07c"
+source: "68216e76da09"
 ---
 
 将安装选项写入 `/etc/zeabur-installer/config.yaml`，用 `plan` 查看安装计划，再用 `apply` 安装。这种方式适合将配置纳入版本控制、在多台机器上重复相同的安装，或通过自动化工具安装。
@@ -139,7 +139,7 @@ sudo zeabur-installer doctor
 | 端口被占用，例如还有其他 Kubernetes 在运行 | 先停止占用端口的程序，或换一台干净的主机，再运行 `apply` |
 | `domain` 模式的证书尚未签发 | 检查两个域名的 DNS，以及能否从外部访问 TCP 80 端口。修正后重新运行 `apply` |
 | `local` 模式下，浏览器提示证书不受信任 | 将 `/var/lib/rancher/zeabur-installer/local-ca.crt` 导入浏览器或系统的信任列表 |
-| 首位管理员的注册链接已过期 | 在服务器上运行 `zeabur-identityctl setup-link --username admin`，生成新链接 |
+| 首位管理员的注册链接已过期 | 在服务器上运行 `sudo zeabur-installer setup-link`，生成新链接 |
 
 ## 命令参考与添加节点
 

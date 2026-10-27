@@ -138,7 +138,7 @@ This checks RKE2, components, the default storage class, Zeabur Identity, and Ze
 | A port is in use, for example, by another running Kubernetes installation | Stop the process using the port, or use a clean host, then run `apply` |
 | Certificates haven't been issued in `domain` mode | Check DNS for both domains and whether TCP port 80 is reachable from outside the host. Fix the issue, then run `apply` again |
 | The browser doesn't trust the certificate in `local` mode | Import `/var/lib/rancher/zeabur-installer/local-ca.crt` into your browser's or system's trust store |
-| The registration link for the first admin account has expired | Run `zeabur-identityctl setup-link --username admin` on the server to generate a new link |
+| The registration link for the first admin account has expired | Run `sudo zeabur-installer setup-link` on the server to generate a new link |
 
 ## Command reference and adding nodes
 

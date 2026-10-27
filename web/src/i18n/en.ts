@@ -2967,7 +2967,7 @@ export const en = {
   "db.backup.noRun": "No backup yet",
   "db.backup.setUp": "Set up backups",
   "db.backup.setUpBody":
-    "No backups yet. Set an S3 location and this database is backed up every day.",
+    "No backups yet. Set an S3 location and this database is backed up every day by default. The keys are kept as a secret in this project.",
   "db.backup.getBucket": "No S3 bucket yet? Get one from Cloudflare R2 or Backblaze B2",
   "githubApp.title": "GitHub App",
   "githubApp.body":

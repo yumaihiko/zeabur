@@ -2723,7 +2723,8 @@ export const zhTW: Messages = {
   "db.backup.last": "上次備份",
   "db.backup.noRun": "還沒有備份",
   "db.backup.setUp": "設定備份",
-  "db.backup.setUpBody": "還沒有備份。設定 S3 位置後，這個資料庫會每天自動備份。",
+  "db.backup.setUpBody":
+    "還沒有備份。設定 S3 位置後，預設每天自動備份。金鑰會存成這個專案的機密變數。",
   "db.backup.getBucket": "沒有 S3 儲存貯體？用 Cloudflare R2 或 Backblaze B2 申請",
   "githubApp.title": "GitHub App",
   "githubApp.body":

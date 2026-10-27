@@ -99,7 +99,7 @@ When a regular account lacks permissions, the interface says more permissions ar
 
 After a member becomes an **Admin**, they can only sign in with a passkey. Existing GitHub or Google sessions end the next time they refresh their tokens. Tokens already issued remain valid until they expire, for up to 5 or 10 minutes.
 
-The first admin comes from the setup link generated during installation (`zeabur-identityctl setup-link`). You can also invite admins or change an existing account's type from the command line:
+The first admin comes from the setup link generated during installation (`zeabur-installer setup-link`). You can also invite admins or change an existing account's type from the command line:
 
 ```sh
 zeabur-identityctl invite --username alice --admin
@@ -150,7 +150,7 @@ With AAL3 enabled, admin accounts can only use passkeys that don't sync to other
 
 NIST SP 800-63B-4 limits synced passkeys to AAL2. Only device-bound passkeys can potentially meet AAL3. The authenticator reports whether a passkey can sync through WebAuthn's backup eligibility flag (BE). Zeabur Identity doesn't require attestation, so no one verifies that this report is true. AAL3 can block synced passkeys, but it can't prove what hardware stores a key.
 
-Before enabling AAL3, make sure every admin has a device-bound passkey. Zeabur won't let you enable it without one yourself, to prevent you from locking yourself out. Other admins without one won't be able to sign in after you enable it. Use `zeabur-identityctl setup-link --username <admin> --reset` to generate a new link so they can register a security key. For steps to check each passkey, see [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins) in the Zeabur Identity docs.
+Before enabling AAL3, make sure every admin has a device-bound passkey. Zeabur won't let you enable it without one yourself, to prevent you from locking yourself out. Other admins without one won't be able to sign in after you enable it. Use `sudo zeabur-installer setup-link --username <admin> --reset` to generate a new link so they can register a security key. For steps to check each passkey, see [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins) in the Zeabur Identity docs.
 
 ## Using kubectl
 

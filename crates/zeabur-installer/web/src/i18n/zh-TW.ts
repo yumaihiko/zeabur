@@ -461,5 +461,5 @@ export const zhTW: Messages = {
     "Zeabur、登入頁和應用程式網域的憑證都由它簽發。請把它匯入系統或瀏覽器，並設為信任網站。信任之前，瀏覽器會對這些網站顯示警告，也註冊不了通行密鑰。",
   "done.caDownload": "下載憑證",
   "done.noLink":
-    "Zeabur 先前已經設定過，所以沒有產生新連結。需要時請執行 zeabur-identityctl setup-link --username admin。",
+    "Zeabur 先前已經設定過，所以沒有產生新連結。需要時請執行 sudo zeabur-installer setup-link。",
 }

@@ -1117,22 +1117,47 @@ fn first_install(kubectl: &Kubectl) -> Result<bool, InstallError> {
     Ok(state.and_then(|s| s.pointer("/data/setupLinkIssued").cloned()) != Some(json!("true")))
 }
 
+/// The arguments of `zeabur-identityctl setup-link`.
+fn setup_link_args<'a>(username: &'a str, valid_for: &'a str, reset: bool) -> Vec<&'a str> {
+    let mut args = vec![
+        "setup-link",
+        "--username",
+        username,
+        "--valid-for",
+        valid_for,
+    ];
+    if reset {
+        args.push("--reset");
+    }
+    args
+}
+
 fn setup_link(kubectl: &Kubectl, plan: &Plan) -> Result<String, InstallError> {
+    let link = identityctl(kubectl, plan, &setup_link_args("admin", "24h", false), None)?;
+    Ok(format!(
+        "\nEnroll the first admin's passkey (works once, for 24 hours):\n  {}\nA new link: sudo zeabur-installer setup-link",
+        link.stdout.trim()
+    ))
+}
+
+/// `zeabur-installer setup-link`: a new link, made the way `apply` makes the first one.
+pub(crate) fn new_setup_link(
+    config_path: &Path,
+    username: &str,
+    valid_for: &str,
+    reset: bool,
+) -> Result<(), InstallError> {
+    let config = load::config(config_path)?;
+    let index = load::catalog(config.sources.catalog.as_deref(), STATE_DIR)?;
+    let plan = make_plan(&index, &config)?;
     let link = identityctl(
-        kubectl,
-        plan,
-        &["setup-link", "--username", "admin", "--valid-for", "24h"],
+        &Kubectl::rke2(),
+        &plan,
+        &setup_link_args(username, valid_for, reset),
         None,
     )?;
-    let program = plan
-        .identity
-        .as_ref()
-        .map_or_else(PathBuf::new, identityctl_path);
-    Ok(format!(
-        "\nEnroll the first admin's passkey (works once, for 24 hours):\n  {}\nA new link: {} setup-link --username admin",
-        link.stdout.trim(),
-        program.display()
-    ))
+    out::line(link.stdout.trim());
+    Ok(())
 }
 
 /// Waits briefly for the two certificates; a slow ACME order is reported, not fatal.
@@ -1198,6 +1223,24 @@ fn record(kubectl: &Kubectl, plan: &Plan, link_issued: bool) -> Result<(), Insta
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn setup_link_passes_user_lifetime_and_reset_to_identityctl() {
+        assert_eq!(
+            setup_link_args("admin", "24h", false),
+            ["setup-link", "--username", "admin", "--valid-for", "24h"]
+        );
+        assert_eq!(
+            setup_link_args("bo", "1h", true),
+            [
+                "setup-link",
+                "--username",
+                "bo",
+                "--valid-for",
+                "1h",
+                "--reset"
+            ]
+        );
+    }
 
     #[test]
     fn system_hosts_bind_zeabur_and_identity() {

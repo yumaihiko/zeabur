@@ -498,7 +498,7 @@ export const en = {
     "Zeabur, sign-in and your apps' domains all use certificates from this authority. Import it into your system or browser and trust it for websites. Until then, browsers warn about these sites and passkey registration fails.",
   "done.caDownload": "Download certificate",
   "done.noLink":
-    "Zeabur was already set up, so no new link was made. Run zeabur-identityctl setup-link --username admin for one.",
+    "Zeabur was already set up, so no new link was made. Run sudo zeabur-installer setup-link for one.",
 }
 
 export type Messages = typeof en

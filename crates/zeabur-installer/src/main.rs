@@ -67,6 +67,20 @@ enum Command {
         #[arg(long, default_value = "127.0.0.1:8085")]
         listen: SocketAddr,
     },
+    /// Print a new one-time link for a user to register a passkey, as `zeabur-identityctl
+    /// setup-link` does, with this server's cluster and issuer. For the first admin when the link
+    /// `apply` printed has expired. Run it on a server, as root.
+    SetupLink {
+        /// The user the link is for.
+        #[arg(long, default_value = "admin")]
+        username: String,
+        /// How long the link works, such as `30m` or `24h`.
+        #[arg(long, default_value = "24h")]
+        valid_for: String,
+        /// Delete the user's passkeys and sessions first, for a user who lost them.
+        #[arg(long)]
+        reset: bool,
+    },
     /// Check the install.
     ///
     /// Exit codes, as monitoring plugins (Nagios) and `zeaburctl doctor` use them: 0 when all is
@@ -161,15 +175,27 @@ fn main() -> ExitCode {
         (Command::Uninstall { purge, .. }, Some(config)) => {
             join::uninstall(&config, &cli.config, *purge)
         }
-        (Command::Gui { .. } | Command::Node { .. } | Command::Manifests { .. }, Some(_)) => {
-            Err(InstallError::Message(format!(
-                "{} joins this machine to a cluster; run this command on the first server",
-                cli.config.display()
-            )))
-        }
+        (
+            Command::Gui { .. }
+            | Command::Node { .. }
+            | Command::Manifests { .. }
+            | Command::SetupLink { .. },
+            Some(_),
+        ) => Err(InstallError::Message(format!(
+            "{} joins this machine to a cluster; run this command on the first server",
+            cli.config.display()
+        ))),
         (Command::Plan { json }, None) => show_plan(&cli, *json),
         (Command::Apply, None) => apply::run(&cli.config),
         (Command::Manifests { cluster_name }, None) => manifests(&cli, cluster_name),
+        (
+            Command::SetupLink {
+                username,
+                valid_for,
+                reset,
+            },
+            None,
+        ) => apply::new_setup_link(&cli.config, username, valid_for, *reset),
         (Command::Gui { listen }, None) => gui::run(&cli.config, *listen),
         (Command::Doctor, None) => return doctor::run(),
         (
@@ -238,10 +264,12 @@ fn personal(cli: &Cli, config: &zeabur_installer_plan::config::PersonalConfig) -
             out::line(&personal::uninstall_text());
             Ok(())
         }
-        Command::Node { .. } | Command::Manifests { .. } => Err(InstallError::Message(format!(
-            "{} is a personal install: one node and no Zeabur panel",
-            cli.config.display()
-        ))),
+        Command::Node { .. } | Command::Manifests { .. } | Command::SetupLink { .. } => {
+            Err(InstallError::Message(format!(
+                "{} is a personal install: one node and no Zeabur panel",
+                cli.config.display()
+            )))
+        }
     })
 }
 

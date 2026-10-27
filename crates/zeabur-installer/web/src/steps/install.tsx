@@ -63,7 +63,7 @@ function phases(t: Translate, plan: Plan | undefined, local: boolean): Phase[] {
 const foldAbove = 7
 
 /** Makes a new first-administrator link (docs: get-started/quickstart). */
-const SETUP_LINK_COMMAND = "zeabur-identityctl setup-link --username admin"
+const SETUP_LINK_COMMAND = "sudo zeabur-installer setup-link"
 
 type Cause = "memory" | "host" | "timeout" | "other"
 

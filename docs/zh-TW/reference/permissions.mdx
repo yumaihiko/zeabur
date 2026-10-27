@@ -1,7 +1,7 @@
 ---
 title: 權限
 description: 對照成員角色、管理員帳號與 Kubernetes RBAC，確認每項操作的存取範圍和登入能維持多久。
-source: "7effbf73e2c2"
+source: "d90f29e1fe41"
 ---
 
 看得到專案卻讀不到日誌時，先確認自己在這個專案的角色：**檢視者**只能看狀態和事件，**開發者**才能讀日誌、讀 Secret 和部署。Zeabur 用你自己的身分呼叫 kube-apiserver，能不能做由 Kubernetes RBAC 決定。
@@ -100,7 +100,7 @@ Zeabur Identity 的帳號分成兩種。在 **成員** 把某人設為 **管理�
 
 把成員設為 **管理員** 後，他之後只能用通行密鑰登入，原本用 GitHub 或 Google 登入的工作階段會在下次換權杖時結束。已經發出的權杖在到期前仍然有效，最多 5 或 10 分鐘。
 
-第一位管理員來自安裝時的設定連結（`zeabur-identityctl setup-link`）。在命令列也能邀請管理員，或改變既有帳號的類型：
+第一位管理員來自安裝時的設定連結（`zeabur-installer setup-link`）。在命令列也能邀請管理員，或改變既有帳號的類型：
 
 ```sh
 zeabur-identityctl invite --username alice --admin
@@ -151,7 +151,7 @@ kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge
 
 NIST SP 800-63B-4 規定會同步的通行密鑰最高只到 AAL2，不會同步的才可能達到 AAL3。通行密鑰會不會同步，是驗證器自己回報的（WebAuthn 的 backup eligibility 旗標，BE）。Zeabur Identity 不要求 attestation，所以沒有人驗證這個回報是真的。AAL3 能擋掉會同步的通行密鑰，但不能證明金鑰存在什麼硬體裡。
 
-開啟前，先確認每位管理員都有不會同步的通行密鑰。你自己沒有的話，Zeabur 不會讓你開啟，避免把自己鎖在外面。其他沒有的管理員開啟後就登不進來，要用 `zeabur-identityctl setup-link --username <管理員> --reset` 產生新連結，讓他註冊安全金鑰。檢查每把通行密鑰的方式見 Zeabur Identity 的 [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins)。
+開啟前，先確認每位管理員都有不會同步的通行密鑰。你自己沒有的話，Zeabur 不會讓你開啟，避免把自己鎖在外面。其他沒有的管理員開啟後就登不進來，要用 `sudo zeabur-installer setup-link --username <管理員> --reset` 產生新連結，讓他註冊安全金鑰。檢查每把通行密鑰的方式見 Zeabur Identity 的 [AAL3 for admins](https://oss.zeabur.com/docs/identity/managing-users#aal3-for-admins)。
 
 ## 用 kubectl 操作
 
