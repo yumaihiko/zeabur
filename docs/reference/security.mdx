@@ -106,7 +106,7 @@ kubectl label namespace <ns> \
   pod-security.kubernetes.io/warn=baseline --overwrite
 ```
 
-RKE2 CIS still defaults to `restricted` for unlabeled namespaces. A project's own `baseline` labels override that default. `kube-system` and Zeabur's own namespaces keep their existing settings.
+On clusters the installer creates, K3s and RKE2 still default to `restricted` for unlabeled namespaces. A project's own `baseline` labels override that default. `kube-system` and Zeabur's own namespaces keep their existing settings.
 
 Pod Security doesn't control networking. For connections between projects, see the next section.
 
@@ -151,7 +151,7 @@ If no namespace in the cluster has this label, such as when you run `zeaburctl u
 kubectl label namespace traefik cert-manager zeabur.com/platform=true
 ```
 
-Connection rules only take effect if the cluster's network plugin (CNI) supports them. RKE2's Canal and k3s's built-in kube-router both do. KubeSolo's bridge CNI doesn't, so creating rules won't block any connections.
+Connection rules only take effect if the cluster's network plugin (CNI) supports them. The installer's K3s uses Calico and its RKE2 uses Canal; both do, as does the kube-router built into a plain K3s. KubeSolo's bridge CNI doesn't, so creating rules won't block any connections.
 
 ### Allow connections from another project
 
@@ -226,21 +226,50 @@ When Zeabur Proxy is enabled, users must have `get logs.proxy.zeabur.com` in a n
 
 ## Secret encryption and access logs
 
-### Encryption in etcd
+### Encryption of stored secrets
 
-RKE2 always encrypts secrets in etcd using AES-CBC (`aescbc`). If someone obtains an etcd snapshot uploaded to S3 or copies the etcd data directory, they only see encrypted secret values unless they also have the key and server token. Values start with `k8s:enc:aescbc:v1:<key-name>:`.
+K3s and RKE2 always encrypt secrets using AES-CBC (`aescbc`), in SQLite on K3s and in etcd on RKE2. If someone copies the database, an etcd snapshot uploaded to S3, or the data directory, they only see encrypted secret values unless they also have the key and server token. Values start with `k8s:enc:aescbc:v1:<key-name>:`.
 
-The keys are stored on each server at `/var/lib/rancher/rke2/server/cred/encryption-config.json`, with permissions `0600`, on the same disk as etcd. Anyone with the server's disk or root access can also get the keys. Disk encryption (`host.requireEncryptedDisk`) protects against this. Kubernetes automatically decrypts secrets when they're read through the API. Anyone whose RBAC permissions allow `get`, `list`, or `watch` on secrets can see their values. [Member permissions](./permissions.mdx) control this access.
+The keys are stored on each server, with permissions `0600`, on the same disk as the data:
 
-`sudo zeabur-installer doctor` checks encryption. It reports `CRITICAL` if the key file is missing or the first provider for secrets is `identity`. When encryption is enabled, it shows `Secrets in etcd are encrypted (aescbc)`. You can also run this on a server:
+- K3s: `/var/lib/rancher/k3s/server/cred/encryption-config.json`
+- RKE2: `/var/lib/rancher/rke2/server/cred/encryption-config.json`
+
+Anyone with the server's disk or root access can also get the keys. Disk encryption (`host.requireEncryptedDisk`) protects against this. Kubernetes automatically decrypts secrets when they're read through the API. Anyone whose RBAC permissions allow `get`, `list`, or `watch` on secrets can see their values. [Member permissions](./permissions.mdx) control this access.
+
+`sudo zeabur-installer doctor` checks encryption. It reports `CRITICAL` if the key file is missing or the first provider for secrets is `identity`. When encryption is enabled, it shows `Secrets are stored encrypted (aescbc)`. You can also run this on a server:
 
 ```sh
-sudo rke2 secrets-encrypt status
+sudo k3s secrets-encrypt status    # K3s
+sudo rke2 secrets-encrypt status   # RKE2
 ```
 
 A healthy result shows `Encryption Status: Enabled`, `Server Encryption Hashes: All hashes match`, and the key currently in use.
 
 ### Rotate encryption keys
+
+Back up the data and the server token before rotating keys. The steps differ between K3s and RKE2.
+
+#### K3s
+
+K3s stores data in SQLite, so there are no etcd snapshots. A backup is a copy of `/var/lib/rancher/k3s/server/db/`, made while `k3s` is stopped, plus the token at `/var/lib/rancher/k3s/server/token`. Restoring the copy needs that token. Store the token apart from the copy. See [K3s backup and restore](https://docs.k3s.io/datastore/backup-restore).
+
+1. Back up, then rotate the key:
+
+   ```sh
+   sudo systemctl stop k3s
+   sudo cp -a /var/lib/rancher/k3s/server/db /root/k3s-db-backup
+   sudo systemctl start k3s
+   sudo k3s secrets-encrypt rotate-keys
+   ```
+
+   Copy `/root/k3s-db-backup` and `/var/lib/rancher/k3s/server/token` off the server, to separate places.
+
+2. Run `sudo k3s secrets-encrypt status` repeatedly until `Current Rotation Stage` shows `reencrypt_finished`.
+
+For the full procedure, see [K3s secrets-encrypt](https://docs.k3s.io/cli/secrets-encrypt).
+
+#### RKE2
 
 Take an etcd snapshot before rotating keys. The snapshot includes the keys in use when it was taken, encrypted with the server token. To restore it on another host, you need the token from that time (`/var/lib/rancher/rke2/server/token`). See [RKE2 backup and restore](https://docs.rke2.io/datastore/backup_restore). Store the token separately from the snapshot so a leaked snapshot contains only encrypted data.
 
@@ -267,19 +296,25 @@ After rotation, `status` shows a key named `aescbckey-<time>`, and values in etc
 To find out who read `db-password`, run this on a server:
 
 ```sh
-sudo grep '"resource":"secrets"' /var/lib/rancher/rke2/server/logs/audit.log \
+sudo grep '"resource":"secrets"' /var/lib/rancher/k3s/server/logs/audit.log \
   | grep '"name":"db-password"' \
   | jq -c 'select(.stage=="ResponseComplete") | {time: .stageTimestamp, user: .user.username, as: .impersonatedUser.username, verb, ns: .objectRef.namespace}'
 ```
 
-A `watch` records `ResponseStarted` when it begins and `ResponseComplete` only when it ends. A `list` or `watch` of all secrets in a namespace doesn't record a name. Remove the name-filtering line and filter by namespace instead.
+On RKE2, replace `k3s` with `rke2` in the path. A `watch` records `ResponseStarted` when it begins and `ResponseComplete` only when it ends. A `list` or `watch` of all secrets in a namespace doesn't record a name. Remove the name-filtering line and filter by namespace instead.
 
-The installer writes `/etc/rancher/rke2/audit-policy.yaml` with permissions `0600`, and RKE2 uses it to record audit logs. Each server stores its logs at `/var/lib/rancher/rke2/server/logs/audit.log`, readable only by root. Entries contain only request metadata, not request or response bodies.
+The installer writes the audit policy with permissions `0600`, and K3s or RKE2 uses it to record audit logs on each server. Only root can read the logs.
+
+| | K3s | RKE2 |
+|---|---|---|
+| Policy | `/etc/rancher/k3s/audit-policy.yaml` | `/etc/rancher/rke2/audit-policy.yaml` |
+| Log | `/var/lib/rancher/k3s/server/logs/audit.log` | `/var/lib/rancher/rke2/server/logs/audit.log` |
+ Entries contain only request metadata, not request or response bodies.
 
 - **Secrets**: Every request from everyone, including nodes, is recorded: `get`, `list`, `watch`, `create`, `update`, `patch`, and `delete`. Each entry includes the user, the identity impersonated with `--as`, groups, source IP, user agent, operation, namespace, and name.
 - **Other resources**: Only creates, updates, and deletes by people and workloads are recorded. Reads, Events, Leases, token reviews, access reviews, health checks, and requests from nodes, the API server, controller manager, scheduler, and kube-proxy aren't recorded.
 
-RKE2 rotates the file at 100 MB, keeps at most 10 old files, and retains them for at most 30 days. A single server with little activity writes about 13 to 23 KB every 5 minutes, or less than 7 MB a day. To store logs elsewhere, collect this file with a log collection tool.
+Both rotate the file at 100 MB, keep at most 10 old files, and retain them for at most 30 days. A single RKE2 server with little activity writes about 13 to 23 KB every 5 minutes, or less than 7 MB a day. To store logs elsewhere, collect this file with a log collection tool.
 
 ## Domains for Zeabur and Zeabur Identity
 
@@ -331,13 +366,24 @@ Change `zeabur-system-hosts-zeabur-identity` the same way.
 
 ## Installer host and download permissions
 
-The installer runs as root to write RKE2 configuration and systemd units, adjust kernel parameters, and create the `etcd` user. If you select Longhorn, it also installs host packages. The GUI uses plain HTTP. Keep it listening only on loopback and connect through an SSH tunnel.
+The installer runs as root to write K3s or RKE2 configuration and systemd units and adjust kernel parameters. On RKE2, it also creates the `etcd` user. If you select Longhorn, it also installs host packages. The GUI uses plain HTTP. Keep it listening only on loopback and connect through an SSH tunnel.
 
-The default RKE2 version is verified against a SHA-256 digest compiled into the installer. Trust comes from the installer's own signature. If you specify another `rke2Version`, verification can only use the checksum list on that release's page. Files, images, and charts specified through `sources` aren't pinned. Before using them, verify the source as described in [Releases and verification](./releases.mdx).
+The default K3s or RKE2 version is verified against a SHA-256 digest compiled into the installer. Trust comes from the installer's own signature. If you specify another `k3sVersion` or `rke2Version`, verification can only use the checksum list on that release's page. Files, images, and charts specified through `sources` aren't pinned. Before using them, verify the source as described in [Releases and verification](./releases.mdx).
 
 The installer downloads component charts and manifests and compares them with the SHA-256 values in Zeabur Catalog. A mismatch stops installation. Verified charts are embedded directly in `HelmChart`, so helm-controller doesn't download them again. Component images are also specified by digest in Zeabur Catalog, so upstream changes to the contents of a tag won't change what gets installed.
 
-RKE2 is installed with a CIS profile and encrypts secrets in etcd. See [Secret encryption and access logs](#secret-encryption-and-access-logs). Host disk encryption is checked separately. With `host.requireEncryptedDisk: true`, installation won't proceed on an unencrypted disk.
+K3s and RKE2 get the same CIS hardening and encrypt stored secrets. See [Secret encryption and access logs](#secret-encryption-and-access-logs). RKE2 uses its own CIS profile. On K3s, the installer applies the settings from the [K3s CIS hardening guide](https://docs.k3s.io/security/hardening-guide):
+
+- Kernel parameters CIS requires, enforced with `protect-kernel-defaults`.
+- The `NodeRestriction` and `EventRateLimit` admission plugins, and Pod Security `restricted` for namespaces without their own labels, with `kube-system` exempt.
+- An audit log with the same policy and rotation as RKE2.
+- Kubelet streaming connections closed after 5 minutes idle, and strong TLS ciphers only.
+- In `kube-system`, `kube-public`, and `default`: a NetworkPolicy that lets in only the namespace's own replicas, with CoreDNS reachable from every replica, and default ServiceAccounts that don't mount a token.
+- Admin kubeconfig and TLS certificates readable only by root.
+
+Calico, instead of flannel, enforces NetworkPolicy on K3s.
+
+Host disk encryption is checked separately. With `host.requireEncryptedDisk: true`, installation won't proceed on an unencrypted disk.
 
 ### Personal installations
 

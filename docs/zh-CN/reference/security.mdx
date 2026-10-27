@@ -1,7 +1,7 @@
 ---
 title: 安全性
 description: 了解登录、机密、应用变更、终端和 installer 的权限及数据边界。
-source: "7c01e28d1d0b"
+source: "6a1b767cfd46"
 ---
 
 把同事设为 **开发者** 之前，先检查项目里有哪些 Secret 和 ServiceAccount：开发者都能访问。打开 **节点终端** 就等于获得整台主机的 root 权限。Zeabur 沿用 Kubernetes 的身份和准入规则，下面按功能说明各类访问的范围。
@@ -107,7 +107,7 @@ kubectl label namespace <ns> \
   pod-security.kubernetes.io/warn=baseline --overwrite
 ```
 
-RKE2 CIS 对未加标签的 Namespace 仍默认使用 `restricted`，项目自身的 `baseline` 标签会覆盖这个默认值。`kube-system` 和 Zeabur 自身的 Namespace 保持原配置。
+installer 创建的 K3s 和 RKE2 集群，对未加标签的 Namespace 仍默认使用 `restricted`，项目自身的 `baseline` 标签会覆盖这个默认值。`kube-system` 和 Zeabur 自身的 Namespace 保持原配置。
 
 Pod Security 不管理网络，项目之间的连接见下一节。
 
@@ -152,7 +152,7 @@ spec:
 kubectl label namespace traefik cert-manager zeabur.com/platform=true
 ```
 
-NetworkPolicy 需要集群的网络插件（CNI）支持才会生效。RKE2 的 Canal 和 k3s 内置的 kube-router 都支持；KubeSolo 的 bridge CNI 不支持，即使写入也不会阻断任何连接。
+NetworkPolicy 需要集群的网络插件（CNI）支持才会生效。installer 安装的 K3s 使用 Calico、RKE2 使用 Canal，都支持；普通 K3s 内置的 kube-router 也支持。KubeSolo 的 bridge CNI 不支持，即使写入也不会阻断任何连接。
 
 ### 允许另一个项目连入
 
@@ -227,21 +227,50 @@ tools 副本默认最多运行 30 分钟。最后一个终端关闭时，Zeabur 
 
 ## 机密的加密与访问记录
 
-### etcd 中的加密
+### 存储的 Secret 如何加密
 
-RKE2 一律加密 etcd 中的 Secret，加密方式为 AES-CBC（`aescbc`）。即使有人获得上传到 S3 的 etcd 快照，或复制了 etcd 的数据目录，只要没有密钥和 server token，看到的机密就都是密文，值以 `k8s:enc:aescbc:v1:<密钥名称>:` 开头。
+K3s 和 RKE2 一律加密存储的 Secret，加密方式为 AES-CBC（`aescbc`）。K3s 存在 SQLite 中，RKE2 存在 etcd 中。即使有人复制了数据库、上传到 S3 的 etcd 快照或数据目录，只要没有密钥和 server token，看到的机密就都是密文，值以 `k8s:enc:aescbc:v1:<密钥名称>:` 开头。
 
-密钥保存在每台 server 的 `/var/lib/rancher/rke2/server/cred/encryption-config.json` 中，权限为 `0600`，与 etcd 位于同一块磁盘。获得 server 磁盘或 root 权限的人也能获得密钥，这部分依靠磁盘加密（`host.requireEncryptedDisk`）保护。通过 API 读取时，Kubernetes 会自动解密；RBAC 允许 `get`、`list` 或 `watch` Secret 的人都能看到值，这部分依靠[成员权限](./permissions.mdx)控制。
+密钥保存在每台 server 上，权限为 `0600`，与数据位于同一块磁盘：
 
-`sudo zeabur-installer doctor` 会检查加密状态：找不到密钥文件，或 Secret 的第一个 provider 为 `identity` 时报告 `CRITICAL`，已加密时显示 `Secrets in etcd are encrypted (aescbc)`。也可以在 server 上运行：
+- K3s：`/var/lib/rancher/k3s/server/cred/encryption-config.json`
+- RKE2：`/var/lib/rancher/rke2/server/cred/encryption-config.json`
+
+获得 server 磁盘或 root 权限的人也能获得密钥，这部分依靠磁盘加密（`host.requireEncryptedDisk`）保护。通过 API 读取时，Kubernetes 会自动解密；RBAC 允许 `get`、`list` 或 `watch` Secret 的人都能看到值，这部分依靠[成员权限](./permissions.mdx)控制。
+
+`sudo zeabur-installer doctor` 会检查加密状态：找不到密钥文件，或 Secret 的第一个 provider 为 `identity` 时报告 `CRITICAL`，已加密时显示 `Secrets are stored encrypted (aescbc)`。也可以在 server 上运行：
 
 ```sh
-sudo rke2 secrets-encrypt status
+sudo k3s secrets-encrypt status    # K3s
+sudo rke2 secrets-encrypt status   # RKE2
 ```
 
 正常时会看到 `Encryption Status: Enabled`、`Server Encryption Hashes: All hashes match`，以及当前使用的密钥。
 
 ### 更换加密密钥
+
+更换前先备份数据和 server token。K3s 和 RKE2 的步骤不同。
+
+#### K3s
+
+K3s 的数据存在 SQLite 中，没有 etcd 快照。备份就是在 `k3s` 停止时复制 `/var/lib/rancher/k3s/server/db/`，再加上 `/var/lib/rancher/k3s/server/token` 这个 token。还原时需要同一个 token，因此 token 和备份要分开保管。参见 [K3s 的备份与还原](https://docs.k3s.io/datastore/backup-restore)。
+
+1. 先备份，再更换密钥：
+
+   ```sh
+   sudo systemctl stop k3s
+   sudo cp -a /var/lib/rancher/k3s/server/db /root/k3s-db-backup
+   sudo systemctl start k3s
+   sudo k3s secrets-encrypt rotate-keys
+   ```
+
+   将 `/root/k3s-db-backup` 和 `/var/lib/rancher/k3s/server/token` 复制到服务器以外的地方，两者分开存放。
+
+2. 重复运行 `sudo k3s secrets-encrypt status`，直到 `Current Rotation Stage` 显示 `reencrypt_finished`。
+
+完整步骤参见 [K3s 的 secrets-encrypt](https://docs.k3s.io/cli/secrets-encrypt)。
+
+#### RKE2
 
 更换前先创建 etcd 快照。快照包含创建时的密钥，并使用 server token 加密，因此还原到其他主机时需要提供当时的 token（`/var/lib/rancher/rke2/server/token`），见 [RKE2 的备份与还原](https://docs.rke2.io/datastore/backup_restore)。将 token 和快照分开保管，泄露的快照才只有密文。
 
@@ -268,19 +297,25 @@ sudo rke2 secrets-encrypt status
 要查看谁读取过 `db-password`，在 server 上运行：
 
 ```sh
-sudo grep '"resource":"secrets"' /var/lib/rancher/rke2/server/logs/audit.log \
+sudo grep '"resource":"secrets"' /var/lib/rancher/k3s/server/logs/audit.log \
   | grep '"name":"db-password"' \
   | jq -c 'select(.stage=="ResponseComplete") | {time: .stageTimestamp, user: .user.username, as: .impersonatedUser.username, verb, ns: .objectRef.namespace}'
 ```
 
-`watch` 开始时记录一条 `ResponseStarted`，结束时才有 `ResponseComplete`。一次 `list` 或 `watch` 整个 Namespace 的 Secret 时，记录中没有名称，需要去掉按名称筛选的那一行，改用 Namespace 筛选。
+RKE2 需要把路径中的 `k3s` 换成 `rke2`。`watch` 开始时记录一条 `ResponseStarted`，结束时才有 `ResponseComplete`。一次 `list` 或 `watch` 整个 Namespace 的 Secret 时，记录中没有名称，需要去掉按名称筛选的那一行，改用 Namespace 筛选。
 
-installer 写入 `/etc/rancher/rke2/audit-policy.yaml`（权限为 `0600`），让 RKE2 按该策略记录。记录保存在每台 server 的 `/var/lib/rancher/rke2/server/logs/audit.log` 中，只有 root 能读取。每条记录只有请求的 metadata，没有请求和响应的内容。
+installer 写入审计策略（权限为 `0600`），K3s 或 RKE2 按该策略在每台 server 上记录，只有 root 能读取。
+
+| | K3s | RKE2 |
+|---|---|---|
+| 策略 | `/etc/rancher/k3s/audit-policy.yaml` | `/etc/rancher/rke2/audit-policy.yaml` |
+| 记录 | `/var/lib/rancher/k3s/server/logs/audit.log` | `/var/lib/rancher/rke2/server/logs/audit.log` |
+每条记录只有请求的 metadata，没有请求和响应的内容。
 
 - **Secret**：记录所有人（包括节点）的每个请求，涵盖 `get`、`list`、`watch`、`create`、`update`、`patch`、`delete`。每条记录包含用户、使用 `--as` 代为操作的身份、组、来源 IP、user agent、操作、Namespace 和名称。
 - **其他资源**：只记录用户和工作负载的创建、修改和删除操作。不记录读取、Event、Lease、token review、access review、健康检查，以及节点、API server、controller manager、scheduler 和 kube-proxy 的请求。
 
-文件达到 100 MB 时，RKE2 会轮换到新文件，最多保留 10 个旧文件，最长保留 30 天。操作较少的单台 server 每 5 分钟约写入 13 到 23 KB，一天不到 7 MB。要将记录保存在其他位置，使用日志采集工具收集这个文件。
+文件达到 100 MB 时，两者都会轮换到新文件，最多保留 10 个旧文件，最长保留 30 天。操作较少的单台 RKE2 server 每 5 分钟约写入 13 到 23 KB，一天不到 7 MB。要将记录保存在其他位置，使用日志采集工具收集这个文件。
 
 ## Zeabur 和 Zeabur Identity 的域名
 
@@ -332,13 +367,24 @@ kubectl patch validatingadmissionpolicybinding zeabur-system-hosts-zeabur \
 
 ## Installer 的主机与下载权限
 
-installer 以 root 身份写入 RKE2 配置和 systemd unit、调整 kernel 参数、创建 `etcd` 用户。选择 Longhorn 时，还会安装主机软件包。GUI 通过明文 HTTP 提供，应只监听 loopback，通过 SSH tunnel 连接。
+installer 以 root 身份写入 K3s 或 RKE2 的配置和 systemd unit、调整 kernel 参数。使用 RKE2 时还会创建 `etcd` 用户。选择 Longhorn 时，还会安装主机软件包。GUI 通过明文 HTTP 提供，应只监听 loopback，通过 SSH tunnel 连接。
 
-默认的 RKE2 版本使用编译进 installer 的 SHA-256 digest 验证，信任来自 installer 自身的签名。指定其他 `rke2Version` 时，只能使用该 release 页面上的 checksum 列表验证。`sources` 指定的文件、镜像和 chart 不在锁定范围内，使用前先按[发行文件与验证](./releases.mdx)确认来源。
+默认的 K3s 或 RKE2 版本使用编译进 installer 的 SHA-256 digest 验证，信任来自 installer 自身的签名。指定其他 `k3sVersion` 或 `rke2Version` 时，只能使用该 release 页面上的 checksum 列表验证。`sources` 指定的文件、镜像和 chart 不在锁定范围内，使用前先按[发行文件与验证](./releases.mdx)确认来源。
 
 对于 Catalog 组件的 chart 和 manifest 文件，installer 会先下载，再与 Catalog 中的 SHA-256 比对，不一致就停止安装。比对通过的 chart 直接放入 `HelmChart`，helm-controller 不会再次自行下载。Catalog 中的组件镜像也使用 digest 指定，即使上游更换同一 tag 的内容，也不会安装到替换后的镜像。
 
-RKE2 使用 CIS profile 安装，并加密 etcd 中的 Secret，见[机密的加密与访问记录](#机密的加密与访问记录)。主机磁盘是否加密会单独检查。设置 `host.requireEncryptedDisk: true` 时，未加密就不安装。
+K3s 和 RKE2 都做同样的 CIS 加固，也都加密存储的 Secret，见[机密的加密与访问记录](#机密的加密与访问记录)。RKE2 使用它自带的 CIS profile；K3s 则由 installer 按 [K3s 的 CIS 加固指南](https://docs.k3s.io/security/hardening-guide)配置：
+
+- CIS 要求的 kernel 参数，用 `protect-kernel-defaults` 强制检查。
+- 启用 `NodeRestriction` 和 `EventRateLimit` 准入插件。没有自己标签的 Namespace 默认使用 Pod Security `restricted`，`kube-system` 除外。
+- 审计记录的策略和轮换方式都与 RKE2 相同。
+- kubelet 的流式连接空闲 5 分钟后关闭，只使用安全的 TLS 加密套件。
+- 在 `kube-system`、`kube-public`、`default` 三个 Namespace 中添加 NetworkPolicy，只允许同一 Namespace 的副本连入，所有副本都能访问 CoreDNS；默认 ServiceAccount 不挂载令牌。
+- 管理员 kubeconfig 和 TLS 证书只有 root 能读取。
+
+K3s 改用 Calico 替代 flannel，由它执行 NetworkPolicy。
+
+主机磁盘是否加密会单独检查。设置 `host.requireEncryptedDisk: true` 时，未加密就不安装。
 
 ### 个人使用的安装
 

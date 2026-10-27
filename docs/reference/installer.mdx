@@ -24,7 +24,7 @@ sudo zeabur-installer --config /etc/zeabur-installer/config.yaml plan
 sudo zeabur-installer --config /etc/zeabur-installer/config.yaml plan --json
 ```
 
-`plan` reads the configuration, Catalog, and host information, then lists RKE2, components, namespaces, host files, storage classes, memory estimates, and warnings. It then runs the same host checks as `apply` without changing the host. If a check fails, it reports that `apply` will stop. Add `--json` to output JSON without running the host checks.
+`plan` reads the configuration, Catalog, and host information, then lists the Kubernetes distribution (K3s or RKE2), components, namespaces, host files, storage classes, memory estimates, and warnings. It then runs the same host checks as `apply` without changing the host. If a check fails, it reports that `apply` will stop. Add `--json` to output JSON without running the host checks.
 
 Without a configuration file, `plan` generates `sslip.io` names from the host's address and uses the `standard` preset so you can preview the result. It uses `domain` certificate mode (Let's Encrypt) when the host has a public address, and `local` when it has only private, CGNAT, or link-local addresses. `apply` always requires a configuration file.
 
@@ -37,21 +37,21 @@ sudo zeabur-installer --config /etc/zeabur-installer/config.yaml apply
 sudo zeabur-installer doctor
 ```
 
-Requires Linux, systemd, and root access. The installer first checks the host, ports, disk, and clock synchronization. A failed check stops the run before anything is written. An unsynchronized clock only produces a warning. The installer also warns when the kernel reserves memory for crash dumps (kdump) and provides a command to turn it off. A server needs `80`, `443`, `6443`, `9345`, and `10250`; a worker needs only `80`, `443`, and `10250`. ServiceLB uses `80` and `443` on every node.
+Requires Linux, systemd, and root access. The installer first checks the host, ports, disk, and clock synchronization. A failed check stops the run before anything is written. An unsynchronized clock only produces a warning. The installer also warns when the kernel reserves memory for crash dumps (kdump) and provides a command to turn it off. A K3s server needs `80`, `443`, `6443`, and `10250`, and an RKE2 server also needs `9345`. A worker needs only `80`, `443`, and `10250`. ServiceLB uses `80` and `443` on every node.
 
 To create a cluster, the installer runs these steps in order:
 
 1. Prepares host packages for the selected components, such as the iSCSI and NFS clients Longhorn needs.
-2. Writes the RKE2 configuration, kernel parameters required by CIS, and audit policy. The audit log keeps only request metadata and records every request for a secret. See [Secret encryption and access logs](./security.mdx#secret-encryption-and-access-logs).
-3. Downloads RKE2 to `/var/lib/rancher/zeabur-installer/downloads`, verifies it against the SHA-256 pinned by the installer, starts `rke2-server`, and waits for the API and node to be ready.
-4. Creates the components' namespaces, baseline NetworkPolicies, and storage classes. RKE2's default CIS policy in `kube-system` blocks outside traffic to ServiceLB. On a node without Traefik, incoming requests can't reach Traefik. The installer adds `kube-system/zeabur-installer-servicelb` to allow outside traffic into ServiceLB replicas only.
+2. Writes the K3s or RKE2 configuration, kernel parameters required by CIS, and audit policy. The audit log keeps only request metadata and records every request for a secret. See [Secret encryption and access logs](./security.mdx#secret-encryption-and-access-logs).
+3. Downloads K3s or RKE2 to `/var/lib/rancher/zeabur-installer/downloads`, verifies it against the SHA-256 pinned by the installer, starts `k3s` or `rke2-server`, and waits for the API and node to be ready.
+4. Creates the components' namespaces, baseline NetworkPolicies, and storage classes. The default CIS policy in `kube-system` blocks outside traffic to ServiceLB. On a node without Traefik, incoming requests can't reach Traefik. The installer adds `kube-system/zeabur-installer-servicelb` to allow outside traffic into ServiceLB replicas only.
 5. Installs components in Catalog order and waits for them to be ready. It downloads each chart and manifest file first and stops if its SHA-256 doesn't match the Catalog.
 6. With `zeabur: true`, adds the `zeabur-system-hosts` admission policy first to prevent projects from using Zeabur's and Zeabur Identity's domains. See [Zeabur's and Zeabur Identity's domains](./security.mdx#domains-for-zeabur-and-zeabur-identity). It then installs Zeabur Identity, configures the API server to trust it, registers the OAuth client, and installs Zeabur. cert-manager automatically renews the certificate the API server uses to connect to Zeabur Identity. See [Zeabur Identity's internal certificate](./security.mdx#zeabur-identitys-internal-certificate).
 7. On the first install, prints a one-time setup link for the first admin, valid for 24 hours, and writes the installation record to the `kube-system/zeabur-installer` config file.
 
 When installation finishes, the installer prints the Zeabur and Zeabur Identity URLs. Open the setup link and add a passkey to sign in to Zeabur and view the cluster. In `local` mode, first configure the browser to trust the CA the installer generated.
 
-`apply` restores installer-managed files to the content it generates. Put custom RKE2 settings in `/etc/rancher/rke2/config.yaml.d/90-local.yaml` instead of changing the installer's `config.yaml`.
+`apply` restores installer-managed files to the content it generates. Put your own settings in `/etc/rancher/k3s/config.yaml.d/90-local.yaml` (K3s) or `/etc/rancher/rke2/config.yaml.d/90-local.yaml` (RKE2) instead of changing the installer's `config.yaml`.
 
 ## `gui`
 
@@ -73,7 +73,7 @@ Open the full link printed by the server. The GUI listens on `127.0.0.1:8085` by
 The GUI modifies this host as root. Keep it listening on loopback and access it through an SSH tunnel. If you bind it to an external address, it sends the sign-in token and installation configuration over unencrypted HTTP.
 </Callout>
 
-After installation, press `Ctrl-C` to close the GUI. RKE2 and the installed services keep running.
+After installation, press `Ctrl-C` to close the GUI. K3s/RKE2 and the installed services keep running.
 
 ## `doctor`
 
@@ -81,9 +81,9 @@ After installation, press `Ctrl-C` to close the GUI. RKE2 and the installed serv
 sudo zeabur-installer doctor
 ```
 
-On the server that created the cluster, `doctor` checks the RKE2 unit, API, components in the installation record, default storage class, Zeabur and Zeabur Identity Deployments, Zeabur Identity's internal certificate, node addresses, baseline network policies, secret encryption in etcd, and encryption of `/var/lib/rancher`. It checks against the last `apply` record. If you change the YAML, run `apply` again for those changes to count.
+On the server that created the cluster, `doctor` checks the K3s or RKE2 unit, API, components in the installation record, default storage class, Zeabur and Zeabur Identity Deployments, Zeabur Identity's internal certificate, node addresses, baseline network policies, secret encryption, and encryption of `/var/lib/rancher`. It checks against the last `apply` record. If you change the YAML, run `apply` again for those changes to count.
 
-On a node that joined an existing cluster, it checks the local RKE2 unit, whether the node is ready, connectivity and latency to the server, and disk encryption. On a server, it also compares Zeabur Identity's authentication configuration.
+On a node that joined an existing cluster, it checks the local `k3s-agent` or RKE2 unit, whether the node is ready, connectivity and latency to the server, and disk encryption. On a server, it also compares Zeabur Identity's authentication configuration.
 
 | Exit code | Meaning |
 |---|---|
@@ -106,8 +106,8 @@ sudo zeabur-installer node add --role server --address 10.0.0.5
 
 | Option | Default and purpose |
 |---|---|
-| `--role` | Defaults to `worker`; also accepts `server` |
-| `--address` | Defaults to this node's `InternalIP`; the new host uses this address to reach the supervisor |
+| `--role` | Defaults to `worker`. `server` works on RKE2 only; K3s takes workers only |
+| `--address` | Defaults to this node's `InternalIP`; the new host uses this address to reach this server |
 | `--ttl` | Worker token lifetime. Defaults to `1h`; accepts values such as `30m` and `1h`, up to `24h` |
 
 `node add` prints the join YAML and commands for the new VM. The new VM must use the same hosting provider and region as this server. It can be in a different availability zone. Workers use an expiring bootstrap token. Servers use the cluster's server token, which doesn't expire; `--ttl` has no effect on it. Treat the output like a password and set its permissions to `0600` when saving it on the new host.
@@ -157,13 +157,13 @@ These steps don't depend on Zeabur's finalizer and still work after Zeabur is re
 sudo zeabur-installer uninstall zeabur
 ```
 
-Removes only Zeabur. RKE2, Zeabur Identity, Catalog components, and applications stay. `uninstall zeabur` also deletes the RoleBindings and ClusterRoleBindings Zeabur created for members.
+Removes only Zeabur. K3s/RKE2, Zeabur Identity, Catalog components, and applications stay. `uninstall zeabur` also deletes the RoleBindings and ClusterRoleBindings Zeabur created for members.
 
 `uninstall identity` also removes Zeabur Identity and clears the API server's trust configuration for it. Before running it, set up another sign-in method as described in [Remove Zeabur](../leave/uninstall.mdx). If the cluster has multiple servers, run `sudo zeabur-installer apply` once on each other server so it stops trusting Zeabur Identity's tokens. The command lists these servers.
 
-On a joined node, `uninstall` only prints the commands to run in order: drain, delete the Node, run the RKE2 uninstall script, and sync the network policies. See [Add and maintain nodes](../cluster/nodes.mdx#remove-a-node) for these steps.
+On a joined node, `uninstall` only prints the commands to run in order: drain, delete the Node, run the K3s or RKE2 uninstall script, and sync the network policies. See [Add and maintain nodes](../cluster/nodes.mdx#remove-a-node) for these steps.
 
-After RKE2 is removed, `uninstall --purge` deletes the installer's download cache, local CA copy, and configuration. Volumes stay. You can't combine `--purge` with `zeabur` or `identity`. To keep the cluster, don't run the RKE2 uninstall script or `--purge`.
+After K3s or RKE2 is removed, `uninstall --purge` deletes the installer's download cache, local CA copy, and configuration. Volumes stay. You can't combine `--purge` with `zeabur` or `identity`. To keep the cluster, don't run the K3s or RKE2 uninstall script or `--purge`.
 
 ### A personal install
 
@@ -172,7 +172,7 @@ With `use: personal` in the configuration, `uninstall` deletes nothing and only 
 ## If installation stops
 
 - Host check failed: free the ports or fix the disk as directed in the output, then run `plan` and `apply` again.
-- RKE2 didn't start: check `sudo journalctl -u rke2-server`. For a worker, check `rke2-agent`.
+- Kubernetes didn't start: on K3s, check `sudo journalctl -u k3s`, or `k3s-agent` on a worker. On RKE2, check `sudo journalctl -u rke2-server`, or `rke2-agent` on a worker.
 - A component is stuck installing through Helm: `doctor` points to the `helm-install-<name>` Job in `kube-system`. Check its logs.
 - A new node is ready but can't reach some system services: run `node sync` on a server first, then check `doctor`'s network policy results.
 

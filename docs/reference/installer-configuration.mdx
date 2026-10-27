@@ -29,16 +29,17 @@ host:
 | Field | Default | Purpose |
 |---|---|---|
 | `use` | `team` | `team` is for teams. Set `personal` for personal use; see [Configuration for personal use](#configuration-for-personal-use) for supported fields |
+| `distribution` | `k3s` | `k3s` or `rke2`. See [`distribution` and versions](#distribution-and-versions) |
 | `access` | Required | Domains and certificate mode for the sign-in service and Zeabur |
 | `preset` | `standard` | `minimal`, `standard`, or `secure` |
 | `profile` | `single-node` | `single-node` or `multi-node`; selects the Catalog's component settings for that profile |
 | `enable` | `[]` | Capabilities or full component IDs to add |
 | `disable` | `[]` | Capabilities or full component IDs to exclude |
 | `allowDataLoss` | `[]` | Component IDs whose removal you're allowing to delete their data, such as `replicated-storage/longhorn` |
-| `zeabur` | `true` | Install Zeabur Identity and Zeabur. `false` installs only RKE2 and the selected components |
+| `zeabur` | `true` | Install Zeabur Identity and Zeabur. `false` installs only K3s/RKE2 and the selected components |
 | `inputs` | `{}` | Non-secret input values grouped by component ID |
 | `secretFiles` | `{}` | Secret file paths grouped by component ID |
-| `rke2Version` | Version pinned by the installer | Override the RKE2 version |
+| `k3sVersion`, `rke2Version` | Versions pinned by the installer | Override the K3s or RKE2 version |
 | `host` | Empty | Extra names for the API certificate and disk encryption requirements |
 | `sources` | Empty | Optional overrides for the pinned Catalog, images, and chart using your own versions |
 
@@ -107,15 +108,26 @@ The installer always creates `local-path`, which stores data on the node at `/va
 
 When Longhorn is selected, `apply` installs the iSCSI initiator and NFS client on this host, loads `iscsi_tcp`, and starts `iscsid`. Every node running Longhorn needs these. See [Add nodes](../cluster/nodes.mdx).
 
-### `host` and `rke2Version`
+### `distribution` and versions
+
+Leave `distribution` out to install K3s. Set `rke2` for a server with 8 GiB of memory or more, or to run the control plane on three servers later.
+
+| Field | Default and purpose |
+|---|---|
+| `distribution` | `k3s`. K3s uses less memory and runs one server, to which you can add workers. `rke2` lets you add workers and servers; three servers keep the control plane running when one goes down |
+| `k3sVersion` | The version pinned by the installer. Set this to use another K3s release, such as `v1.37.1+k3s1`. Only with `distribution: k3s` |
+| `rke2Version` | The version pinned by the installer. Set this to use another RKE2 release, such as `v1.37.1+rke2r1`. Only with `distribution: rke2` |
+
+Setting the version field of the other distribution stops the installer, for example: `rke2Version applies to distribution: rke2; this one is k3s (set k3sVersion)`.
+
+Downloads for the default version are checked against digests compiled into the installer. Downloads for another version can only be checked against that release's own checksum list. `plan` marks the version as unsupported, and it may not match the Kubernetes versions the Catalog has tested.
+
+### `host`
 
 | Field | Default and purpose |
 |---|---|
 | `host.tlsSan` | `[]`. Extra DNS names or IP addresses for the Kubernetes API server's certificate. Servers only |
 | `host.requireEncryptedDisk` | `false`. When `true`, `apply` stops if the root directory or data directory isn't on an encrypted device |
-| `rke2Version` | The version pinned by the installer. Set this to use another version, such as `v1.37.1+rke2r1` |
-
-Downloads for the default version are checked against digests compiled into the installer. Downloads for another version can only be checked against that release's own checksum list. `plan` marks the version as unsupported, and it may not match the Kubernetes versions the Catalog has tested.
 
 ### `sources`
 
@@ -135,13 +147,13 @@ sources:
 | Field | Accepted value |
 |---|---|
 | `catalog` | A local `index.json` |
-| `imageArchives` | An array of paths to `docker save` archives, imported when RKE2 starts |
+| `imageArchives` | An array of paths to `docker save` archives, imported when K3s or RKE2 starts |
 | `identityImage` | Zeabur Identity's image reference |
 | `identityctl` | A local `zeabur-identityctl` binary |
 | `zeaburImage` | Zeabur's image reference |
 | `zeaburChart` | A Helm chart directory or a packaged `.tgz` |
 
-An archive removed from `imageArchives` is also removed from RKE2's import directory on the next `apply`. This list contains archives already on the host. It has nothing to do with private registry access settings.
+An archive removed from `imageArchives` is also removed from the K3s or RKE2 import directory on the next `apply`. This list contains archives already on the host. It has nothing to do with private registry access settings.
 
 ## Configuration for personal use
 
@@ -154,7 +166,7 @@ host:
   tlsSan: [solo.example.com]
 ```
 
-Only the fields in the table below can appear alongside it. `preset`, `profile`, `access`, `zeabur`, `rke2Version`, and `join` aren't accepted.
+Only the fields in the table below can appear alongside it. `preset`, `profile`, `access`, `zeabur`, `distribution`, `k3sVersion`, `rke2Version`, and `join` aren't accepted.
 
 | Field | Default and purpose |
 |---|---|
@@ -171,26 +183,28 @@ Components use KubeSolo's built-in `local-path` storage class, which stores data
 
 ## Configuration for joining an existing cluster
 
-A top-level `join` tells the installer to treat this machine as a new node joining an existing cluster and install only RKE2. Only `rke2Version`, `host`, and `sources.imageArchives` can appear alongside it. Fields for creating a cluster, such as `preset` and `access`, aren't accepted.
+A top-level `join` tells the installer to treat this machine as a new node joining an existing cluster and install only K3s or RKE2. Only `distribution`, the version field of that distribution (`k3sVersion` or `rke2Version`), `host`, and `sources.imageArchives` can appear alongside it. Fields for creating a cluster, such as `preset` and `access`, aren't accepted.
 
 Run `zeabur-installer node add` on an existing server to get the complete YAML, then save it on the new host. It includes the token and server settings, so you don't need to assemble them yourself.
 
 | Field | Default and rules |
 |---|---|
-| `join.server` | Required. The server's supervisor address, such as `https://10.0.0.5:9345` |
-| `join.role` | `worker`. Also accepts `server` |
+| `distribution` | `k3s`. The cluster's distribution, as `node add` prints it |
+| `join.server` | Required. A server's address: port `6443` on K3s, such as `https://10.0.0.5:6443`, or `9345` on RKE2 |
+| `join.role` | `worker`. `server` works on RKE2 only |
 | `join.token` | Use either this or `tokenFile`. If you put the token directly in the configuration file, the file must have permissions `0600` |
 | `join.tokenFile` | Use either this or `token`. A token file with permissions `0600` |
 | `join.serverConfig` | Required for `server`; not accepted for workers. Copy `disable` and `identity` exactly as printed by `node add --role server` |
-| `join.longhorn` | `false`. When `true`, installs the host packages Longhorn needs before RKE2 starts |
+| `join.longhorn` | `false`. When `true`, installs the host packages Longhorn needs before K3s or RKE2 starts |
 
-Workers don't accept `host.tlsSan`. `rke2Version` must match the cluster. A worker bootstrap token can't be used to join a server; use the configuration generated by `node add --role server`.
+Workers don't accept `host.tlsSan`. `distribution` and the version must match the cluster. A worker bootstrap token can't be used to join a server; use the configuration generated by `node add --role server`.
 
 ## Troubleshoot configuration issues
 
 - unknown field: Check field capitalization, and remove misspelled keys or keys at the wrong level.
 - Invalid hostname: Remove `https://` and the path, and use different names for `identity` and `zeabur`.
 - Missing required input: Add the values for the components and fields listed by `plan`, then run `plan` again.
+- `join.role: server` on K3s: K3s runs one server with SQLite and takes workers only. For a control plane that keeps running when a server goes down, install RKE2 (`distribution: rke2`) on three servers.
 - Incorrect token file permissions: Run `chmod 0600` on the new host. Don't commit configuration files containing tokens to a Git repository.
 
 Run `plan` after editing the configuration file. To remove the product and clean up host files, see [Uninstall Zeabur](../leave/uninstall.mdx).

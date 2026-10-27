@@ -26,7 +26,7 @@ access:
 
 Replace both domains with the ones you want to use. For DNS and port requirements in public domain mode, see [connection options in the quickstart](quickstart.mdx#2-choose-how-to-connect).
 
-If you omit `preset`, the installer uses `standard`. If you omit `profile`, it uses `single-node`.
+If you omit `preset`, the installer uses `standard`. If you omit `profile`, it uses `single-node`. If you omit `distribution`, it installs K3s. For a server with 8 GiB of memory or more, or to run the control plane on three servers later, add `distribution: rke2`.
 
 For a test machine, use `local` mode instead:
 
@@ -51,7 +51,7 @@ sudo zeabur-installer plan
 
 `plan` runs host checks and lists the following without changing the host:
 
-- RKE2 version.
+- Kubernetes distribution and version (K3s or RKE2).
 - Components and charts.
 - Namespaces.
 - Storage classes.
@@ -80,7 +80,7 @@ sudo zeabur-installer apply
 
 `apply` runs host checks first. If any check fails, it stops before making any changes.
 
-Once the checks pass, it configures the host, installs RKE2 with a CIS profile, sets up namespaces and connection rules, configures storage, installs the selected components, and then installs Zeabur Identity and Zeabur.
+Once the checks pass, it configures the host, installs K3s or RKE2 with CIS hardening, sets up namespaces and connection rules, configures storage, installs the selected components, and then installs Zeabur Identity and Zeabur.
 
 `apply` determines what to install from the configuration at the time it runs. If you change the YAML after running `plan`, `apply` uses the updated configuration.
 
@@ -122,7 +122,7 @@ Run:
 sudo zeabur-installer doctor
 ```
 
-This checks RKE2, components, the default storage class, Zeabur Identity, and Zeabur.
+This checks K3s or RKE2, components, the default storage class, Zeabur Identity, and Zeabur.
 
 | Exit code | Result |
 | --- | --- |

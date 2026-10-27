@@ -15,12 +15,12 @@ Use a server that meets these requirements:
 - Root access.
 - At least 4 GiB of memory.
 - At least 10 GiB of free space in `/var/lib/rancher`. The installer shows a warning below 30 GiB.
-- TCP ports 80, 443, 6443, 9345, and 10250 are free.
-- No existing installation of k3s, kubeadm, k0s, or MicroK8s.
+- TCP ports 80, 443, 6443, and 10250 are free. RKE2 also needs 9345.
+- No existing installation of kubeadm, k0s, MicroK8s, or KubeSolo, and no K3s or RKE2 other than the one you choose.
 
 Download `zeabur-installer-v<version>-linux-<arch>.tar.gz` for the server's architecture from [GitHub Releases](https://github.com/zeabur-oss/zeabur/releases). For verification instructions, see [Release files and verification](../reference/releases.mdx).
 
-The released installer pins the versions of RKE2, Zeabur Catalog, Zeabur Identity, and Zeabur. It stores installation downloads in `/var/lib/rancher/zeabur-installer/downloads` and verifies their SHA-256 checksums.
+The released installer pins the versions of K3s, RKE2, Zeabur Catalog, Zeabur Identity, and Zeabur. It stores installation downloads in `/var/lib/rancher/zeabur-installer/downloads` and verifies their SHA-256 checksums.
 
 ## Open the installer
 
@@ -50,7 +50,17 @@ Use the controls in the upper-right corner to change the language and theme. The
 
 ## 1. Check the server
 
-Under “Check the server,” review the hostname, architecture, memory, and addresses, then resolve any failed checks. Under “Who is this for?”, select “Team.” If the server has less than 4 GiB of memory, only “Personal” is available. See [Personal use: install on a small server](personal.mdx).
+Under “Check the server,” review the hostname, architecture, memory, and addresses, then resolve any failed checks. Under “Who is it for,” select “A team.” If the server has less than 4 GiB of memory, only “Just me” is available. See [Personal use: install on a small server](personal.mdx).
+
+Under “Kubernetes,” keep the option marked “Suggested”:
+
+| | K3s | RKE2 |
+| --- | --- | --- |
+| Suggested for | Servers with less than 8 GiB of memory | Servers with 8 GiB or more |
+| Adding servers later | Workers only | Workers, or a control plane on three servers so losing one doesn't stop it |
+| Memory | Uses less itself, leaving more for your apps | Uses more itself |
+
+Choose RKE2 on a smaller server only if you plan to run the control plane on three servers. Both are installed with the same hardening; see [Security](../reference/security.mdx#installer-host-and-download-permissions).
 
 ![“Check the server” showing host information and check results](https://oss.zeabur.com/shots/zeabur/en/light/installer-host.avif)
 
@@ -121,7 +131,7 @@ The summary lists:
 - What you can do after installation and what to set up later. For example, database backups need an S3 bucket, which you set up in Zeabur after installation. Expand “What each component adds” to see which component provides each feature.
 - Memory use at idle.
 - Selected components.
-- The Kubernetes version, which is the RKE2 version.
+- The Kubernetes distribution and version, such as `K3s v1.36.5+k3s1`.
 - The access method and addresses.
 - The estimated time: about 10 to 20 minutes.
 
@@ -137,7 +147,7 @@ The “Install” button is disabled if any checks fail or the memory estimate i
 
 ![“Installing” showing the installation timeline and progress](https://oss.zeabur.com/shots/zeabur/en/light/installer-install.avif)
 
-The timeline lists these steps in order: server checks, Kubernetes (RKE2), namespaces and connection rules, storage, individual components, the certificate authority, Zeabur Identity, Zeabur, and final steps. The certificate authority is installed only in test server mode.
+The timeline lists these steps in order: server checks, Kubernetes (K3s or RKE2, with its version), namespaces and connection rules, storage, individual components, the certificate authority, Zeabur Identity, Zeabur, and final steps. The certificate authority is installed only in test server mode.
 
 Closing the page doesn't interrupt installation. Reopen the link with the token to keep viewing progress.
 
@@ -167,7 +177,7 @@ If the registration link expires, run this command on the server to generate a n
 sudo zeabur-installer setup-link
 ```
 
-When you're done, press Ctrl-C in the server terminal to stop the installer. RKE2 and the services keep running.
+When you're done, press Ctrl-C in the server terminal to stop the installer. K3s/RKE2 and the services keep running.
 
 ## If installation stops
 
@@ -185,7 +195,7 @@ On the server, run:
 sudo zeabur-installer doctor
 ```
 
-This checks RKE2, the components, the default storage class, Zeabur Identity, and Zeabur.
+This checks K3s or RKE2, the components, the default storage class, Zeabur Identity, and Zeabur.
 
 | Exit code | Result |
 | --- | --- |
@@ -208,4 +218,4 @@ To remove only Zeabur, run this on the server:
 sudo zeabur-installer uninstall zeabur
 ```
 
-RKE2, the components, Zeabur Identity, and applications stay in place. For other removal options, see [Remove Zeabur and keep services](../leave/uninstall.mdx).
+K3s/RKE2, the components, Zeabur Identity, and applications stay in place. For other removal options, see [Remove Zeabur and keep services](../leave/uninstall.mdx).

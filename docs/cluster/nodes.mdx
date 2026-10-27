@@ -9,20 +9,20 @@ Go to **Cluster** → **Overview** → **Nodes** to check each host's status. To
 
 ## Before you begin
 
-- Only clusters installed with Zeabur Installer (RKE2) support adding nodes with `zeabur-installer node add`. For other clusters, use the tool you originally installed them with.
+- `zeabur-installer node add` works on K3s and RKE2 clusters that Zeabur Installer created. On K3s you can add workers only. On RKE2 you can add workers and servers, and three servers keep the control plane running when one goes down. For other clusters, use the tool you originally installed them with.
 - Prepare a new VM with root access and the same `zeabur-installer` binary used to install the first server.
 - Keep all nodes with the same hosting provider in the same region. Different availability zones within that region are fine. Across providers or regions, latency slows down etcd, the Kubernetes API, and storage.
 - Stopping and resuming scheduling requires permission to modify Node objects. Run `drain` and `delete node` in the kubectl terminal with your own permissions. Opening a node terminal requires an admin account.
 
 Open these firewall ports between nodes:
 
-| Direction | Ports |
-| --- | --- |
-| To RKE2 servers | TCP 9345, 6443 |
-| Between all nodes | TCP 10250, 9099, and UDP 8472 (Canal VXLAN) |
-| Between RKE2 servers | TCP 2379–2381 |
+| Direction | K3s | RKE2 |
+| --- | --- | --- |
+| To servers | TCP 6443 | TCP 9345, 6443 |
+| Between all nodes | TCP 10250, UDP 4789 (Calico VXLAN) | TCP 10250, 9099, UDP 8472 (Canal VXLAN) |
+| Between servers | None | TCP 2379–2381 |
 
-Allow UDP 8472 only between cluster nodes. Don't expose it to the internet. Installer's connection check can't test UDP 8472. If it's blocked, replicas on different nodes won't be able to reach each other.
+Allow the UDP port only between cluster nodes. Don't expose it to the internet. The installer's connection check can't test UDP. If the port is blocked, replicas on different nodes can't reach each other.
 
 ## Add a node
 
@@ -41,7 +41,7 @@ sudo zeabur-installer node add --ttl 1h
 
 The command prints what to run on the new VM: the configuration to write to `/etc/zeabur-installer/config.yaml`, followed by `plan` and `apply`. Treat the token in the output like a password. Don't post it publicly.
 
-Worker nodes join with an expiring bootstrap token. `--ttl` defaults to 1 hour, with a maximum of 24 hours. To add a server (control plane), include `--role server`. This uses the cluster's server token, which doesn't expire. If the new VM can't reach the server's private address, use `--address` to specify an address it can reach.
+Worker nodes join with an expiring bootstrap token. `--ttl` defaults to 1 hour, with a maximum of 24 hours. On RKE2, include `--role server` to add a server (control plane). This uses the cluster's server token, which doesn't expire. K3s refuses `--role server` because it runs one server with SQLite. If the new VM can't reach the server's private address, use `--address` to specify an address it can reach.
 
 If the cluster runs Longhorn or a zot mirror, the output automatically includes the corresponding configuration. If the config file still has `profile: single-node`, the output reminds you to change it to `multi-node` and run `apply` again.
 
@@ -57,7 +57,7 @@ zeabur-installer plan
 zeabur-installer apply
 ```
 
-`plan` only lists network checks and warnings. It doesn't change anything. Resolve any warnings before continuing. `apply` installs RKE2 and waits for the node to be ready before exiting.
+`plan` only lists network checks and warnings. It doesn't change anything. Resolve any warnings before continuing. `apply` installs the K3s agent or RKE2 and waits for the node to be ready before exiting.
 
 </Step>
 <Step>
@@ -66,12 +66,18 @@ zeabur-installer apply
 
 ```sh
 sudo zeabur-installer node sync
+# K3s
+sudo k3s kubectl get nodes -o wide
+# RKE2
 sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get nodes -o wide
 ```
 
 `node sync` adds the new node's addresses to the baseline network policies created by Installer. Newly joined servers sync automatically. After a worker node joins, you must run this command manually on a server. Until then, network policies block traffic from the new node. Once the new node shows `Ready`, revoke the worker node's token. Replace `<ID>` with the ID from the last line of the `node add` output:
 
 ```sh
+# K3s
+sudo k3s kubectl -n kube-system delete secret bootstrap-token-<ID>
+# RKE2
 sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
   -n kube-system delete secret bootstrap-token-<ID>
 ```
@@ -81,7 +87,7 @@ This doesn't affect nodes that have already joined. The token can no longer be u
 </Step>
 </Steps>
 
-etcd needs a majority of servers to operate. To keep running with one server down, you need at least three servers. With only two, taking either server down stops the entire cluster.
+On RKE2, etcd needs a majority of servers to operate. To keep running with one server down, you need at least three servers. With only two, taking either server down stops the entire cluster. A K3s cluster has one server; when it goes down, the control plane stops until it returns.
 
 ## Take a node down for maintenance
 
@@ -155,14 +161,15 @@ kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
 kubectl delete node <node>
 ```
 
-Next, sign in to the removed VM and run as `root`:
+Next, sign in to the removed VM and run these as `root`, using the uninstall script for the cluster's distribution:
 
 ```sh
-/usr/local/bin/rke2-uninstall.sh
+/usr/local/bin/k3s-agent-uninstall.sh   # K3s
+/usr/local/bin/rke2-uninstall.sh        # RKE2
 zeabur-installer uninstall --purge
 ```
 
-**After deleting the Kubernetes node, you must also complete the uninstall on the VM.** Until you uninstall it, the VM will rejoin the cluster whenever RKE2 restarts.
+**After deleting the Kubernetes node, you must also complete the uninstall on the VM.** Until you uninstall it, the VM will rejoin the cluster whenever `k3s-agent` or RKE2 restarts.
 
 Volumes under `/var/lib/zeabur/storage` remain on the VM. Delete them manually only after confirming you no longer need the data.
 
@@ -188,8 +195,8 @@ When you close the terminal, Zeabur removes the terminal replica. Terminal repli
 
 ## Common failures
 
-- Can't reach the server when joining: Check that the new VM can reach the server address printed by `node add` on TCP 9345 and 6443, along with the other ports in the table above.
-- The new node is ready, but services on different nodes can't reach each other: Check UDP 8472 and whether network policies allow traffic from the new node.
+- Can't reach the server when joining: Check that the new VM can reach the server address printed by `node add` on TCP 6443 (K3s) or TCP 9345 and 6443 (RKE2), along with the other ports in the table above.
+- The new node is ready, but services on different nodes can't reach each other: Check UDP 4789 (K3s) or 8472 (RKE2) and whether network policies allow traffic from the new node.
 - `drain` is stuck: It's waiting for PodDisruptionBudget to allow eviction or has stopped at a replica that isn't managed by a controller. Run `kubectl get pdb -A` to see which budget is blocking eviction, resolve it, and run the command again.
 - A replica is `Pending` on the new node: It uses a `local-path` volume on the old node and must wait for that node to return.
 - A terminal replica **Can't start**: Check its events. A failed image download is a common cause.

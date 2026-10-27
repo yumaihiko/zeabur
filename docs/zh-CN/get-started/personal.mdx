@@ -1,7 +1,7 @@
 ---
 title: 个人使用：在小型服务器上安装
 description: 只有自己使用时，用 KubeSolo 在 1.5 GiB 内存的服务器上安装 Kubernetes 和组件，也可以勾选 Zeabur Builder，再在自己的电脑上用 zeaburctl ui 打开 Zeabur。
-source: "c91cc8aa3117"
+source: "cfd99901fd7e"
 ---
 
 只有自己使用时，installer 可以改用 KubeSolo。服务器上只有 Kubernetes 和组件，不运行 Zeabur 面板和 Zeabur Identity。要使用 Zeabur，在自己的电脑上运行 `zeaburctl ui`，用服务器提供的 kubeconfig 连接。
@@ -10,7 +10,7 @@ source: "c91cc8aa3117"
 
 | | 个人使用 | 团队使用 |
 | --- | --- | --- |
-| Kubernetes | KubeSolo | RKE2 |
+| Kubernetes | KubeSolo | K3s 或 RKE2 |
 | 内存 | 1.5 GiB 起 | 4 GiB 起 |
 | 如何打开 Zeabur | 在自己的电脑上运行 `zeaburctl ui` | 打开服务器上的 Zeabur 网址，用通行密钥登录 |
 | 成员和权限 | 没有。拿到 kubeconfig 的人可以控制整个集群 | Zeabur Identity 账号和项目角色 |
@@ -25,7 +25,7 @@ source: "c91cc8aa3117"
 
 个人版也没有成员和权限。Zeabur Identity 签发的登录凭证，需要 kube-apiserver 用 `--authentication-config` 加载配置后才能识别，KubeSolo 目前没有开放这项配置（[portainer/kubesolo#231](https://github.com/portainer/kubesolo/issues/231)）。因此只能用服务器提供的 kubeconfig 连接，拿到它的人可以控制整个集群，不适合多人或多个团队共用。
 
-服务器可用内存低于 2600 MiB 时，installer 只接受个人使用模式。以后要供团队使用，无法直接升级，需要在 4 GiB 内存的服务器上重新用 RKE2 安装。
+服务器报告的内存低于 2400 MiB 时，installer 只接受个人使用模式。以后要供团队使用，无法直接升级，需要在 4 GiB 内存的服务器上重新用 K3s 或 RKE2 安装。
 
 ## 先准备服务器
 
@@ -34,7 +34,7 @@ source: "c91cc8aa3117"
 - 内存至少 1.5 GiB。
 - `/var/lib/kubesolo` 至少有 10 GiB 可用空间。
 - TCP 端口 80、443、6443、10250、10443 未占用。
-- 未安装 RKE2、k3s、kubeadm、k0s 或 MicroK8s。
+- 未安装 RKE2、K3s、kubeadm、k0s 或 MicroK8s。
 - 未安装 Docker，也没有运行 Docker。Docker 默认会丢弃转发的数据包，导致副本无法连接外部网络，也无法申请证书。installer 检测到 Docker（可执行文件、服务、socket），或防火墙转发策略为 DROP 时会停止，请先停止并移除 Docker 再安装。
 
 自己的电脑需要安装 [`zeaburctl`](../reference/zeaburctl.mdx)，并且能连接服务器的 TCP 6443 端口。
@@ -43,13 +43,13 @@ installer 固定 KubeSolo、helm-controller 和 kubectl 的版本，下载后校
 
 ## 用网页界面安装
 
-按[在一台服务器上安装 Zeabur](quickstart.mdx#打开安装界面)的说明打开安装界面。在“检查服务器”的“给谁用”中选择“个人使用”，安装流程会省去“连接方式”这一步。
+按[在一台服务器上安装 Zeabur](quickstart.mdx#打开安装界面)的说明打开安装界面。在“检查服务器”的“给谁用”中选择“自己用”，安装流程会省去“连接方式”这一步。
 
-![“检查服务器”的“给谁用”选择了“个人使用”，上方只剩四个步骤](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-personal-choose.avif)
+![“检查服务器”的“给谁用”选择了“自己用”，上方只剩四个步骤](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-personal-choose.avif)
 
-服务器可用内存不足 2600 MiB 时，“团队使用”不可选，只能选择“个人使用”。
+服务器报告的内存不足 2400 MiB 时，“团队用”不可选，只能选择“自己用”。
 
-![内存只有 1.5 GiB 的服务器，“团队使用”不可选，并提示这台服务器内存不足](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-personal-small.avif)
+![内存只有 1.5 GiB 的服务器，“团队用”不可选，并提示这台服务器内存不足](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-personal-small.avif)
 
 先处理未通过的检查项。如果服务器安装了 Docker，“Docker”会提示需要修正，请先停止并移除 Docker，再点击“重新检查”。检查项未全部通过时，即使进入“确认”也无法点击“安装”。
 

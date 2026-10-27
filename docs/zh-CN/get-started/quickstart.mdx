@@ -1,7 +1,7 @@
 ---
 title: 在一台服务器上安装 Zeabur
 description: 通过 Zeabur Installer 的网页界面检查服务器、选择组件并安装，最后注册首位管理员的通行密钥。
-source: "2e4c27926e28"
+source: "6e0cbe632a84"
 ---
 
 通过 Zeabur Installer 的网页界面完成五个步骤，就能打开 Zeabur 并注册首位管理员的通行密钥。点击“安装”之前，installer 不会改动服务器。
@@ -16,12 +16,12 @@ source: "2e4c27926e28"
 - 具备 root 权限。
 - 内存至少 4 GiB。
 - `/var/lib/rancher` 至少有 10 GiB 可用空间。低于 30 GiB 时，installer 会显示提醒。
-- TCP 端口 80、443、6443、9345、10250 未占用。
-- 未安装 k3s、kubeadm、k0s 或 MicroK8s。
+- TCP 端口 80、443、6443、10250 未占用。使用 RKE2 时还需要 9345。
+- 未安装 kubeadm、k0s、MicroK8s 或 KubeSolo，也没有安装这次没选的 K3s 或 RKE2。
 
 从 [GitHub Releases](https://github.com/zeabur-oss/zeabur/releases) 下载与服务器架构匹配的 `zeabur-installer-v<version>-linux-<arch>.tar.gz`。验证方法参见[发行文件与验证](../reference/releases.mdx)。
 
-发行版 installer 固定了 RKE2、Zeabur Catalog、Zeabur Identity 和 Zeabur 的版本。安装所需的文件会下载到 `/var/lib/rancher/zeabur-installer/downloads`，并校验 SHA-256。
+发行版 installer 固定了 K3s、RKE2、Zeabur Catalog、Zeabur Identity 和 Zeabur 的版本。安装所需的文件会下载到 `/var/lib/rancher/zeabur-installer/downloads`，并校验 SHA-256。
 
 ## 打开安装界面
 
@@ -51,7 +51,17 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 
 ## 1. 检查服务器
 
-在“检查服务器”中确认主机名、架构、内存和地址，再处理未通过的检查项。在“供谁使用”中选择“团队使用”。内存不足 4 GiB 时只能选择“个人使用”，参见[个人使用：在小型机器上安装](personal.mdx)。
+在“检查服务器”中确认主机名、架构、内存和地址，再处理未通过的检查项。在“给谁用”中选择“团队用”。内存不足 4 GiB 时只能选择“自己用”，参见[个人使用：在小型机器上安装](personal.mdx)。
+
+在“用哪一种 Kubernetes”中选标有“推荐”的那一项即可：
+
+| | K3s | RKE2 |
+| --- | --- | --- |
+| 推荐用于 | 内存不到 8 GiB 的服务器 | 8 GiB 及以上的服务器 |
+| 以后加服务器 | 只能加工作节点 | 可以加工作节点，也能用三台服务器一起跑控制平面，坏一台也不会停 |
+| 内存 | 本身占用少，留给应用的更多 | 本身占用更多 |
+
+服务器较小时，只有打算以后用三台服务器跑控制平面才选 RKE2。两种都会做同样的加固配置，参见[安全](../reference/security.mdx#installer-的主机与下载权限)。
 
 ![“检查服务器”显示主机信息与检查结果](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-host.avif)
 
@@ -122,7 +132,7 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 - 装完以后可以做什么，还有什么要之后设置。例如数据库备份要用 S3 存储桶，装完以后在 Zeabur 里设置。展开“各组件提供的功能”可以查看每个功能由哪个组件提供。
 - 空闲时的内存用量。
 - 选定的组件。
-- Kubernetes 版本，即 RKE2 版本。
+- Kubernetes 的类型和版本，例如 `K3s v1.36.5+k3s1`。
 - 连接方式和地址。
 - 所需时间，约 10 到 20 分钟。
 
@@ -138,7 +148,7 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 
 ![“正在安装”显示安装时间轴与进度](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-install.avif)
 
-时间轴依次列出包检查服务器、安装 Kubernetes（RKE2）、Namespace 和连接规则、存储空间、各组件、证书颁发机构、Zeabur Identity、Zeabur 和收尾。证书颁发机构只会在测试机模式下安装。
+时间轴依次列出包检查服务器、安装 Kubernetes（K3s 或 RKE2，附带版本）、Namespace 和连接规则、存储空间、各组件、证书颁发机构、Zeabur Identity、Zeabur 和收尾。证书颁发机构只会在测试机模式下安装。
 
 关闭页面不会中断安装。重新打开带有令牌的链接，就能继续查看进度。
 
@@ -168,7 +178,7 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 sudo zeabur-installer setup-link
 ```
 
-完成后，在服务器终端中按 Ctrl-C 结束 installer。RKE2 和服务会继续运行。
+完成后，在服务器终端中按 Ctrl-C 结束 installer。K3s/RKE2 和服务会继续运行。
 
 ## 安装已停止时
 
@@ -186,7 +196,7 @@ sudo zeabur-installer setup-link
 sudo zeabur-installer doctor
 ```
 
-这会检查 RKE2、组件、默认存储类、Zeabur Identity 和 Zeabur。
+这会检查 K3s 或 RKE2、组件、默认存储类、Zeabur Identity 和 Zeabur。
 
 | 退出码 | 结果 |
 | --- | --- |
@@ -209,4 +219,4 @@ sudo zeabur-installer doctor
 sudo zeabur-installer uninstall zeabur
 ```
 
-RKE2、组件、Zeabur Identity 和应用会保留。其他移除方式参见[移除 Zeabur，保留服务](../leave/uninstall.mdx)。
+K3s/RKE2、组件、Zeabur Identity 和应用会保留。其他移除方式参见[移除 Zeabur，保留服务](../leave/uninstall.mdx)。

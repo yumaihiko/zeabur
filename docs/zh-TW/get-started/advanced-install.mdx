@@ -1,7 +1,7 @@
 ---
 title: 用設定檔和指令安裝
 description: 把安裝選擇寫成 YAML，用 plan 檢查、apply 安裝，適合重複安裝和版本控制。
-source: "68216e76da09"
+source: "222c0b0ce548"
 ---
 
 把安裝選擇寫進 `/etc/zeabur-installer/config.yaml`，用 `plan` 查看計畫，再用 `apply` 安裝。這個方式適合把設定放進版本控制、在多台機器重複同樣的安裝，或透過自動化工具安裝。
@@ -27,7 +27,7 @@ access:
 
 把兩個網域換成你要使用的網域。公開網域模式的 DNS 和連接埠需求，見[快速開始的連線方式](quickstart.mdx#2-選擇連線方式)。
 
-未填 `preset` 時使用 `standard`，未填 `profile` 時使用 `single-node`。
+未填 `preset` 時使用 `standard`，未填 `profile` 時使用 `single-node`，未填 `distribution` 時安裝 K3s。伺服器有 8 GiB 以上記憶體，或之後想用三台伺服器跑控制平面，就加上 `distribution: rke2`。
 
 測試機可以改用 `local` 模式：
 
@@ -52,7 +52,7 @@ sudo zeabur-installer plan
 
 `plan` 會執行主機檢查，並列出以下內容，不會改動主機：
 
-- RKE2 版本。
+- Kubernetes 的種類和版本（K3s 或 RKE2）。
 - 元件和 chart。
 - Namespace。
 - 儲存類別。
@@ -81,7 +81,7 @@ sudo zeabur-installer apply
 
 `apply` 會先跑主機檢查。只要有一項失敗，就會在改動任何東西之前停下。
 
-通過檢查後，依序設定主機、安裝採用 CIS profile 的 RKE2、Namespace 和連線規則、儲存空間、選定的元件，再安裝 Zeabur Identity 和 Zeabur。
+通過檢查後，依序設定主機、安裝做好 CIS 強化的 K3s 或 RKE2、Namespace 和連線規則、儲存空間、選定的元件，再安裝 Zeabur Identity 和 Zeabur。
 
 `apply` 依執行當下的設定計算安裝內容。如果在執行 `plan` 後修改 YAML，`apply` 就會依新內容安裝。
 
@@ -123,7 +123,7 @@ sudo zeabur-installer apply
 sudo zeabur-installer doctor
 ```
 
-這會檢查 RKE2、元件、預設儲存類別、Zeabur Identity 和 Zeabur。
+這會檢查 K3s 或 RKE2、元件、預設儲存類別、Zeabur Identity 和 Zeabur。
 
 | 結束碼 | 結果 |
 | --- | --- |

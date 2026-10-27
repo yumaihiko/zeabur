@@ -1,7 +1,7 @@
 ---
 title: Installer 設定
 description: 查閱建立叢集與加入節點所用的 YAML 欄位、預設值及機密檔案格式。
-source: "b32dd0cef548"
+source: "abdad64d732e"
 ---
 
 把網域、元件選擇和主機設定寫進 YAML，執行 `zeabur-installer --config config.yaml plan` 先看安裝內容。檔案預設放在 `/etc/zeabur-installer/config.yaml`。欄位用 camelCase，拼錯或多出欄位時，installer 會直接停下。
@@ -30,16 +30,17 @@ host:
 | 欄位 | 預設 | 用途 |
 |---|---|---|
 | `use` | `team` | `team` 是團隊用。`personal` 改成自己用，可用的欄位見[自己用的檔案](#自己用的檔案) |
+| `distribution` | `k3s` | `k3s` 或 `rke2`，見[`distribution` 與版本](#distribution-與版本) |
 | `access` | 必填 | 登入服務與 Zeabur 的網域和憑證模式 |
 | `preset` | `standard` | `minimal`、`standard` 或 `secure` |
 | `profile` | `single-node` | `single-node` 或 `multi-node`，選取 Catalog 對應的元件設定 |
 | `enable` | `[]` | 加入 capability 或完整元件 ID |
 | `disable` | `[]` | 排除 capability 或完整元件 ID |
 | `allowDataLoss` | `[]` | 同意移除時連資料一起刪掉的元件 ID，例如 `replicated-storage/longhorn` |
-| `zeabur` | `true` | 安裝 Zeabur Identity 與 Zeabur。`false` 只安裝 RKE2 與選定元件 |
+| `zeabur` | `true` | 安裝 Zeabur Identity 與 Zeabur。`false` 只安裝 K3s/RKE2 與選定元件 |
 | `inputs` | `{}` | 依元件 ID 分組的一般輸入值 |
 | `secretFiles` | `{}` | 依元件 ID 分組的機密檔案路徑 |
-| `rke2Version` | installer 釘選版本 | 覆寫 RKE2 版本 |
+| `k3sVersion`、`rke2Version` | installer 釘選版本 | 覆寫 K3s 或 RKE2 的版本 |
 | `host` | 空 | API 憑證的額外名稱和磁碟加密要求 |
 | `sources` | 空 | 選填，用自己準備的 Catalog、映像檔和 chart 取代釘選的版本 |
 
@@ -108,15 +109,26 @@ installer 一定會建立 `local-path`，資料放在節點的 `/var/lib/zeabur/
 
 選了 Longhorn 時，`apply` 會在這台主機安裝 iSCSI initiator 和 NFS client、載入 `iscsi_tcp`、啟動 `iscsid`。每個跑 Longhorn 的節點都要有這些，見[加入節點](../cluster/nodes.mdx)。
 
-### `host` 與 `rke2Version`
+### `distribution` 與版本
+
+不填 `distribution` 就裝 K3s。伺服器有 8 GiB 以上記憶體，或之後想用三台伺服器跑控制平面，就設成 `rke2`。
+
+| 欄位 | 預設與用途 |
+|---|---|
+| `distribution` | `k3s`。K3s 比較省記憶體，只跑一台伺服器，可以再加工作節點。`rke2` 可以加工作節點和伺服器，三台伺服器時壞一台控制平面也不會停 |
+| `k3sVersion` | installer 釘選的版本。要換 K3s 版本時填，例如 `v1.37.1+k3s1`。只能搭配 `distribution: k3s` |
+| `rke2Version` | installer 釘選的版本。要換 RKE2 版本時填，例如 `v1.37.1+rke2r1`。只能搭配 `distribution: rke2` |
+
+填了另一種的版本欄位，installer 會停下，例如：`rke2Version applies to distribution: rke2; this one is k3s (set k3sVersion)`。
+
+預設版本的檔案用編譯進 installer 的 digest 驗證。換成其他版本時，只能用該 release 頁面自己的 checksum 清單驗證，`plan` 會標示這是未支援的版本，Catalog 測過的 Kubernetes 版本也可能對不上。
+
+### `host`
 
 | 欄位 | 預設與用途 |
 |---|---|
 | `host.tlsSan` | `[]`。Kubernetes API server 憑證額外加入的 DNS 名稱或 IP 位址，只用於 server |
 | `host.requireEncryptedDisk` | `false`。設為 `true` 時，根目錄或資料目錄不在加密裝置上，`apply` 就停下 |
-| `rke2Version` | installer 釘選的版本。要換版本時填，例如 `v1.37.1+rke2r1` |
-
-預設版本的檔案用編譯進 installer 的 digest 驗證。換成其他版本時，只能用該 release 頁面自己的 checksum 清單驗證，`plan` 會標示這是未支援的版本，Catalog 測過的 Kubernetes 版本也可能對不上。
 
 ### `sources`
 
@@ -136,13 +148,13 @@ sources:
 | 欄位 | 接受內容 |
 |---|---|
 | `catalog` | 本機 `index.json` |
-| `imageArchives` | `docker save` 產生的封存檔路徑陣列，RKE2 啟動時匯入 |
+| `imageArchives` | `docker save` 產生的封存檔路徑陣列，K3s 或 RKE2 啟動時匯入 |
 | `identityImage` | Zeabur Identity 映像檔參照 |
 | `identityctl` | 本機 `zeabur-identityctl` 執行檔 |
 | `zeaburImage` | Zeabur 映像檔參照 |
 | `zeaburChart` | Helm chart 目錄或封裝好的 `.tgz` |
 
-從 `imageArchives` 拿掉的檔案，下次 `apply` 時也會從 RKE2 的匯入目錄移除。這份清單放的是已經在主機上的封存檔，和私有 registry 的存取設定無關。
+從 `imageArchives` 拿掉的檔案，下次 `apply` 時也會從 K3s 或 RKE2 的匯入目錄移除。這份清單放的是已經在主機上的封存檔，和私有 registry 的存取設定無關。
 
 ## 自己用的檔案
 
@@ -155,7 +167,7 @@ host:
   tlsSan: [solo.example.com]
 ```
 
-同一份檔案只能再放下表的欄位，`preset`、`profile`、`access`、`zeabur`、`rke2Version` 和 `join` 都不接受。
+同一份檔案只能再放下表的欄位，`preset`、`profile`、`access`、`zeabur`、`distribution`、`k3sVersion`、`rke2Version` 和 `join` 都不接受。
 
 | 欄位 | 預設與用途 |
 |---|---|
@@ -172,26 +184,28 @@ host:
 
 ## 加入既有叢集的檔案
 
-頂層有 `join` 時，installer 把這台機器當成要加入的新節點，只安裝 RKE2。同一份檔案只能再放 `rke2Version`、`host` 和 `sources.imageArchives`，不能放 `preset`、`access` 這些建立叢集的欄位。
+頂層有 `join` 時，installer 把這台機器當成要加入的新節點，只安裝 K3s 或 RKE2。同一份檔案只能再放 `distribution`、對應的版本欄位（`k3sVersion` 或 `rke2Version`）、`host` 和 `sources.imageArchives`，不能放 `preset`、`access` 這些建立叢集的欄位。
 
 在既有 server 執行 `zeabur-installer node add` 取得完整 YAML，存到新主機。權杖和 server 設定都在裡面，不用自己拼。
 
 | 欄位 | 預設與規則 |
 |---|---|
-| `join.server` | 必填。server 的 supervisor，例如 `https://10.0.0.5:9345` |
-| `join.role` | `worker`。也接受 `server` |
+| `distribution` | `k3s`。叢集用的種類，照 `node add` 印出的填 |
+| `join.server` | 必填。server 的位址：K3s 用 `6443`，例如 `https://10.0.0.5:6443`；RKE2 用 `9345` |
+| `join.role` | `worker`。`server` 只能用在 RKE2 |
 | `join.token` | 和 `tokenFile` 擇一。直接寫權杖時，設定檔權限要是 `0600` |
 | `join.tokenFile` | 和 `token` 擇一。權限 `0600` 的權杖檔案 |
 | `join.serverConfig` | `server` 必填，worker 不接受。照抄 `node add --role server` 印出的 `disable` 和 `identity` |
-| `join.longhorn` | `false`。`true` 時在 RKE2 啟動前先裝好 Longhorn 需要的主機套件 |
+| `join.longhorn` | `false`。`true` 時在 K3s 或 RKE2 啟動前先裝好 Longhorn 需要的主機套件 |
 
-worker 不接受 `host.tlsSan`。`rke2Version` 要和叢集一致。worker 的 bootstrap token 不能用來加入 server，要用 `node add --role server` 產生的設定。
+worker 不接受 `host.tlsSan`。`distribution` 和版本要和叢集一致。worker 的 bootstrap token 不能用來加入 server，要用 `node add --role server` 產生的設定。
 
 ## 設定無法使用時
 
 - unknown field：檢查欄位大小寫，刪掉拼錯或放錯層級的 key。
 - 主機名稱無效：拿掉 `https://` 和路徑，`identity` 和 `zeabur` 要用不同名稱。
 - 缺少必填 input：依 `plan` 列出的元件和欄位補上，再跑一次 `plan`。
+- K3s 設了 `join.role: server`：K3s 只跑一台用 SQLite 的伺服器，只收工作節點。要讓控制平面在少一台伺服器時繼續運作，改在三台伺服器上安裝 RKE2（`distribution: rke2`）。
 - 權杖檔案權限不對：在新主機執行 `chmod 0600`。含權杖的設定檔不要放進 Git 儲存庫。
 
 改完設定檔先跑 `plan`。要移除產品、清理主機檔案，見[移除 Zeabur](../leave/uninstall.mdx)。

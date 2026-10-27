@@ -1,7 +1,7 @@
 ---
 title: 添加与维护节点
 description: 用 zeabur-installer 添加新节点，停止调度，用 kubectl 迁移副本和移除节点，并在需要时安全地打开节点终端。
-source: "240d4e44db68"
+source: "cdb7a13a9dd3"
 ---
 
 在 **集群** → **概览** 的 **节点** 中查看各台主机的状态。要增加一台主机运行服务，见[添加节点](#添加节点)。主机需要停机维护时，在该节点的操作菜单中选择 **停止调度**，需要迁移副本时再用 kubectl 的 `drain`。
@@ -10,20 +10,20 @@ source: "240d4e44db68"
 
 ## 开始之前
 
-- 只有用 Zeabur Installer（RKE2）安装的集群才能用 `zeabur-installer node add` 添加节点。其他集群使用原来的安装工具。
+- Zeabur Installer 创建的 K3s 和 RKE2 集群都能用 `zeabur-installer node add` 添加节点。K3s 只能添加工作节点；RKE2 可以添加工作节点和服务器，有三台服务器时坏一台控制平面也不会停。其他集群使用原来的安装工具。
 - 准备一台能以 root 身份操作的新 VM，以及安装第一台服务器时使用的同一个 `zeabur-installer` 可执行文件。
 - 所有节点应位于同一家云服务商的同一区域，可以分布在该区域内的不同可用区。跨服务商或跨区域时，延迟会拖慢 etcd、Kubernetes API 和存储。
 - 停止调度和恢复调度需要修改 Node 的权限。`drain` 和 `delete node` 在 kubectl 终端中运行，使用的是你自己的权限。节点终端需要用管理员账号打开。
 
 节点之间的防火墙需要开放：
 
-| 方向 | 端口 |
-| --- | --- |
-| 连接到 RKE2 服务器 | TCP 9345、6443 |
-| 所有节点之间 | TCP 10250、9099，UDP 8472（Canal VXLAN） |
-| RKE2 服务器之间 | TCP 2379–2381 |
+| 方向 | K3s | RKE2 |
+| --- | --- | --- |
+| 连接到服务器 | TCP 6443 | TCP 9345、6443 |
+| 所有节点之间 | TCP 10250，UDP 4789（Calico VXLAN） | TCP 10250、9099，UDP 8472（Canal VXLAN） |
+| 服务器之间 | 不需要 | TCP 2379–2381 |
 
-UDP 8472 只对集群节点开放，不要对互联网开放。Installer 的连接检查无法检测 UDP 8472；如果防火墙拦截了该端口，不同节点上的副本就无法互相连接。
+UDP 端口只对集群节点开放，不要对互联网开放。Installer 的连接检查无法检测 UDP；如果防火墙拦截了该端口，不同节点上的副本就无法互相连接。
 
 ## 添加节点
 
@@ -42,7 +42,7 @@ sudo zeabur-installer node add --ttl 1h
 
 命令会输出需要在新 VM 上运行的内容：写入 `/etc/zeabur-installer/config.yaml` 的配置，以及 `plan` 和 `apply`。输出中的令牌等同于密码，不要粘贴到公开场合。
 
-添加工作节点使用会过期的 bootstrap 令牌，`--ttl` 默认为 1 小时，最长 24 小时。要添加服务器（控制平面），加上 `--role server`，使用集群的 server 令牌，该令牌不会过期。如果新 VM 无法连接服务器的内部地址，用 `--address` 指定它能访问的地址。
+添加工作节点使用会过期的 bootstrap 令牌，`--ttl` 默认为 1 小时，最长 24 小时。在 RKE2 上要添加服务器（控制平面），加上 `--role server`，使用集群的 server 令牌，该令牌不会过期。K3s 只运行一台使用 SQLite 的服务器，因此会拒绝 `--role server`。如果新 VM 无法连接服务器的内部地址，用 `--address` 指定它能访问的地址。
 
 集群运行 Longhorn 或 zot 镜像时，输出会自动包含相应配置。如果配置文件中仍是 `profile: single-node`，输出会提醒你改为 `multi-node` 并重新运行 `apply`。
 
@@ -58,7 +58,7 @@ zeabur-installer plan
 zeabur-installer apply
 ```
 
-`plan` 只列出网络检查和警告，不做任何修改。如果有警告，先处理再继续。`apply` 会安装 RKE2，等待节点就绪后才结束。
+`plan` 只列出网络检查和警告，不做任何修改。如果有警告，先处理再继续。`apply` 会安装 K3s agent 或 RKE2，等待节点就绪后才结束。
 
 </Step>
 <Step>
@@ -67,12 +67,18 @@ zeabur-installer apply
 
 ```sh
 sudo zeabur-installer node sync
+# K3s
+sudo k3s kubectl get nodes -o wide
+# RKE2
 sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get nodes -o wide
 ```
 
 `node sync` 会把新节点的地址加入 Installer 创建的基准网络策略。新加入的服务器会自动同步。工作节点加入后，必须在服务器上手动运行一次；在此之前，网络策略会拦截新节点的流量。看到新节点处于 `Ready` 状态后，撤销工作节点的令牌，将 `<ID>` 替换为 `node add` 输出最后一行中的 ID：
 
 ```sh
+# K3s
+sudo k3s kubectl -n kube-system delete secret bootstrap-token-<ID>
+# RKE2
 sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
   -n kube-system delete secret bootstrap-token-<ID>
 ```
@@ -82,7 +88,7 @@ sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml 
 </Step>
 </Steps>
 
-etcd 需要过半数的服务器才能运行。要在少一台服务器时继续运行，至少需要三台服务器。如果只有两台，任意一台停机都会导致整个集群停止运行。
+RKE2 的 etcd 需要过半数的服务器才能运行。要在少一台服务器时继续运行，至少需要三台服务器。如果只有两台，任意一台停机都会导致整个集群停止运行。K3s 集群只有一台服务器，它停机时控制平面会停止，等它恢复后才能继续。
 
 ## 节点停机维护
 
@@ -156,14 +162,15 @@ kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
 kubectl delete node <node>
 ```
 
-接着登录已移除的 VM，以 `root` 身份运行：
+接着登录已移除的 VM，以 `root` 身份运行集群对应的卸载脚本，再运行 `--purge`：
 
 ```sh
-/usr/local/bin/rke2-uninstall.sh
+/usr/local/bin/k3s-agent-uninstall.sh   # K3s
+/usr/local/bin/rke2-uninstall.sh        # RKE2
 zeabur-installer uninstall --purge
 ```
 
-**删除 Kubernetes 节点后，还需要完成 VM 上的卸载。** 在卸载前，只要 RKE2 重启，该 VM 就会再次加入集群。
+**删除 Kubernetes 节点后，还需要完成 VM 上的卸载。** 在卸载前，只要 `k3s-agent` 或 RKE2 重启，该 VM 就会再次加入集群。
 
 `/var/lib/zeabur/storage` 下的卷会保留在 VM 上。确认不再需要这些数据后，再手动删除。
 
@@ -189,8 +196,8 @@ sudo zeabur-installer node sync
 
 ## 常见问题
 
-- 加入时无法连接服务器：确认新 VM 能访问 `node add` 输出的服务器地址的 TCP 9345、6443 端口，以及上表中的其他端口。
-- 新节点已就绪，但不同节点上的服务无法互相连接：检查 UDP 8472，以及网络策略是否已放行新节点。
+- 加入时无法连接服务器：确认新 VM 能访问 `node add` 输出的服务器地址。K3s 需要 TCP 6443，RKE2 需要 TCP 9345 和 6443，上表中的其他端口也要开放。
+- 新节点已就绪，但不同节点上的服务无法互相连接：检查 UDP 4789（K3s）或 8472（RKE2），以及网络策略是否已放行新节点。
 - `drain` 一直没有进展：它在等待 PodDisruptionBudget 放行，或停在不属于任何控制器的副本上。用 `kubectl get pdb -A` 查看哪个预算阻止了驱逐，处理后再运行一次。
 - 副本在新节点上处于 `Pending` 状态：它使用的是旧节点的 `local-path` 卷，需要等待旧节点恢复运行。
 - 终端副本 **无法启动**：查看该副本的事件，常见原因是镜像下载失败。

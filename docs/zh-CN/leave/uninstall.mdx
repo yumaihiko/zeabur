@@ -1,7 +1,7 @@
 ---
 title: 移除 Zeabur，保留服务
 description: 移除 Zeabur 管理界面，保留应用、数据和仍在使用的 Kubernetes 组件。
-source: "cf3a6916a6f2"
+source: "4ad7bec6c913"
 ---
 
 只移除 Zeabur 的 chart 或运行 `zeabur-installer uninstall zeabur`，现有服务会留在 Kubernetes，继续由原生控制器和 operator 运行。保留 ingress、证书、存储和备份等依赖组件后，就能改用 kubectl、Helm 或原来的 GitOps 工具管理服务。
@@ -12,7 +12,7 @@ source: "cf3a6916a6f2"
 
 需要能管理 Zeabur 安装对象的 kubeconfig。如果通过 installer 安装，还需要原服务器的 root 权限。先确认移除管理界面后，仍有不依赖该界面的集群访问方式。
 
-1. 用 kubectl 连接目标集群，确认 context 和当前权限。installer 主机可使用 root 保管的 `/etc/rancher/rke2/rke2.yaml`，不要把这份管理员凭证交给普通成员。
+1. 用 kubectl 连接目标集群，确认 context 和当前权限。installer 主机可使用 root 保管的 `/etc/rancher/k3s/k3s.yaml`（K3s）或 `/etc/rancher/rke2/rke2.yaml`（RKE2），不要把这份管理员凭证交给普通成员。
 2. 记下 Zeabur 的安装方式、release 名称和 Namespace。下文 Helm 示例使用 release `zeabur`、Namespace `zeabur`，自行安装时要替换为实际名称。
 3. 关闭已打开的容器终端、kubectl 终端和节点终端，并应用或放弃已检查的变更。移除后，这些连接会中断，尚未应用的变更也会失效。
 4. 如果成员仍需要以 Zeabur Identity 身份操作，保留 Identity，并提前安排[替代 RBAC 和准入策略](#成员权限和准入策略)。Chart 提供的成员角色和 Zeabur 创建的成员 binding 都会在移除时删除。
@@ -30,9 +30,12 @@ kubectl get deployments,statefulsets,daemonsets,cronjobs,services,ingresses,pvc 
 
 将 `shop` 替换为要保留的项目。记下重要服务的公开网址，移除前后都打开一次。数据库和对象存储也要用现有客户端确认能否连接。
 
-如果使用 installer，且主机上没有另行安装 kubectl，可在该主机上使用以下完整路径运行后文的 kubectl 操作：
+如果使用 installer，且主机上没有另行安装 kubectl，可在该主机上这样运行后文的 kubectl 操作：
 
 ```sh
+# K3s
+sudo k3s kubectl get nodes
+# RKE2
 sudo /var/lib/rancher/rke2/bin/kubectl \
   --kubeconfig /etc/rancher/rke2/rke2.yaml get nodes
 ```
@@ -58,7 +61,7 @@ sudo /var/lib/rancher/rke2/bin/kubectl \
 维护页和自定义错误页在项目内有自己的工作负载、Service 和配置。移除 Zeabur 不会把维护中的域名自动切回应用。需要恢复流量时，先按[维护模式](../configure/maintenance.mdx)完成切换。
 
 <Callout type="warn">
-保留服务时，不要运行 `rke2-uninstall.sh`，不要删除项目 Namespace、PVC 或 operator 的 CRD，也不要同时卸载 ingress、cert-manager、存储和数据库 operator。这些操作会停止服务，或移除数据和后续运维所需的组件。
+保留服务时，不要运行 `k3s-uninstall.sh` 或 `rke2-uninstall.sh`，不要删除项目 Namespace、PVC 或 operator 的 CRD，也不要同时卸载 ingress、cert-manager、存储和数据库 operator。这些操作会停止服务，或移除数据和后续运维所需的组件。
 </Callout>
 
 ## 移除管理界面
@@ -75,7 +78,7 @@ sudo zeabur-installer \
   uninstall zeabur
 ```
 
-该命令会删除 `kube-system` 中的 `HelmChart zeabur`、`zeabur` Namespace，以及 Zeabur 创建的成员 RoleBinding 和 ClusterRoleBinding。RKE2、Zeabur Identity、Catalog 组件和项目 Namespace 都会保留。
+该命令会删除 `kube-system` 中的 `HelmChart zeabur`、`zeabur` Namespace，以及 Zeabur 创建的成员 RoleBinding 和 ClusterRoleBinding。K3s/RKE2、Zeabur Identity、Catalog 组件和项目 Namespace 都会保留。
 
 `zeabur` Namespace 内的 OAuth client 机密变量、变更令牌密钥、`zeabur-settings` 和其他对象会一起删除。如果曾把额外的工作负载放入此 Namespace，先迁出。需要保留集群显示名称或 metrics store 选择时，先记下配置。
 
@@ -183,15 +186,16 @@ sudo zeabur-installer uninstall identity
 
 ## 不再使用整个集群时
 
-要保留服务，就停在前面的流程。确定不再使用整个 RKE2 集群，且重要数据已备份、还原所需凭证已另行保存后，才在主机上运行：
+要保留服务，就停在前面的流程。确定不再使用整个 K3s 或 RKE2 集群，且重要数据已备份、还原所需凭证已另行保存后，才在主机上运行：
 
 ```sh
-sudo /usr/local/bin/rke2-uninstall.sh
+sudo /usr/local/bin/k3s-uninstall.sh    # K3s
+sudo /usr/local/bin/rke2-uninstall.sh   # RKE2
 sudo zeabur-installer uninstall
 sudo zeabur-installer uninstall --purge
 ```
 
-RKE2 脚本会移除 Kubernetes 及其数据，所有依赖它的工作负载都会停止。接下来的 `uninstall` 会列出 installer 残留文件，`--purge` 会清除下载缓存、本地 CA 副本、配置，以及 installer 为 Longhorn 写入的 module／multipath 配置文件。Longhorn 主机软件包会保留。
+K3s 或 RKE2 的脚本会移除 Kubernetes 及其数据，所有依赖它的工作负载都会停止。接下来的 `uninstall` 会列出 installer 残留文件，`--purge` 会清除下载缓存、本地 CA 副本、配置，以及 installer 为 Longhorn 写入的 module／multipath 配置文件。Longhorn 主机软件包会保留。
 
 `--purge` 不会删除 `/var/lib/zeabur/storage` 中的 local-path 数据和 `/var/lib/longhorn` 中的 replica 数据。即使保留原始数据目录，也仍需要对应的 PV／PVC 和存储系统信息，才能重新接入服务。确认已有可还原的备份后，再决定如何处理这些目录。
 
@@ -199,7 +203,7 @@ RKE2 脚本会移除 Kubernetes 及其数据，所有依赖它的工作负载都
 
 ## 移除未完成时
 
-- Zeabur 再次出现：检查 Flux、Argo CD、RKE2 HelmChart 或自动化中是否仍有安装来源。先移除来源，再用原管理工具卸载。
+- Zeabur 再次出现：检查 Flux、Argo CD、K3s/RKE2 HelmChart 或自动化中是否仍有安装来源。先移除来源，再用原管理工具卸载。
 - Namespace 卡在 `Terminating`：查看 Namespace 状态和残留对象的 finalizers，先恢复对应控制器或完成其清理，不要直接移除存储或数据库 finalizer。
 - 服务网址在移除后失效：对比 Ingress／HTTPRoute、ingress controller、Gateway、证书和后端副本，确认没有一起删除共同依赖的组件。
 - 成员无法操作，但服务正常：chart 的成员角色和 binding 已移除，按替代 RBAC 重新授权。

@@ -9,7 +9,7 @@ For personal use, the installer can install KubeSolo instead. The server runs on
 
 | | Personal use | Team use |
 | --- | --- | --- |
-| Kubernetes | KubeSolo | RKE2 |
+| Kubernetes | KubeSolo | K3s or RKE2 |
 | Memory | 1.5 GiB or more | 4 GiB or more |
 | How to open Zeabur | Run `zeaburctl ui` on your own computer | Open the server's Zeabur URL and sign in with a passkey |
 | Members and permissions | None. Anyone with the kubeconfig can control the entire cluster | Zeabur Identity accounts and project roles |
@@ -24,7 +24,7 @@ Databases aren't available in the personal installation either. When KubeSolo cr
 
 The personal installation also has no members or permissions. For kube-apiserver to recognize sign-in credentials issued by Zeabur Identity, it needs to load configuration through `--authentication-config`. KubeSolo doesn't currently expose this setting ([portainer/kubesolo#231](https://github.com/portainer/kubesolo/issues/231)). You can only connect with the kubeconfig from the server, and anyone who has it can control the entire cluster. This isn't suitable for sharing among multiple people or teams.
 
-When the server has less than 2600 MiB of available memory, the installer only accepts personal use. There's no direct upgrade path to team use. To switch later, reinstall with RKE2 on a server with 4 GiB of memory.
+When the server reports less than 2400 MiB of memory, the installer only accepts personal use. There's no direct upgrade path to team use. To switch later, reinstall with K3s or RKE2 on a server with 4 GiB of memory.
 
 ## Prepare the machine
 
@@ -33,7 +33,7 @@ When the server has less than 2600 MiB of available memory, the installer only a
 - At least 1.5 GiB of memory.
 - At least 10 GiB of free space in `/var/lib/kubesolo`.
 - TCP ports 80, 443, 6443, 10250, and 10443 available.
-- No existing installation of RKE2, k3s, kubeadm, k0s, or MicroK8s.
+- No existing installation of RKE2, K3s, kubeadm, k0s, or MicroK8s.
 - Docker must not be installed or running. Docker drops forwarded packets by default, which prevents replicas from reaching external networks or obtaining certificates. The installer stops if it finds Docker (a binary, service, or socket) or a firewall forwarding policy set to DROP. Stop and remove Docker before installing.
 
 Your own computer needs [`zeaburctl`](../reference/zeaburctl.mdx) and must be able to reach the server on TCP port 6443.
@@ -42,13 +42,13 @@ The installer pins the versions of KubeSolo, helm-controller, and kubectl, and c
 
 ## Install with the web interface
 
-Follow [Install Zeabur on a server](quickstart.mdx#open-the-installer) to open the installer. In “Check server,” set “Who is this for?” to “Personal use.” This removes the “Connection method” step.
+Follow [Install Zeabur on a server](quickstart.mdx#open-the-installer) to open the installer. In “Check server,” set “Who is it for” to “Just me.” This removes the “Connection method” step.
 
-![“Personal use” selected under “Who is this for?” in “Check server,” with only four steps remaining at the top](https://oss.zeabur.com/shots/zeabur/en/light/installer-personal-choose.avif)
+![“Just me” selected under “Who is it for” in “Check server,” with only four steps remaining at the top](https://oss.zeabur.com/shots/zeabur/en/light/installer-personal-choose.avif)
 
-If the server has less than 2600 MiB of available memory, “Team use” is disabled. Only “Personal use” is available.
+If the server reports less than 2400 MiB of memory, “A team” is disabled. Only “Just me” is available.
 
-![On a server with only 1.5 GiB of memory, “Team use” is disabled with an explanation that the server doesn't have enough memory](https://oss.zeabur.com/shots/zeabur/en/light/installer-personal-small.avif)
+![On a server with only 1.5 GiB of memory, “A team” is disabled with an explanation that the server doesn't have enough memory](https://oss.zeabur.com/shots/zeabur/en/light/installer-personal-small.avif)
 
 Fix any failed checks first. If Docker is installed on the server, the “Docker” check shows that it needs attention. Stop and remove Docker, then click “Check again.” Until all checks pass, you can't click “Install” in the “Confirm” step.
 
