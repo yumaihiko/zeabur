@@ -32,7 +32,7 @@ test("a claim's files are listed, previewed, downloaded and changed after a conf
 }, info) => {
   await openFiles(page, "keeper")
   const rows = volumes(page)
-  await expect(rows.getByRole("row", { name: /\/data/ })).toContainText("Claim keeper-data")
+  await expect(rows.getByRole("row", { name: /\/data/ })).toContainText("Disk keeper-data")
   await expect(rows.getByRole("row", { name: /\/etc\/keeper\b(?!-)/ })).toContainText("Read-only")
   await expect(rows.getByRole("row", { name: /\/scratch/ })).toContainText("Lost when replaced")
 

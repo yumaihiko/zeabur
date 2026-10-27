@@ -75,27 +75,36 @@ const properties = (seen: Frame[]) =>
 const longest = (seen: Frame[]) =>
   Math.max(0, ...seen.flatMap((f) => f.animations.map((a) => a.duration)))
 
-/** Every animation the document runs from just before `act` until `ms` after it, view transitions included. */
-async function documentAnimations(page: Page, act: () => Promise<void>, ms = 700) {
-  await page.evaluate((ms) => {
-    const seen = new Set<string>()
-    const w = window as unknown as { documentSeen: Set<string>; documentDone: boolean }
-    w.documentSeen = seen
-    w.documentDone = false
-    const start = performance.now()
-    const tick = () => {
-      for (const animation of document.getAnimations()) {
-        const effect = animation.effect as KeyframeEffect | null
-        if (!(animation instanceof CSSAnimation) || !effect?.pseudoElement) continue
-        seen.add(
-          `${effect.pseudoElement} ${animation.animationName} ${effect.getTiming().duration}`,
-        )
+/** Every animation the document runs from just before `act`, view transitions included: until `ms`
+ * after the first one starts, or `quiet` ms when none does. A page move starts its transition only
+ * once the next page's data is in, which in a busy cluster took up to a second after the click. */
+async function documentAnimations(page: Page, act: () => Promise<void>, ms = 700, quiet = 3000) {
+  await page.evaluate(
+    ({ ms, quiet }) => {
+      const seen = new Set<string>()
+      const w = window as unknown as { documentSeen: Set<string>; documentDone: boolean }
+      w.documentSeen = seen
+      w.documentDone = false
+      const start = performance.now()
+      let first: number | undefined
+      const tick = () => {
+        for (const animation of document.getAnimations()) {
+          const effect = animation.effect as KeyframeEffect | null
+          if (!(animation instanceof CSSAnimation) || !effect?.pseudoElement) continue
+          first ??= performance.now()
+          seen.add(
+            `${effect.pseudoElement} ${animation.animationName} ${effect.getTiming().duration}`,
+          )
+        }
+        const now = performance.now()
+        const done = first === undefined ? now - start >= quiet : now - first >= ms
+        if (done) w.documentDone = true
+        else requestAnimationFrame(tick)
       }
-      if (performance.now() - start < ms) requestAnimationFrame(tick)
-      else w.documentDone = true
-    }
-    requestAnimationFrame(tick)
-  }, ms)
+      requestAnimationFrame(tick)
+    },
+    { ms, quiet },
+  )
   await act()
   await page.waitForFunction(() => (window as unknown as { documentDone: boolean }).documentDone)
   return page.evaluate(() => [...(window as unknown as { documentSeen: Set<string> }).documentSeen])

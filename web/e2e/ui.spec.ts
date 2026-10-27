@@ -899,7 +899,7 @@ test("the project's suggestions list what it misses, and a fix is planned and ap
     page,
     `Set CPU and memory for ${editor}`,
     "Save resources",
-    /Reserved CPU \S+, Reserved memory \S+, Maximum memory \S+\./,
+    /Reserved CPU [\d.]+ cores?, Reserved memory [\d.]+ \S+, Maximum memory [\d.]+ \S+\./,
   )
   await expect(limits).toHaveCount(0, { timeout: 15_000 })
 })
@@ -1080,7 +1080,7 @@ test("a Deployment and a Service are created from templates and drawn on the map
   await page.getByRole("link", { name: "Create", exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`${project}/create$`))
   await expect(page.locator(".cm-content")).toContainText("kind: Deployment")
-  await page.getByRole("button", { name: "Add a template" }).click()
+  await page.getByRole("button", { name: "Insert example" }).click()
   await page.getByRole("menuitem", { name: "Service", exact: true }).click()
   await expect(page.getByText("2 documents")).toBeVisible()
   await page.getByRole("button", { name: "Review changes", exact: true }).click()

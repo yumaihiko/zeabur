@@ -38,7 +38,7 @@ function history(state: string, extra: object = {}) {
   return {
     id: `projects/${namespace}/services/deployment/${service}/history`,
     state,
-    source: { service: STORE },
+    source: { service: STORE, via: "service-proxy" },
     range: "1h",
     step: 15,
     times: state === "available" ? times : [],
@@ -75,7 +75,7 @@ test("live usage per replica against what it reserves, and a replica without a s
   const panel = page.getByRole("region", { name: "Current usage" })
   await expect(panel.getByText("Live")).toBeVisible()
   const row = panel.getByRole("row").filter({ hasText: pod })
-  await expect(row).toContainText("42m")
+  await expect(row).toContainText("0.042 cores")
   await expect(row).toContainText("120 MiB")
 })
 
