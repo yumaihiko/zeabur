@@ -225,6 +225,8 @@ export const en = {
   "components.list": "Write a list: [a, b].",
   "components.secret": "Saved to a file only root can read, never in the configuration.",
   "components.incomplete": (names: string) => `Fill in the settings of ${names} to continue.`,
+  "note.volume-backup/k8up": "Backs up volumes to S3. Database backups don't need it.",
+  "note.volume-backup/velero": "Backs up the whole cluster to S3. Database backups don't need it.",
   "velero.endpoint": "Endpoint",
   "velero.endpointHint":
     "The S3 address of your storage. For AWS S3, https://s3.<region>.amazonaws.com.",
@@ -480,6 +482,11 @@ export const en = {
   "done.setup": "First administrator",
   "done.setupHint": "This link works once, within 24 hours.",
   "done.register": "Register a passkey",
+  "done.tipSaved": "The passkey is saved on this computer or on your phone.",
+  "done.tipSecond": "Register a second passkey too, in case you lose the first.",
+  "done.tipEveryday":
+    "Open a separate everyday account from Members, and keep the admin account for setup.",
+  "done.tipExpired": "Link expired? Run this on this server for a new one.",
   "done.open": "Open Zeabur",
   "done.zeabur": "Zeabur",
   "done.identity": "Sign-in",

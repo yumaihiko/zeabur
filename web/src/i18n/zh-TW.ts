@@ -1984,8 +1984,20 @@ export const zhTW: Messages = {
   "clusterBackups.verdict.running": "正在備份。",
   "clusterBackups.verdict.ok": "備份照排程執行。",
   "clusterBackups.lastGood": "上一次完整備份",
-  "clusterBackups.databasesNote":
-    "資料庫（PostgreSQL、MongoDB）有自己的備份，在各資料庫的「備份」分頁設定。這裡的備份涵蓋其他磁碟區和所有 Kubernetes 物件。",
+  "clusterBackups.coverage.title": "各種資料的備份",
+  "clusterBackups.coverage.data": "資料",
+  "clusterBackups.coverage.method": "備份方式",
+  "clusterBackups.coverage.status": "狀態",
+  "clusterBackups.coverage.databases": "PostgreSQL、MongoDB",
+  "clusterBackups.coverage.databasesMethod":
+    "備份到 S3，不需要 K8up 或 Velero。在各資料庫的「備份」分頁設定。",
+  "clusterBackups.coverage.perDatabase": "在各資料庫裡看",
+  "clusterBackups.coverage.volumes": "磁碟區",
+  "clusterBackups.coverage.volumesMethod": "用 K8up 備份到 S3。在服務的設定裡開啟。",
+  "clusterBackups.coverage.project": "整個專案",
+  "clusterBackups.coverage.projectMethod": "用 Velero 備份到 S3，在下方設定。",
+  "clusterBackups.coverage.installed": (name) => `${name} 已安裝`,
+  "clusterBackups.coverage.install": (name) => `安裝 ${name}`,
   "clusterBackups.notInstalled": "備份需要 Velero",
   "clusterBackups.notInstalledBody":
     "Velero 依排程備份叢集：物件和磁碟區裡的檔案都存到 S3 相容儲存。先到「元件」安裝，再回來這裡設定。",
@@ -2711,7 +2723,8 @@ export const zhTW: Messages = {
   "db.backup.last": "上次備份",
   "db.backup.noRun": "還沒有備份",
   "db.backup.setUp": "設定備份",
-  "db.backup.setUpBody": "備份會存到你提供的 S3 相容儲存貯體。金鑰會存成這個專案的機密變數。",
+  "db.backup.setUpBody": "還沒有備份。設定 S3 位置後，這個資料庫會每天自動備份。",
+  "db.backup.getBucket": "沒有 S3 儲存貯體？用 Cloudflare R2 或 Backblaze B2 申請",
   "githubApp.title": "GitHub App",
   "githubApp.body":
     "設定好之後，專案成員可以直接挑 GitHub 儲存庫來部署，不用另外設定部署金鑰。推送後大約一分鐘內就會開始部署。",

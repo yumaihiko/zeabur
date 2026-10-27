@@ -1,12 +1,30 @@
 ---
 title: 登錄共用的 S3 備份目的地
 description: 登錄 S3 儲存位置供資料庫、K8up 與 Velero 備份選用，並了解金鑰複製與輪替的影響。
-source: "930472fbfe84"
+source: "93444605d69c"
 ---
 
 打開 **叢集** → **備份**，在上方的 **S3 目的地** 按 **新增目的地**。登錄一次後，資料庫、磁碟區和叢集的備份表單都能直接選它，不用每次重填端點和金鑰。
 
 還沒裝 Velero 也能登錄目的地。目的地只是讓表單選用的清單，排程和保留天數仍在各自的備份表單設定。
+
+## 取得 S3 儲存貯體
+
+還沒有的話，Cloudflare R2 和 Backblaze B2 都提供相容 S3 的儲存空間。建立私人的儲存貯體，備份放在叢集外面，叢集壞了也還在。
+
+### Cloudflare R2
+
+1. 在 Cloudflare 控制台打開 **R2 物件儲存**，按 **建立儲存貯體**，取個名字，例如 `zeabur-backups`。
+2. 建立 API 權杖，權限選 **物件讀取和寫入**，範圍限定在這個儲存貯體。
+3. 複製 **存取金鑰 ID** 和 **私密存取金鑰**。私密存取金鑰只會顯示一次。
+4. 端點是 `https://<帳號 ID>.r2.cloudflarestorage.com`，區域填 `auto`。
+
+### Backblaze B2
+
+1. 登入 Backblaze，打開 **Buckets**，按 **Create a Bucket**，保持 **Private**。
+2. 儲存貯體的詳細資料會列出 **Endpoint**，例如 `https://s3.us-west-004.backblazeb2.com`。區域是其中的 `us-west-004`。
+3. 打開 **Application Keys**，按 **Add a New Application Key**，限定在這個儲存貯體，權限選 **Read and Write**。
+4. 複製 `keyID`（存取金鑰 ID）和 `applicationKey`（私密存取金鑰）。`applicationKey` 只會顯示一次。
 
 ## 開始之前
 

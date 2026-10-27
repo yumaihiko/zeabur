@@ -20,6 +20,7 @@ import { ConnectServices } from "@/components/connect"
 import { InstallAlert } from "@/components/lazy-installer-sheet"
 import { CopyText } from "@/components/copy-text"
 import { useBackups } from "@/components/backups"
+import { DocsLink } from "@/components/docs-link"
 import { DatabaseState } from "@/components/databases"
 import {
   CardRow,
@@ -780,7 +781,10 @@ function SetUp({ project, database }: { project: string; database: Database }) {
     tried && problems.includes(problem) ? [t(`db.backup.problem.${problem}`)] : []
   return (
     <Section id="db-setup" title={t("db.backup.setUp")}>
-      <p className="text-sm text-muted-foreground">{t("db.backup.setUpBody")}</p>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-sm text-muted-foreground">{t("db.backup.setUpBody")}</p>
+        <DocsLink page="cluster/s3-destinations">{t("db.backup.getBucket")}</DocsLink>
+      </div>
       <form
         className="flex flex-col gap-4 rounded-xl border border-main bg-card p-5"
         onSubmit={(event) => {

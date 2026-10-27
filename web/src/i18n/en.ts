@@ -2150,8 +2150,20 @@ export const en = {
   "clusterBackups.verdict.running": "A backup is running.",
   "clusterBackups.verdict.ok": "Backups run on schedule.",
   "clusterBackups.lastGood": "Last complete backup",
-  "clusterBackups.databasesNote":
-    "Databases (PostgreSQL, MongoDB) are backed up on their own, from each database's Backups tab. These backups cover the other volumes and every Kubernetes object.",
+  "clusterBackups.coverage.title": "Backups by kind of data",
+  "clusterBackups.coverage.data": "Data",
+  "clusterBackups.coverage.method": "Backed up by",
+  "clusterBackups.coverage.status": "Status",
+  "clusterBackups.coverage.databases": "PostgreSQL, MongoDB",
+  "clusterBackups.coverage.databasesMethod":
+    "Database backups to S3. No K8up or Velero needed. Set up in each database's Backups tab.",
+  "clusterBackups.coverage.perDatabase": "Shown on each database",
+  "clusterBackups.coverage.volumes": "Volumes",
+  "clusterBackups.coverage.volumesMethod": "K8up, to S3. Turn on in the service's settings.",
+  "clusterBackups.coverage.project": "Whole project",
+  "clusterBackups.coverage.projectMethod": "Velero, to S3. Set up below.",
+  "clusterBackups.coverage.installed": (name: string) => `${name} installed`,
+  "clusterBackups.coverage.install": (name: string) => `Install ${name}`,
   "clusterBackups.notInstalled": "Backups need Velero",
   "clusterBackups.notInstalledBody":
     "Velero copies the cluster's objects and the files in its volumes to S3-compatible storage on a schedule. Install it from Components, then come back here to set it up.",
@@ -2955,7 +2967,8 @@ export const en = {
   "db.backup.noRun": "No backup yet",
   "db.backup.setUp": "Set up backups",
   "db.backup.setUpBody":
-    "Backups go to an S3-compatible bucket you provide. The keys are kept as a secret in this project.",
+    "No backups yet. Set an S3 location and this database is backed up every day.",
+  "db.backup.getBucket": "No S3 bucket yet? Get one from Cloudflare R2 or Backblaze B2",
   "githubApp.title": "GitHub App",
   "githubApp.body":
     "Once it is set up, project members pick a GitHub repository to deploy, with no deploy keys to set up. Each push starts deploying within about a minute.",

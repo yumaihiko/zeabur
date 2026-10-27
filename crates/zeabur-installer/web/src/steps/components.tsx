@@ -207,6 +207,7 @@ function ComponentRow({
   const id = useId()
   const disabled = !supported || needed
   const form = veleroForm(component)
+  const note = named(t, `note.${component.id}`, "")
   const asked = component.inputs.filter(
     (input) => !input.filled && !(form && veleroInputs.includes(input.name)),
   )
@@ -255,6 +256,7 @@ function ComponentRow({
             <CaretDownIcon aria-hidden="true" />
           </CollapsibleTrigger>
         </div>
+        {note ? <p className="ml-7.5 text-xs text-secondary">{note}</p> : null}
         <CollapsibleContent>
           <p className="mt-1 ml-7.5 text-sm text-secondary">{component.security}</p>
         </CollapsibleContent>

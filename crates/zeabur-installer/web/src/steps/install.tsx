@@ -62,6 +62,9 @@ function phases(t: Translate, plan: Plan | undefined, local: boolean): Phase[] {
 
 const foldAbove = 7
 
+/** Makes a new first-administrator link (docs: get-started/quickstart). */
+const SETUP_LINK_COMMAND = "zeabur-identityctl setup-link --username admin"
+
 type Cause = "memory" | "host" | "timeout" | "other"
 
 /** What the error line says went wrong, where it is recognisable. */
@@ -231,6 +234,19 @@ export function InstallStep({ wizard }: { wizard: Wizard }) {
                     {t("done.register")}
                     <ArrowSquareOutIcon aria-hidden="true" />
                   </a>
+                </div>
+                <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-secondary">
+                  <li>{t("done.tipSaved")}</li>
+                  <li>{t("done.tipSecond")}</li>
+                  <li>{t("done.tipEveryday")}</li>
+                </ul>
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-secondary">{t("done.tipExpired")}</p>
+                  <CopyInput
+                    value={SETUP_LINK_COMMAND}
+                    copyLabel={t("common.copy")}
+                    className="min-w-0"
+                  />
                 </div>
               </div>
             ) : (

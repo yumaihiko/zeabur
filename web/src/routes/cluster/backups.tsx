@@ -4,7 +4,6 @@ import { useMutation, useQuery, type UseQueryResult } from "@tanstack/react-quer
 import { Link } from "@tanstack/react-router"
 import { useId, useState, type ReactNode } from "react"
 import DownloadSimpleIcon from "~icons/ph/download-simple"
-import InfoIcon from "~icons/ph/info"
 import WarningIcon from "~icons/ph/warning"
 
 import { isStatus, type Schemas } from "@/api/client"
@@ -61,6 +60,7 @@ import {
   RestoreForm,
   RestoreList,
 } from "@/routes/cluster/backup-restore"
+import { BackupCoverage } from "@/routes/cluster/backup-coverage"
 import { ClusterFrame } from "@/routes/cluster/frame"
 import { Forbidden, type Role } from "@/routes/cluster/forbidden"
 import { S3DestinationsSection } from "@/routes/cluster/s3-destinations"
@@ -131,16 +131,6 @@ function BackupsBody({ backups }: { backups: UseQueryResult<Data> }) {
   return data ? <Installed data={data} /> : null
 }
 
-function DatabasesNote() {
-  const t = useT()
-  return (
-    <p className="flex items-start gap-1.5 type-meta text-muted-foreground">
-      <InfoIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-      <span>{t("clusterBackups.databasesNote")}</span>
-    </p>
-  )
-}
-
 function NotInstalled() {
   const t = useT()
   return (
@@ -163,7 +153,7 @@ function NotInstalled() {
           </Link>
         </EmptyContent>
       </Empty>
-      <DatabasesNote />
+      <BackupCoverage />
     </>
   )
 }
@@ -177,6 +167,7 @@ function Installed({ data }: { data: Data }) {
   return (
     <>
       <Verdict data={data} gate={gate} onPlan={open} />
+      <BackupCoverage data={data} />
       <S3DestinationsSection />
       <LocationSection data={data} gate={gate} onPlan={open} />
       <ScheduleSection data={data} gate={gate} onPlan={open} />
@@ -228,7 +219,6 @@ function Verdict({ data, gate, onPlan }: { data: Data; gate: Gate; onPlan: OnPla
           </GateTip>
         ) : null}
       </div>
-      <DatabasesNote />
     </div>
   )
 }

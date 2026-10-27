@@ -137,14 +137,14 @@ export const summaries: Record<string, Summary> = {
     "zh-CN": "检查网站和端口是否响应，无响应时发出告警。",
   },
   "volume-backup/k8up#d57241b0": {
-    en: "Backs up each project's volumes to S3-compatible storage.",
-    "zh-TW": "備份各專案的磁碟區，存到相容 S3 的儲存空間。",
-    "zh-CN": "把各项目的卷备份到兼容 S3 的存储。",
+    en: "Backs up each project's volumes to S3-compatible storage; database backups don't need it.",
+    "zh-TW": "備份各專案的磁碟區，存到相容 S3 的儲存空間，資料庫備份不需要它。",
+    "zh-CN": "把各项目的卷备份到兼容 S3 的存储，数据库备份不需要它。",
   },
   "volume-backup/velero#386a97cb": {
-    en: "Backs up and restores the whole cluster.",
-    "zh-TW": "備份並還原整個叢集。",
-    "zh-CN": "备份并还原整个集群。",
+    en: "Backs up and restores the whole cluster; database backups don't need it.",
+    "zh-TW": "備份並還原整個叢集，資料庫備份不需要它。",
+    "zh-CN": "备份并还原整个集群，数据库备份不需要它。",
   },
   "vulnerability-scanning/trivy-operator#10324322": {
     en: "Scans running images and settings for known vulnerabilities.",

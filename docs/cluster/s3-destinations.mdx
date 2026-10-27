@@ -7,6 +7,24 @@ Open **Cluster** → **Backups**, then click **Add destination** under **S3 dest
 
 You don't need Velero installed to register a destination. Destinations are a list of options for backup forms. Set schedules and retention periods in each backup form.
 
+## Get an S3 bucket
+
+If you don't have one yet, Cloudflare R2 and Backblaze B2 both offer S3-compatible storage. Create a private bucket. Backups then live outside the cluster and survive losing it.
+
+### Cloudflare R2
+
+1. In the Cloudflare dashboard, open **R2 object storage**, click **Create bucket**, and give it a name, for example `zeabur-backups`.
+2. Create an API token with **Object Read & Write** permission, limited to this bucket.
+3. Copy the **Access Key ID** and **Secret Access Key**. The secret access key is shown only once.
+4. The endpoint is `https://<account ID>.r2.cloudflarestorage.com`. Enter `auto` as the region.
+
+### Backblaze B2
+
+1. Sign in to Backblaze, open **Buckets**, click **Create a Bucket**, and keep it **Private**.
+2. The bucket's details list its **Endpoint**, for example `https://s3.us-west-004.backblazeb2.com`. The region is the `us-west-004` part.
+3. Open **Application Keys**, click **Add a New Application Key**, limit it to this bucket, and choose **Read and Write**.
+4. Copy the `keyID` (the access key ID) and the `applicationKey` (the secret access key). The `applicationKey` is shown only once.
+
 ## Before you begin
 
 - Have an S3-compatible bucket and its endpoint, region, access key ID, and secret access key ready.

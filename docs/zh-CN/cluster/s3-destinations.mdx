@@ -1,12 +1,30 @@
 ---
 title: 注册共享的 S3 备份目的地
 description: 注册 S3 存储位置，供数据库、K8up 和 Velero 备份选用，并了解密钥复制与轮换的影响。
-source: "930472fbfe84"
+source: "93444605d69c"
 ---
 
 打开 **集群** → **备份**，在上方的 **S3 目的地** 点击 **添加目的地**。注册一次后，数据库、卷和集群的备份表单都能直接选择它，不用每次重新填写端点和密钥。
 
 尚未安装 Velero 也能注册目的地。目的地只是供表单选择的列表，定时和保留天数仍在各自的备份表单中设置。
+
+## 获取 S3 存储桶
+
+还没有的话，Cloudflare R2 和 Backblaze B2 都提供兼容 S3 的存储。创建私有的存储桶，备份放在集群外面，集群出问题也还在。
+
+### Cloudflare R2
+
+1. 在 Cloudflare 控制台打开 **R2 对象存储**，点击 **创建存储桶**，取个名字，例如 `zeabur-backups`。
+2. 创建 API 令牌，权限选 **对象读取和写入**，范围限定在这个存储桶。
+3. 复制 **访问密钥 ID** 和 **秘密访问密钥**。秘密访问密钥只显示一次。
+4. 端点是 `https://<账户 ID>.r2.cloudflarestorage.com`，区域填 `auto`。
+
+### Backblaze B2
+
+1. 登录 Backblaze，打开 **Buckets**，点击 **Create a Bucket**，保持 **Private**。
+2. 存储桶的详细信息会列出 **Endpoint**，例如 `https://s3.us-west-004.backblazeb2.com`。区域是其中的 `us-west-004`。
+3. 打开 **Application Keys**，点击 **Add a New Application Key**，限定在这个存储桶，权限选 **Read and Write**。
+4. 复制 `keyID`（访问密钥 ID）和 `applicationKey`（秘密访问密钥）。`applicationKey` 只显示一次。
 
 ## 开始之前
 
