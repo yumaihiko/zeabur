@@ -714,7 +714,7 @@
   "facts": {
     "arch": "amd64",
     "hostname": "vps-1",
-    "memoryMib": 7936,
+    "memoryMib": 5836,
     "nodeIps": ["203.0.113.10"]
   },
   "personal": {

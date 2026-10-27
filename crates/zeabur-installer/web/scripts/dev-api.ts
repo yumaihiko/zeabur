@@ -6,7 +6,7 @@
 // `vite preview` serves the built pages with the same API, for scripts/docs-shots.sh. There,
 // ZEABUR_DEMO_INSTALL gives the whole log at the first read: `done`, `running` (stops before
 // Zeabur) or `fail`. ZEABUR_DEMO_HOST changes the server: `small` (1.5 GiB, so only a personal
-// install fits and Zeabur Builder is out of reach), `medium` (a 4 GiB VPS, where K3s is suggested)
+// install fits and Zeabur Builder is out of reach), `medium` (a 4 GiB VPS)
 // or `docker` (Docker found, which stops a personal install).
 import { readFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
@@ -53,11 +53,11 @@ const log = (fail: boolean, personal: boolean) => {
   return [...lines.slice(0, stop), `error: timed out after 5m0s waiting for ${waiting}`]
 }
 
-const memoryMib = host === "small" ? 1536 : host === "medium" ? 3793 : 7936
+const memoryMib = host === "small" ? 1536 : host === "medium" ? 3793 : 5836
 const buildsMinMib = 1800
 const builder = "builds/zeabur-builder"
 
-// The captured server has 7936 MiB; the plan and the state follow ZEABUR_DEMO_HOST.
+// The captured server has 5836 MiB; the plan and the state follow ZEABUR_DEMO_HOST.
 function state(): string {
   const value = JSON.parse(fixture("state.json"))
   value.facts.memoryMib = memoryMib
@@ -88,8 +88,8 @@ function personalPlan(body: string): string {
   value.plan.facts.memoryMib = memoryMib
   value.plan.memory.hostMib = memoryMib
   value.text = value.text
-    .replace(/ of 7936 /, ` of ${memoryMib} `)
-    .replace(/\(7936 MiB\)/, `(${memoryMib} MiB)`)
+    .replace(/ of 5836 /, ` of ${memoryMib} `)
+    .replace(/\(5836 MiB\)/, `(${memoryMib} MiB)`)
   if (memoryMib < buildsMinMib && (config.enable ?? []).includes(builder)) {
     value.plan.leftOut[builder] = `needs ${buildsMinMib} MiB of memory`
   }

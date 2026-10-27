@@ -22,6 +22,11 @@
   app: installer
   path: /
   wait: '[data-testid="step-next"]'
+- id: installer-distribution
+  app: installer
+  path: /
+  wait: 'section:has(p ~ [role="radiogroup"])'
+  clip: 'section:has(p ~ [role="radiogroup"])'
 - id: installer-access
   app: installer
   path: /

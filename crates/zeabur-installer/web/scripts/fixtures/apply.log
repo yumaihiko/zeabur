@@ -1,4 +1,4 @@
-K3s v1.36.5+k3s1 (pinned, checked against this installer's digests), CIS hardened, on vps-1 (amd64, 7936 MiB)
+K3s v1.36.5+k3s1 (pinned, checked against this installer's digests), CIS hardened, on vps-1 (amd64, 5836 MiB)
 Node addresses   203.0.113.10 (temporary IPv6 addresses left out)
 
 Components
@@ -26,7 +26,7 @@ Storage          local-path (default)
 Zeabur           https://zeabur.203.0.113.10.sslip.io (certificates from a CA made on this server)
 Zeabur Identity  https://login.203.0.113.10.sslip.io
 
-Memory at idle   about 1656 MiB of 7936 (K3s 1300, components 356)
+Memory at idle   about 1656 MiB of 5836 (K3s 1300, components 356)
 warning: Local access: login.203.0.113.10.sslip.io and zeabur.203.0.113.10.sslip.io must resolve to this server for browsers and for the server itself, through DNS (names such as <address>.sslip.io do) rather than a hosts file, which pods do not read.
 ==> Checking the host
     ok   root               running as root

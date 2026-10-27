@@ -1,7 +1,7 @@
 ---
 title: 在一台服务器上安装 Zeabur
 description: 通过 Zeabur Installer 的网页界面检查服务器、选择组件并安装，最后注册首位管理员的通行密钥。
-source: "6e0cbe632a84"
+source: "12780d07920c"
 ---
 
 通过 Zeabur Installer 的网页界面完成五个步骤，就能打开 Zeabur 并注册首位管理员的通行密钥。点击“安装”之前，installer 不会改动服务器。
@@ -53,7 +53,9 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 
 在“检查服务器”中确认主机名、架构、内存和地址，再处理未通过的检查项。在“给谁用”中选择“团队用”。内存不足 4 GiB 时只能选择“自己用”，参见[个人使用：在小型机器上安装](personal.mdx)。
 
-在“用哪一种 Kubernetes”中选标有“推荐”的那一项即可：
+在“用哪一种 Kubernetes”中选标有“推荐”的那一项即可。
+
+![“用哪一种 Kubernetes”在 5.7 GiB 的服务器上推荐 K3s，RKE2 在下面](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-distribution.avif)
 
 | | K3s | RKE2 |
 | --- | --- | --- |
@@ -63,7 +65,7 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 
 服务器较小时，只有打算以后用三台服务器跑控制平面才选 RKE2。两种都会做同样的加固配置，参见[安全](../reference/security.mdx#installer-的主机与下载权限)。
 
-![“检查服务器”显示主机信息与检查结果](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-host.avif)
+![“检查服务器”选了团队用和 K3s，下方是主机信息与检查结果](https://oss.zeabur.com/shots/zeabur/zh-CN/light/installer-host.avif)
 
 检查项包括管理员权限、systemd、时钟、Swap、为崩溃转储预留的内存、其他 Kubernetes、端口、磁盘空间和磁盘加密。先修正未通过的检查项，再点击“重新检查”。
 

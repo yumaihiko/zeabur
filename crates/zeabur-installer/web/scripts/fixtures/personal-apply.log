@@ -1,4 +1,4 @@
-KubeSolo v1.2.2 (Kubernetes 1.35, pinned), for one person, on vps-1 (amd64, 7936 MiB)
+KubeSolo v1.2.2 (Kubernetes 1.35, pinned), for one person, on vps-1 (amd64, 5836 MiB)
 helm-controller  v0.17.9 (its image pinned by digest; the Jobs' image checked by digest after they run)
 Node address     203.0.113.10; the kubeconfig names it
 
@@ -13,7 +13,7 @@ Components
 Storage          local-path (KubeSolo's local-path), the default
 Zeabur           none on the server: run `zeaburctl ui` on your computer
 
-Memory at idle   about 774 MiB of 7936 (KubeSolo 700, components 74)
+Memory at idle   about 774 MiB of 5836 (KubeSolo 700, components 74)
 warning: A personal install is for one person: whoever has the kubeconfig is cluster admin, and nothing isolates apps from each other (KubeSolo enforces no NetworkPolicy). For a team, install with RKE2 on a server with at least 4 GiB.
 ==> Checking the host
     ok   root               running as root

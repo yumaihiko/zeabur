@@ -1,7 +1,7 @@
 ---
 title: 在一台伺服器安裝 Zeabur
 description: 用 Zeabur Installer 的網頁介面檢查伺服器、選元件並安裝，最後註冊第一位管理員的通行密鑰。
-source: "6e0cbe632a84"
+source: "12780d07920c"
 ---
 
 用 Zeabur Installer 的網頁介面完成五個步驟，就能開啟 Zeabur 並註冊第一位管理員的通行密鑰。按下「安裝」之前，installer 不會改動伺服器。
@@ -53,7 +53,9 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 
 在「檢查伺服器」確認主機名稱、架構、記憶體和位址，再處理未通過的檢查項目。在「給誰用」選「團隊用」。記憶體不到 4 GiB 時只能選「自己用」，見[自己用：在小機器上安裝](personal.mdx)。
 
-在「用哪一種 Kubernetes」選標著「建議」的那一個就好：
+在「用哪一種 Kubernetes」選標著「建議」的那一個就好。
+
+![「用哪一種 Kubernetes」在 5.7 GiB 的伺服器上建議 K3s，RKE2 在下面](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-distribution.avif)
 
 | | K3s | RKE2 |
 | --- | --- | --- |
@@ -63,7 +65,7 @@ ssh -L 8085:127.0.0.1:8085 root@203.0.113.10
 
 小一點的伺服器，只有打算之後用三台伺服器跑控制平面時才選 RKE2。兩種都會做一樣的強化設定，見[安全性](../reference/security.mdx#installer-的主機與下載權限)。
 
-![「檢查伺服器」顯示主機資訊與檢查結果](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-host.avif)
+![「檢查伺服器」選了團隊用和 K3s，下方是主機資訊與檢查結果](https://oss.zeabur.com/shots/zeabur/zh-TW/light/installer-host.avif)
 
 檢查項目包括管理員權限、systemd、時鐘、Swap、當機傾印保留的記憶體、其他 Kubernetes、連接埠、磁碟空間和磁碟加密。未通過的項目要先修正，修正後按「重新檢查」。
 

@@ -52,7 +52,9 @@ Use the controls in the upper-right corner to change the language and theme. The
 
 Under “Check the server,” review the hostname, architecture, memory, and addresses, then resolve any failed checks. Under “Who is it for,” select “A team.” If the server has less than 4 GiB of memory, only “Just me” is available. See [Personal use: install on a small server](personal.mdx).
 
-Under “Kubernetes,” keep the option marked “Suggested”:
+Under “Kubernetes,” keep the option marked “Suggested.”
+
+![“Kubernetes” suggesting K3s on a 5.7 GiB server, with RKE2 below it](https://oss.zeabur.com/shots/zeabur/en/light/installer-distribution.avif)
 
 | | K3s | RKE2 |
 | --- | --- | --- |
@@ -62,7 +64,7 @@ Under “Kubernetes,” keep the option marked “Suggested”:
 
 Choose RKE2 on a smaller server only if you plan to run the control plane on three servers. Both are installed with the same hardening; see [Security](../reference/security.mdx#installer-host-and-download-permissions).
 
-![“Check the server” showing host information and check results](https://oss.zeabur.com/shots/zeabur/en/light/installer-host.avif)
+![“Check the server” with a team install and K3s chosen, host information and checks below](https://oss.zeabur.com/shots/zeabur/en/light/installer-host.avif)
 
 The installer checks admin rights, systemd, the clock, swap, memory reserved for crash dumps, other Kubernetes installations, ports, disk space, and disk encryption. Fix any failed checks, then click “Check again.”
 
