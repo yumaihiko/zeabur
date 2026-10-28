@@ -19,6 +19,11 @@
     # catalog's `release` output builds there, and a release build checks that bundle against the
     # signed release at that commit (scripts/release-pins.sh).
     catalog.url = "github:zeabur-oss/catalog";
+    # zeabur-oss-release (scripts/release.sh) and zeabur-oss-unsafe-report (scripts/ci.sh).
+    oss-release = {
+      url = "github:zeabur-oss/.github";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -102,8 +107,9 @@
               yq-go
               openssl
 
-              # Releases (scripts/release.sh, scripts/release-*.sh): keyless signing, copying
-              # image candidates to the registry, verifying the draft release.
+              # Releases (scripts/release.sh, scripts/release-*.sh)
+              inputs.oss-release.packages.${system}.zeabur-oss-release
+              inputs.oss-release.packages.${system}.zeabur-oss-unsafe-report
               cosign
               skopeo
               gh
