@@ -21,9 +21,9 @@ How a maintainer publishes a release. What a release contains and how to verify 
 4. Tag the merged commit and push the tag:
 
    ```sh
-   git fetch origin
+   git fetch git@github.com:zeabur-oss/zeabur.git main
    git tag -s v0.1.0 -m v0.1.0 <commit on main>
-   git push origin v0.1.0
+   git push git@github.com:zeabur-oss/zeabur.git v0.1.0
    ```
 
 5. Watch the **Release** run. When it succeeds, the image and the chart are in the registry (their
@@ -67,7 +67,7 @@ Never move a published tag and never replace a published asset or image tag:
 already exists.
 
 - **Before `publish`** (CI, a build, a smoke test): nothing was published. Fix it on `main`; if
-  the fix changes the release commit, delete the tag (`git push origin :refs/tags/v0.1.0`) and tag
+  the fix changes the release commit, delete the tag (`git push git@github.com:zeabur-oss/zeabur.git :refs/tags/v0.1.0`) and tag
   the new commit.
 - **In `verify`**, after `publish` succeeded: keep the draft, the tag and the registry
   artifacts. Fix the cause (a package that is still private, or the verification scripts on

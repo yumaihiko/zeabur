@@ -2290,8 +2290,8 @@ mod tests {
     #[test]
     fn ipv4_network_is_the_interface_subnet() {
         assert_eq!(
-            ipv4_network("10.211.55.168", Some(24)).as_deref(),
-            Some("10.211.55.0/24")
+            ipv4_network("192.0.2.168", Some(24)).as_deref(),
+            Some("192.0.2.0/24")
         );
         assert_eq!(
             ipv4_network("192.0.2.121", Some(20)).as_deref(),

@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0.0, a
 minor or patch release may break the API.
 
-## [Unreleased]
+## [0.1.0] - 2026-10-28
 
 ### Added
 
@@ -108,3 +108,5 @@ minor or patch release may break the API.
 - Supply-chain policy: OSI-approved licences, aws-lc-rs as the only cryptographic backend, a
   seven-day minimum age for new crate and package releases, and a reviewed allowlist for
   shipped `unsafe` and native code.
+
+[0.1.0]: https://github.com/zeabur-oss/zeabur/releases/tag/v0.1.0
