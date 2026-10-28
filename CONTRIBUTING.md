@@ -15,7 +15,7 @@ messages follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## Before you open a pull request
 
-Run what CI runs (the `check` jobs of `.github/workflows/ci.yml`), inside `nix develop`:
+Run what CI runs (the jobs of `scripts/ci.sh` that need no cluster), inside `nix develop`:
 
 ```sh
 cargo fmt --all --check && nixfmt --check flake.nix && shellcheck scripts/*.sh && actionlint
@@ -54,7 +54,10 @@ signs. `zeabur-catalog` embeds that bundle. To move the pin, run `nix flake upda
 an unpushed catalog, add `--override-input catalog git+file://$PWD/../catalog` to `nix develop`.
 A release checks the bundle against the catalog's signed release at that commit
 (`scripts/release-pins.sh`). The files vendored for the interface's styles are checked in
-[zeabur-oss/design-system](https://github.com/zeabur-oss/design-system).
+[zeabur-oss/design-system](https://github.com/zeabur-oss/design-system). That package itself is
+checked in here as `vendor/zeabur-design-system-<commit>.tgz`, packed from a commit of its
+repository, so that `bun ci` downloads nothing from GitHub; `scripts/bump-design-system.sh
+<commit>` moves it.
 
 Every CI job is a call to `scripts/ci.sh <job>` (`scripts/ci.sh --list` names them), which enters
 its dev shell itself; the workflow only checks out, installs Nix and restores caches. So a job runs
@@ -163,8 +166,8 @@ What to test, at which level, and what not to test: [docs/internal/testing.md](d
 - **Unit and integration tests** run anywhere: `cargo nextest run --workspace`. They include the
   language-neutral cases in [`fixtures/`](fixtures/README.md).
 - **Cluster tests** and **end-to-end tests** are `#[ignore]`d and require a disposable cluster
-  where you are cluster admin: the development cluster below, which the cluster jobs in
-  `.github/workflows/ci.yml` use too.
+  where you are cluster admin: the development cluster below, which the cluster jobs of
+  `scripts/ci.sh` use too.
 
 ### Development cluster
 
