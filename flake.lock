@@ -8,15 +8,15 @@
       "locked": {
         "lastModified": 1793045170,
         "narHash": "sha256-//AJ9qGmKKcDXarQ74gT1dTTJ7t84VGsCtycyOYB5eU=",
-        "ref": "refs/heads/main",
+        "owner": "zeabur-oss",
+        "repo": "catalog",
         "rev": "d6faeb25668ff73511a51508c70ed26068290fed",
-        "revCount": 4,
-        "type": "git",
-        "url": "ssh://git@github.com/zeabur-oss/catalog.git"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/zeabur-oss/catalog.git"
+        "owner": "zeabur-oss",
+        "repo": "catalog",
+        "type": "github"
       }
     },
     "fenix": {

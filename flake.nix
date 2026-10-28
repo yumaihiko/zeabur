@@ -18,8 +18,7 @@
     # Zeabur Catalog. flake.lock pins its commit: zeabur-catalog embeds the bundle that the
     # catalog's `release` output builds there, and a release build checks that bundle against the
     # signed release at that commit (scripts/release-pins.sh).
-    # git+ssh while the repository is private (VMs redirect it to their mirror); github: once public.
-    catalog.url = "git+ssh://git@github.com/zeabur-oss/catalog.git";
+    catalog.url = "github:zeabur-oss/catalog";
   };
 
   outputs =
