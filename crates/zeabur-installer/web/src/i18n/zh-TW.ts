@@ -192,7 +192,7 @@ export const zhTW: Messages = {
   "preset.secure": "強化",
   "presetHint.minimal": "Ingress、憑證和 metrics-server：Zeabur 執行所需的元件。",
   "presetHint.standard":
-    "單台伺服器建議安裝的元件，再加上容器映像檔倉庫、映像檔自動更新和 PostgreSQL。",
+    "單台伺服器建議安裝的元件，再加上從 Git 建置的 Zeabur Builder、映像檔自動更新和 PostgreSQL。",
   "presetHint.secure": "標準組合，再加上執行期威脅偵測、弱點掃描和入侵防護。",
   "components.chosen": (n) => `已選 ${n} 個元件`,
   "components.needed": "其他元件需要",
@@ -215,6 +215,8 @@ export const zhTW: Messages = {
   "components.list": "格式為清單：[a, b]。",
   "components.secret": "只存進僅 root 可讀的檔案，不會寫進設定檔。",
   "components.incomplete": (names) => `填好 ${names} 的設定才能繼續。`,
+  "note.builds/zeabur-builder":
+    "建置在有特權的 buildkitd 裡執行，逃出沙箱的建置可以碰到節點。builder-system 和 zot 這兩個 Namespace 只讓管理員存取。",
   "note.volume-backup/k8up": "把磁碟區備份到 S3。資料庫備份不需要它。",
   "note.volume-backup/velero": "把整個叢集備份到 S3。資料庫備份不需要它。",
   "velero.endpoint": "端點",
@@ -254,7 +256,6 @@ export const zhTW: Messages = {
   "capability.certificates": "憑證",
   "capability.builds": "建置",
   "capability.config-reload": "自動重新載入設定",
-  "capability.container-registry": "容器映像檔倉庫",
   "capability.dns": "DNS",
   "capability.event-autoscaling": "事件驅動的自動擴充",
   "capability.ingress": "Ingress",
@@ -306,7 +307,6 @@ export const zhTW: Messages = {
   "can.git": "從 Git 部署",
   "can.postgres": "建立 PostgreSQL 資料庫",
   "feature.git": "從 Git 部署",
-  "feature.registry": "容器映像檔倉庫",
   "feature.updates": "映像檔自動更新",
   "feature.postgres": "PostgreSQL",
   "feature.usage": "用量紀錄",

@@ -13,8 +13,9 @@ import {
 import type { Wizard } from "@/app"
 import { Code, Panel, Row, Rows } from "@/components/bits"
 import { MemoryVerdict, memoryAdvice } from "@/components/memory"
-import { coded, useT, type Translate } from "@/i18n"
+import { coded, named, useT, type Translate } from "@/i18n"
 import { memoryFit } from "@/lib/memory"
+import { cn } from "@/lib/utils"
 import { leftOutReason } from "@/steps/components"
 import { StepPage } from "@/steps/frame"
 import { CheckRow } from "@/steps/host"
@@ -381,7 +382,6 @@ function Disclosure({
 /** The Zeabur features that need a component, with the components that give them. */
 const features = [
   ["git", (id: string) => id.startsWith("builds/")],
-  ["registry", (id: string) => id.startsWith("container-registry/")],
   ["updates", (id: string) => id.startsWith("image-updates/")],
   ["postgres", (id: string) => id === "databases/cloudnative-pg"],
   ["usage", (id: string) => id === "metrics/victoria-metrics"],
@@ -492,17 +492,24 @@ function ComponentTable({
           >
             {components.map((c) => {
               const releases = charts(c).filter((r) => r.chart)
+              const note = byId.get(c.id)?.privileged ? named(t, `note.${c.id}`, "") : ""
+              const top = note ? "align-top" : undefined
               return (
                 <TableRow key={c.id}>
-                  <TableCell>
+                  <TableCell className={top}>
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-normal">
                       {c.displayName}
                       {byId.get(c.id)?.privileged ? (
                         <Badge variant="warn">{t("components.privileged")}</Badge>
                       ) : null}
                     </span>
+                    {note ? (
+                      <span className="mt-1 block text-xs whitespace-normal text-secondary">
+                        {note}
+                      </span>
+                    ) : null}
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell">
+                  <TableCell className={cn("hidden sm:table-cell", top)}>
                     {releases.length ? (
                       <span className="font-mono text-xs">
                         {releases.map((r) => r.chart).join(", ")}
@@ -511,7 +518,7 @@ function ComponentTable({
                       t("review.manifests")
                     )}
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell">
+                  <TableCell className={cn("hidden sm:table-cell", top)}>
                     {releases.length ? (
                       <span className="font-mono text-xs">
                         {releases.map((r) => r.version).join(", ")}
@@ -520,7 +527,7 @@ function ComponentTable({
                       "—"
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className={cn("text-right", top)}>
                     <span className="tabular-nums">
                       {c.idleMemoryMib ? t("common.mib", c.idleMemoryMib) : "—"}
                     </span>
