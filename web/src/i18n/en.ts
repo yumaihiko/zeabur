@@ -2538,6 +2538,7 @@ export const en = {
   "add.palette.database": (engine: string, project: string) => `New ${engine} in ${project}`,
   "add.git": "Deploy from Git",
   "add.compose": "Docker Compose",
+  "add.containers": "Docker containers",
   "add.template": "App template",
   "add.templatesTitle": "App templates",
   "add.templatesBody": (project: string) =>
@@ -2580,6 +2581,13 @@ export const en = {
     "Paste compose.yaml or upload it. Zeabur doesn't keep the file: once imported, the services are edited like any other.",
   "add.composeUpload": "Upload file",
   "add.composeRead": "Read file",
+  "add.containersTitle": "Import Docker containers",
+  "add.containersBody": (project: string) =>
+    `Makes a service in ${project} for each running container. You review the objects before anything is created.`,
+  "add.containersFile": "Output of docker inspect",
+  "add.containersHint": (command: string) =>
+    `On the Docker host, run ${command} with your container names, and paste what it prints. The image IDs at the end leave out the variables and command each image sets itself.`,
+  "add.containersRead": "Read containers",
   "add.composeReading": "Reading…",
   "add.composeChanged": "The text changed. Read the file again to review it.",
   "add.composeEnvFile": (path: string) => `Contents of ${path}`,
@@ -2642,6 +2650,12 @@ export const en = {
     `Volume ${volume} is shared in Compose; here each service gets its own.`,
   "add.composeFinding.renamed": (from: string, to: string) =>
     `${from} is renamed ${to}, because names can only use lowercase letters, digits and hyphens. Services that reach it as ${from} need the new name.`,
+  "add.composeFinding.localImage": (image: string) =>
+    `${image} is only on the Docker host. Push it to a registry the nodes can reach before you create the service.`,
+  "add.composeFinding.imageId": (image: string) =>
+    `Not created: the container runs image ${image} by its ID. Tag the image, push it to a registry, and import the container again.`,
+  "add.composeFinding.imageDefaults": (image: string) =>
+    `The variables and command that ${image} sets itself are kept, because the pasted output doesn't include the image. Add its ID to docker inspect to leave them out.`,
   "add.gitTitle": "Deploy from Git",
   "add.gitBody": (project: string) =>
     `Builds a Git repository and runs it in ${project}. You review the objects before anything is created.`,

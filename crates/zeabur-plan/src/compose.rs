@@ -27,6 +27,8 @@ use serde_json::{Map, Value};
 
 use crate::plan::{ErrorKind, PlanError, error};
 
+pub mod docker;
+
 /// The longest Compose file read, in bytes.
 const MAX_YAML: usize = 256 * 1024;
 /// The most services made from one file.
@@ -226,6 +228,18 @@ pub enum Finding {
     },
     /// The Compose name is not a DNS label; other services reach it by the new name.
     Renamed,
+    /// The image is only on the Docker host: a bare image ID is not made, and a tag that no
+    /// registry holds must be pushed before the nodes can pull it.
+    LocalImage {
+        /// The image as the container names it.
+        image: String,
+    },
+    /// The paste does not hold the container's image, so the image's own variables and command
+    /// stay in the service.
+    ImageDefaults {
+        /// The image as the container names it.
+        image: String,
+    },
 }
 
 /// Reads `request`; `wait_image` is the image that waits for a dependency.
@@ -264,13 +278,24 @@ pub fn convert(request: &ComposeRequest, wait_image: &str) -> Result<Conversion,
             "A Compose file to import has 1 to 50 services.",
         ));
     }
-    let mut reader = Reader {
+    let reader = Reader {
         dotenv: request
             .env_files
             .get(".env")
             .map_or_else(BTreeMap::new, |text| parse_env(text).into_iter().collect()),
         unset: BTreeSet::new(),
+        literal: false,
     };
+    Ok(read_services(services, request, reader, wait_image))
+}
+
+/// Reads `services`, a Compose `services:` map with 1 to [`MAX_SERVICES`] entries.
+fn read_services(
+    services: &Map<String, Value>,
+    request: &ComposeRequest,
+    mut reader: Reader,
+    wait_image: &str,
+) -> Conversion {
     let names = kube_names(services.keys());
     let kube_of: BTreeMap<&str, &str> = services
         .keys()
@@ -288,21 +313,26 @@ pub fn convert(request: &ComposeRequest, wait_image: &str) -> Result<Conversion,
         .collect();
     mark_shared_volumes(&mut out, services);
     link_databases(&mut out, services, &mut reader);
-    Ok(Conversion {
+    Conversion {
         services: out,
         missing_env_files: missing.into_iter().collect(),
         unset: reader.unset.into_iter().collect(),
         wait_image: wait_image.to_owned(),
-    })
+    }
 }
 
 struct Reader {
     dotenv: BTreeMap<String, String>,
     unset: BTreeSet<String>,
+    /// The text is not a Compose file: a `$` is a `$`.
+    literal: bool,
 }
 
 impl Reader {
     fn interpolate(&mut self, value: Value) -> Value {
+        if self.literal {
+            return value;
+        }
         match value {
             Value::String(text) => Value::String(self.text(&text)),
             Value::Array(items) => {
@@ -318,6 +348,9 @@ impl Reader {
     }
 
     fn text(&mut self, text: &str) -> String {
+        if self.literal {
+            return text.to_owned();
+        }
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
         while let Some(at) = rest.find('$') {

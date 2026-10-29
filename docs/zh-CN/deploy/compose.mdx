@@ -77,6 +77,22 @@ Compose 的 `ports` 不会直接开放节点的主机端口。对于需要对外
 </Step>
 </Steps>
 
+## 导入运行中的容器
+
+如果服务已经在 Docker 主机上通过 `docker run` 或 Compose 运行，可以改从 `docker inspect` 读取，不需要文件。打开 **新建** → **Docker 容器**，在 Docker 主机上把容器名称换成你的，运行：
+
+```sh
+docker inspect web db $(docker inspect -f '{{.Image}}' web db)
+```
+
+把输出粘贴到 **docker inspect 的输出**，或点击 **上传文件**，然后点击 **读取容器**。之后的步骤与 Compose 文件相同。
+
+- 第二个 `docker inspect` 会把每个容器的镜像加入输出。Zeabur 因此会跳过只来自镜像的变量、命令和健康检查，例如 `PATH` 或 `PG_MAJOR`，由新版镜像自行设置。输出中没有镜像时，这些配置会保留，服务下方也会注明。
+- Compose 启动的容器沿用 Compose 服务名称，同一个 Compose 服务的多个容器会合并为一个服务，副本数等于容器数。其他容器沿用容器名称。`depends_on` 来自 Compose 写在容器上的标签。
+- 通过 `-p` 发布的端口会建议公开域名。具名卷会创建新的空磁盘，匿名卷命名为 `data`。主机路径和 Docker socket 不会挂载。
+- 节点必须能拉取镜像。通过镜像 ID 启动的容器不会创建。只在 Docker 主机上构建的镜像会被标出，应用前先推送到 registry。
+- 一次最多读取 50 个容器、1 MB 的输出。Zeabur 不会连接 Docker 主机，只读取粘贴的文本。
+
 ## 核对会更改或跳过的配置
 
 | 原来的配置 | 导入后的行为与受影响场景 |

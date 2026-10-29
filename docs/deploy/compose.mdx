@@ -76,6 +76,22 @@ If you change the Compose or variable file contents, click **Read file** again b
 </Step>
 </Steps>
 
+## Import running containers
+
+If the services already run on a Docker host, started with `docker run` or Compose, read them from `docker inspect` instead of a file. Open **Add** → **Docker containers**, then run this on the Docker host with your own container names:
+
+```sh
+docker inspect web db $(docker inspect -f '{{.Image}}' web db)
+```
+
+Paste the output into **Output of docker inspect**, or click **Upload file**, then click **Read containers**. The remaining steps are the same as for a Compose file.
+
+- The second `docker inspect` adds each container's image to the output. Zeabur then leaves out the variables, command, and health check that come only from the image, such as `PATH` or `PG_MAJOR`, so that a newer version of the image sets them. Without the image, they're kept, and the service says so.
+- A container that Compose started keeps its Compose service name, and containers of the same Compose service become one service with that many replicas. Other containers keep their container name. `depends_on` comes from the label Compose writes on each container.
+- Ports published with `-p` suggest a public domain. Named volumes get new, empty disks, and anonymous volumes are named `data`. Host paths and the Docker socket aren't mounted.
+- The nodes must be able to pull the image. A container started from an image ID isn't created. An image that was only built on the Docker host is marked, so you can push it to a registry before you apply.
+- Read at most 50 containers and 1 MB of output at a time. Zeabur doesn't connect to the Docker host: it reads only the pasted text.
+
 ## Review settings that change or are skipped
 
 | Original setting | Behavior after import and affected scenarios |

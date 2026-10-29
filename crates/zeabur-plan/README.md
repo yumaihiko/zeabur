@@ -11,7 +11,8 @@ so an apply carries out exactly what was confirmed, or nothing; this crate defin
 `zeabur-api` seals them.
 
 The `compose` module reads a Docker Compose file as the services, volumes and variables it
-makes, and lists the fields it leaves out.
+makes, and lists the fields it leaves out. `compose::docker` reads the output of `docker inspect`
+for running containers in the same way.
 
 ## Hides
 

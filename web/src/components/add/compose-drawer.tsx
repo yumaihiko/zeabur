@@ -47,6 +47,28 @@ import { Switch } from "@zeabur/design-system/components/switch"
 type Finding = ComposeService["findings"][number]
 type Offer = ReturnType<typeof managedOffer>
 type Files = Record<string, string>
+/** What the text is: a Compose file, or the output of `docker inspect` for running containers. */
+type Source = "compose" | "containers"
+
+/** Prints the containers and their images, whose own variables and command are then left out. */
+const INSPECT = "docker inspect web db $(docker inspect -f '{{.Image}}' web db)"
+
+async function convertText(project: string, source: Source, text: string, envFiles: Files) {
+  const path = { project }
+  if (source === "containers")
+    return unwrap(
+      await api.POST("/api/v1/projects/{project}/docker-inspect", {
+        params: { path },
+        body: { json: text },
+      }),
+    )
+  return unwrap(
+    await api.POST("/api/v1/projects/{project}/compose", {
+      params: { path },
+      body: { yaml: text, envFiles },
+    }),
+  )
+}
 
 /** What the project allows and has, for turning the file into objects. */
 function useComposeContext(project: string) {
@@ -66,18 +88,12 @@ function useComposeContext(project: string) {
   return { domains, options, nodes, states, mayCreate, taken }
 }
 
-/** The file as the server reads it, and whether the text changed since. */
-function useConversion(project: string, yaml: string, envFiles: Files) {
+/** The text as the server reads it, and whether the text changed since. */
+function useConversion(project: string, from: Source, text: string, envFiles: Files) {
   const [read, setRead] = useState<{ conversion: Conversion; source: string }>()
-  const source = JSON.stringify([yaml, envFiles])
+  const source = JSON.stringify([text, envFiles])
   const convert = useMutation({
-    mutationFn: async () =>
-      unwrap(
-        await api.POST("/api/v1/projects/{project}/compose", {
-          params: { path: { project } },
-          body: { yaml, envFiles },
-        }),
-      ),
+    mutationFn: () => convertText(project, from, text, envFiles),
     onSuccess: (conversion) => setRead({ conversion, source }),
   })
   return { convert, conversion: read?.conversion, stale: !!read && read.source !== source }
@@ -116,16 +132,25 @@ function differencesOf(
   return out
 }
 
-/** "Docker Compose": the server reads the file; each service is planned as the "Docker image"
- * form plans one, and each database image as the database form, in one plan. */
-export function ComposeDrawer({ project, onClose }: { project: string; onClose: () => void }) {
+/** "Docker Compose" and "Docker containers": the server reads the text; each service is planned
+ * as the "Docker image" form plans one, and each database image as the database form, in one
+ * plan. */
+export function ComposeDrawer({
+  project,
+  source = "compose",
+  onClose,
+}: {
+  project: string
+  source?: Source
+  onClose: () => void
+}) {
   const t = useT()
   const navigate = useNavigate()
   const context = useComposeContext(project)
   const [yaml, setYaml] = useState("")
   const [envFiles, setEnvFiles] = useState<Files>({})
   const [tried, setTried] = useState(false)
-  const { convert, conversion, stale } = useConversion(project, yaml, envFiles)
+  const { convert, conversion, stale } = useConversion(project, source, yaml, envFiles)
   const { offers, offered, choices, setUnmanaged, setAll, setPublished } = useChoices(
     conversion,
     context,
@@ -149,10 +174,13 @@ export function ComposeDrawer({ project, onClose }: { project: string; onClose: 
     <PlanDrawer
       step={planner}
       onClose={onClose}
-      title={t("add.composeTitle")}
-      description={t("add.composeBody", project)}
+      title={source === "compose" ? t("add.composeTitle") : t("add.containersTitle")}
+      description={
+        source === "compose" ? t("add.composeBody", project) : t("add.containersBody", project)
+      }
       footer={
         <Footer
+          read={source === "compose" ? t("add.composeRead") : t("add.containersRead")}
           ready={conversion !== undefined && !stale}
           pending={convert.isPending}
           empty={yaml.trim() === ""}
@@ -163,16 +191,30 @@ export function ComposeDrawer({ project, onClose }: { project: string; onClose: 
       }
     >
       <div className="flex flex-col gap-6">
-        <TextFile
-          label={t("add.composeFile")}
-          hint={t("add.composeHint")}
-          upload={t("add.composeUpload")}
-          value={yaml}
-          rows={10}
-          placeholder={"services:\n  web:\n    image: ghcr.io/acme/web:1.4"}
-          onChange={setYaml}
-          autoFocus
-        />
+        {source === "compose" ? (
+          <TextFile
+            label={t("add.composeFile")}
+            hint={t("add.composeHint")}
+            upload={t("add.composeUpload")}
+            value={yaml}
+            rows={10}
+            placeholder={"services:\n  web:\n    image: ghcr.io/acme/web:1.4"}
+            onChange={setYaml}
+            autoFocus
+          />
+        ) : (
+          <TextFile
+            label={t("add.containersFile")}
+            hint={t("add.containersHint", INSPECT)}
+            upload={t("add.composeUpload")}
+            accept=".json,application/json"
+            value={yaml}
+            rows={10}
+            placeholder={'[{"Name": "/web", "Config": {"Image": "ghcr.io/acme/web:1.4"}}]'}
+            onChange={setYaml}
+            autoFocus
+          />
+        )}
         <EnvFiles
           conversion={conversion}
           files={envFiles}
@@ -202,6 +244,7 @@ export function ComposeDrawer({ project, onClose }: { project: string; onClose: 
 }
 
 function Footer({
+  read,
   ready,
   pending,
   empty,
@@ -209,6 +252,7 @@ function Footer({
   onReview,
   onClose,
 }: {
+  read: string
   ready: boolean
   pending: boolean
   empty: boolean
@@ -228,7 +272,7 @@ function Footer({
         </Button>
       ) : (
         <Button size="sm" onClick={onRead} disabled={empty || pending}>
-          {pending ? t("add.composeReading") : t("add.composeRead")}
+          {pending ? t("add.composeReading") : read}
         </Button>
       )}
     </div>
@@ -419,7 +463,7 @@ function ServiceRow({
       }
       description={
         <span className="flex flex-col gap-2">
-          {image ? null : <span>{t("add.composeBuildOnly")}</span>}
+          {image ? null : <span>{notMade(t, service)}</span>}
           <Counterpart
             service={service}
             offer={offer}
@@ -583,6 +627,12 @@ function keptText(t: Translate, kept: KeptReason, image: string, service: Compos
   return KEPT[kept](t, image, counterpart ? managedName(t, counterpart) : "")
 }
 
+/** Why a service without an image is not created: only `build:`, or only an image ID. */
+function notMade(t: Translate, service: ComposeService) {
+  const local = service.findings.find((f): f is Of<"localImage"> => f.code === "localImage")
+  return local ? t("add.composeFinding.imageId", local.image) : t("add.composeBuildOnly")
+}
+
 type Of<C extends Finding["code"]> = Extract<Finding, { code: C }>
 const FINDING: {
   [C in Finding["code"]]: (t: Translate, finding: Of<C>, service: ComposeService) => string
@@ -600,6 +650,11 @@ const FINDING: {
   udpPort: (t, f) => t("add.composeFinding.udpPort", String(f.port)),
   sharedVolume: (t, f) => t("add.composeFinding.sharedVolume", f.volume),
   renamed: (t, _, s) => t("add.composeFinding.renamed", s.composeName, s.name),
+  localImage: (t, f, s) =>
+    s.image
+      ? t("add.composeFinding.localImage", f.image)
+      : t("add.composeFinding.imageId", f.image),
+  imageDefaults: (t, f) => t("add.composeFinding.imageDefaults", f.image),
 }
 
 const findingText = (t: Translate, finding: Finding, service: ComposeService) =>

@@ -1954,6 +1954,35 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  "/api/v1/projects/{project}/docker-inspect":
+    post:
+      tags:
+      - projects
+      operationId: convertDockerInspect
+      parameters:
+      - name: project
+        in: path
+        description: The project's namespace
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DockerInspectRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversion"
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   "/api/v1/projects/{project}/events":
     get:
       tags:
@@ -8155,6 +8184,15 @@ components:
       - elsewhere
       - missing
       - unknown
+    DockerInspectRequest:
+      type: object
+      description: The output of `docker inspect` to convert.
+      required:
+      - json
+      properties:
+        json:
+          type: string
+          description: "The JSON that `docker inspect` writes: containers, and optionally their images."
     DomainCheck:
       type: object
       description: What setting up a domain needs and how far it is.
@@ -9141,6 +9179,36 @@ components:
             type: string
             enum:
             - renamed
+      - type: object
+        description: |-
+          The image is only on the Docker host: a bare image ID is not made, and a tag that no
+          registry holds must be pushed before the nodes can pull it.
+        required:
+        - image
+        - code
+        properties:
+          code:
+            type: string
+            enum:
+            - localImage
+          image:
+            type: string
+            description: The image as the container names it.
+      - type: object
+        description: |-
+          The paste does not hold the container's image, so the image's own variables and command
+          stay in the service.
+        required:
+        - image
+        - code
+        properties:
+          code:
+            type: string
+            enum:
+            - imageDefaults
+          image:
+            type: string
+            description: The image as the container names it.
       description: A field of a service that is left out, or a difference to know of.
     Fit:
       type: object

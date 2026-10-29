@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { Fragment, useState, type ComponentType, type SVGProps } from "react"
 import ArchiveIcon from "~icons/ph/archive"
 import CaretRightIcon from "~icons/ph/caret-right"
+import CubeIcon from "~icons/ph/cube"
 import DatabaseIcon from "~icons/ph/database"
 import GitBranchIcon from "~icons/ph/git-branch"
 import PackageIcon from "~icons/ph/package"
@@ -48,6 +49,7 @@ const icons: Partial<Record<AddWhat, ComponentType<SVGProps<SVGSVGElement>>>> = 
   git: GitBranchIcon,
   upload: UploadSimpleIcon,
   compose: StackIcon,
+  containers: CubeIcon,
   template: SquaresFourIcon,
   objectStorage: ArchiveIcon,
 }

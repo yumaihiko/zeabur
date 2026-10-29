@@ -1264,6 +1264,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  "/api/v1/projects/{project}/docker-inspect": {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations["convertDockerInspect"]
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   "/api/v1/projects/{project}/events": {
     parameters: {
       query?: never
@@ -4253,6 +4269,11 @@ export interface components {
      * @enum {string}
      */
     DnsState: "pointsHere" | "elsewhere" | "missing" | "unknown"
+    /** @description The output of `docker inspect` to convert. */
+    DockerInspectRequest: {
+      /** @description The JSON that `docker inspect` writes: containers, and optionally their images. */
+      json: string
+    }
     /** @description What setting up a domain needs and how far it is. */
     DomainCheck: {
       certificate?: components["schemas"]["CertificateCheck"] | null
@@ -4773,6 +4794,18 @@ export interface components {
       | {
           /** @enum {string} */
           code: "renamed"
+        }
+      | {
+          /** @enum {string} */
+          code: "localImage"
+          /** @description The image as the container names it. */
+          image: string
+        }
+      | {
+          /** @enum {string} */
+          code: "imageDefaults"
+          /** @description The image as the container names it. */
+          image: string
         }
     /** @description Whether the plan's new pods fit, and what blocks them. */
     Fit: {
@@ -11957,6 +11990,40 @@ export interface operations {
         }
       }
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          "application/problem+json": components["schemas"]["Problem"]
+        }
+      }
+    }
+  }
+  convertDockerInspect: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description The project's namespace */
+        project: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DockerInspectRequest"]
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          "application/json": components["schemas"]["Conversion"]
+        }
+      }
+      400: {
         headers: {
           [name: string]: unknown
         }

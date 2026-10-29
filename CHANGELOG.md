@@ -8,6 +8,13 @@ minor or patch release may break the API.
 
 ## [Unreleased]
 
+### Added
+
+- **New** → **Docker containers** imports running containers from the output of `docker inspect`,
+  with the same review as a Compose file. When the output includes the images, the variables and
+  command that come only from an image are left out
+  ([Import Docker Compose services](docs/deploy/compose.mdx#import-running-containers)).
+
 ### Changed
 
 - Release notes are the changelog section and a link to the documentation. The digests of the

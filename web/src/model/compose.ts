@@ -1,5 +1,6 @@
-// A Docker Compose file, as the server reads it (`POST /projects/{p}/compose`), turned into the
-// objects the "Docker image" and database forms create, in one plan.
+// A Docker Compose file or running containers, as the server reads them (`POST
+// /projects/{p}/compose`, `/docker-inspect`), turned into the objects the "Docker image" and
+// database forms create, in one plan.
 import type { Schemas } from "@/api/client"
 import { pendingDatabase, variablesFor, type Connectable } from "@/model/connect"
 import {

@@ -77,6 +77,22 @@ Compose 的 `ports` 不會直接開放節點的主機連接埠。在需要對外
 </Step>
 </Steps>
 
+## 匯入執行中的容器
+
+如果服務已經在 Docker 主機上用 `docker run` 或 Compose 執行，可以改從 `docker inspect` 讀取，不需要檔案。開啟 **新增** → **Docker 容器**，在 Docker 主機上把容器名稱換成你的，執行：
+
+```sh
+docker inspect web db $(docker inspect -f '{{.Image}}' web db)
+```
+
+把輸出貼到 **docker inspect 的輸出**，或按 **上傳檔案**，接著按 **讀取容器**。之後的步驟和 Compose 檔案相同。
+
+- 第二個 `docker inspect` 會把每個容器的映像檔加進輸出。Zeabur 會因此略過只來自映像檔的變數、指令和健康檢查，例如 `PATH` 或 `PG_MAJOR`，讓新版映像檔自己設定。輸出裡沒有映像檔時，這些設定會保留，服務下方也會註明。
+- Compose 啟動的容器沿用 Compose 服務名稱，同一個 Compose 服務的多個容器會合成一個服務，副本數等於容器數。其他容器沿用容器名稱。`depends_on` 來自 Compose 寫在容器上的標籤。
+- 用 `-p` 發布的連接埠會建議公開網域。具名磁碟區會建立新的空磁碟，匿名磁碟區命名為 `data`。主機路徑和 Docker socket 不會掛載。
+- 節點必須拉得到映像檔。用映像檔 ID 啟動的容器不會建立。只在 Docker 主機上建置的映像檔會標示出來，套用前先推送到 registry。
+- 一次最多讀取 50 個容器、1 MB 的輸出。Zeabur 不會連線到 Docker 主機，只讀取貼上的文字。
+
 ## 核對會改變或略過的設定
 
 | 原本的設定 | 匯入後的行為與受影響情境 |

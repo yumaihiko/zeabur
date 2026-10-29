@@ -6,6 +6,7 @@ export type AddWhat =
   | "git"
   | "upload"
   | "compose"
+  | "containers"
   | "template"
   | "objectStorage"
   | Schemas["DatabaseEngine"]

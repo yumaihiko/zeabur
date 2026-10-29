@@ -15,6 +15,8 @@ export function AddHost({ project, what }: { project: string; what: AddWhat }) {
   if (what === "git") return <GitDrawer project={project} onClose={close} />
   if (what === "upload") return <UploadDrawer project={project} onClose={close} />
   if (what === "compose") return <ComposeDrawer project={project} onClose={close} />
+  if (what === "containers")
+    return <ComposeDrawer project={project} source="containers" onClose={close} />
   if (what === "template") return <TemplateDrawer project={project} onClose={close} />
   if (what === "objectStorage") return <ObjectStorageForm project={project} onClose={close} />
   return <DatabaseForm project={project} engine={what} onClose={close} />

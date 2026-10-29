@@ -88,6 +88,7 @@
 //! | `DELETE /api/v1/members/{username}/credentials/{id}` | removes a member's passkey or linked account |
 //! | `POST /api/v1/projects/{p}/images/inspect` | an image's declared ports and user, read from its registry anonymously or with the project's pull Secret, read as you; `unreadable` when the registry cannot be read |
 //! | `POST /api/v1/projects/{p}/compose` | the services a Docker Compose file makes, with the fields left out and why; reads and writes nothing in the cluster |
+//! | `POST /api/v1/projects/{p}/docker-inspect` | the same for running containers, from the output of `docker inspect`; reads and writes nothing in the cluster |
 //! | `POST /api/v1/projects/{p}/plan` | the writes a change needs, what they do (pods replaced, fit, data and fields removed), and a token; writes nothing |
 //! | `POST /api/v1/projects/{p}/apply` | carries out a plan by its token |
 //!
@@ -310,6 +311,7 @@ fn remaining_routes(router: OpenApiRouter<AppState>) -> OpenApiRouter<AppState> 
         .routes(routes!(cluster::github_app::project))
         .routes(routes!(images::inspect))
         .routes(routes!(projects::compose::convert_compose))
+        .routes(routes!(projects::compose::convert_docker_inspect))
         .routes(routes!(projects::deploy_keys::public))
         .routes(routes!(projects::network_policy::presets))
         .routes(routes!(projects::usage::get))

@@ -2327,6 +2327,7 @@ export const zhCN: Messages = {
   "add.palette.database": (engine, project) => `在 ${project} 新建 ${engine}`,
   "add.git": "从 Git 部署",
   "add.compose": "Docker Compose",
+  "add.containers": "Docker 容器",
   "add.template": "应用模板",
   "add.templatesTitle": "应用模板",
   "add.templatesBody": (project) =>
@@ -2366,6 +2367,13 @@ export const zhCN: Messages = {
     "粘贴或上传 compose.yaml。Zeabur 不会保留这个文件，导入后的服务和其他服务一样编辑。",
   "add.composeUpload": "上传文件",
   "add.composeRead": "读取文件",
+  "add.containersTitle": "导入 Docker 容器",
+  "add.containersBody": (project) =>
+    `每个运行中的容器都会在 ${project} 中创建一个服务。创建前会先让你确认要新增的对象。`,
+  "add.containersFile": "docker inspect 的输出",
+  "add.containersHint": (command) =>
+    `在 Docker 主机上把容器名称换成你的，运行 ${command}，再粘贴输出。末尾的镜像 ID 会让导入跳过镜像自身设置的变量和命令。`,
+  "add.containersRead": "读取容器",
   "add.composeReading": "正在读取…",
   "add.composeChanged": "内容已改动，请重新读取文件再确认。",
   "add.composeEnvFile": (path) => `${path} 的内容`,
@@ -2418,6 +2426,12 @@ export const zhCN: Messages = {
     `卷 ${volume} 在 Compose 中由多个服务共用，这里会让每个服务各有一个。`,
   "add.composeFinding.renamed": (from, to) =>
     `${from} 改名为 ${to}，因为名称只能使用小写字母、数字和连字符。用 ${from} 连接的服务需要改用新名称。`,
+  "add.composeFinding.localImage": (image) =>
+    `${image} 只存在于 Docker 主机上。创建服务前，先推送到节点能访问的 registry。`,
+  "add.composeFinding.imageId": (image) =>
+    `不会创建：容器通过 ID 运行镜像 ${image}。给镜像打上标签、推送到 registry 后，再导入一次。`,
+  "add.composeFinding.imageDefaults": (image) =>
+    `粘贴的输出中没有 ${image}，所以会保留镜像自身设置的变量和命令。在 docker inspect 中加上它的 ID 即可跳过。`,
   "add.gitTitle": "从 Git 部署",
   "add.gitBody": (project) => `构建 Git 仓库，在 ${project} 运行。创建前会先让你确认要新建的对象。`,
   "add.field.repository": "仓库",

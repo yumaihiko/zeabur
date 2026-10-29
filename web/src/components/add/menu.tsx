@@ -194,6 +194,7 @@ export function addEntries(choices: AddChoices, t: Translate): AddEntry[] {
     gitEntry(choices.git, "git", t),
     gitEntry(choices.git, "upload", t),
     { what: "compose", group: "service", label: t("add.compose"), gate: image },
+    { what: "containers", group: "service", label: t("add.containers"), gate: image },
     { what: "template", group: "service", label: t("add.template"), gate: image },
     ...choices.databases.map((d) =>
       operatorEntry(d.engine, "database", engineName(d.engine), d, t),
